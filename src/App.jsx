@@ -180,7 +180,7 @@ const TOOLTIPS = {
   dmaic: { title: "DMAIC Methodology", plain: "Kerangka perbaikan proses 5 fase: Define (tetapkan masalah) → Measure (ukur kondisi awal) → Analyze (cari akar masalah) → Improve (terapkan solusi) → Control (jaga supaya tidak balik lagi)." },
 };
 
-function Tooltip({ id, children }) {
+function SmartTooltip({ id, children }) {
   const [open, setOpen] = useState(false);
   const tip = TOOLTIPS[id];
   if (!tip) return children;
@@ -1781,7 +1781,7 @@ function UniversalCOPQ() {
           <div style={{ background: T.surface, border: `2px solid ${T.red}55`, borderRadius: 8, padding: "2rem", textAlign: "center", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 0%, ${T.red}12 0%, transparent 70%)` }} />
             <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "0.5rem" }}>
-              <Tooltip id="copq">Estimated Annual COPQ</Tooltip>
+              <SmartTooltip id="copq">Estimated Annual COPQ</SmartTooltip>
             </div>
             <motion.div key={Math.round(totalCopq)} initial={{ scale: 0.9 }} animate={{ scale: 1 }}
               style={{ color: T.red, fontFamily: T.display, fontSize: "2.8rem", fontWeight: 800, textShadow: `0 0 30px ${T.red}66`, lineHeight: 1 }}>
@@ -1976,7 +1976,7 @@ function Hero({ onEnter }) {
         </motion.button>
 
         <div style={{ marginTop: "1.5rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", letterSpacing: "0.1em" }}>
-          by Alfin Maulana Yudistira · Six Sigma Black Belt · Project 02/14 · 2025
+          by Alfin Maulana Yudistira · Six Sigma Black Belt · 2025
         </div>
       </motion.div>
 
@@ -2001,7 +2001,7 @@ export default function App() {
     const handler = (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
       const tabs = ["overview","sigma","dmaic","fmea","copq","spc","pareto","rootcause","triage","universal"];
-      if (e.key >= "1" && e.key <= "8") setActiveTab(tabs[parseInt(e.key) - 1]);
+      if (e.key >= "1" && e.key <= "9") setActiveTab(tabs[parseInt(e.key) - 1]);
       if (e.key === "Escape") setShowApp(false);
     };
     window.addEventListener("keydown", handler);
@@ -2070,7 +2070,7 @@ export default function App() {
           © 2025 Alfin Maulana Yudistira · Six Sigma Black Belt · Technical Support Efficiency Transformation
         </span>
         <span style={{ color: "#112233", fontFamily: T.mono, fontSize: "0.58rem" }}>
-          Schmidt & Hunter (2016) · Montgomery (2020) · Wheeler & Chambers · AIAG MSA Manual
+          
         </span>
       </div>
 
