@@ -32,8 +32,6 @@ const T = {
 };
 
 // ─── COMPANY CONTEXT ─────────────────────────────────────────────────────────
-import { createContext, useContext } from "react";
-
 const CompanyCtx = createContext(null);
 function useCompany() { return useContext(CompanyCtx); }
 
