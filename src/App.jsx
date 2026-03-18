@@ -2772,7 +2772,7 @@ export default function App() {
     pareto: ParetoBuilder, rootcause: RootCauseAnalyzer,
     triage: AITriageSimulator, universal: UniversalCOPQ,
   };
-  const ActiveView = views[activeTab];
+  const ActiveView = views[activeTab] || views.overview;
 
   if (!showApp) return <Hero onEnter={() => setShowApp(true)} />;
 
@@ -2801,7 +2801,7 @@ export default function App() {
 
             {/* KPI chips — show company data if available, else Pulse Digital */}
             <div style={{ display: "flex", gap: "0.5rem" }}>
-              {company.isPulseDigital ? [
+              {(company.isPulseDigital ? [
                 { label: `${PROJECT.final.ppk}`, sub: "Ppk", color: T.green },
                 { label: `${PROJECT.final.sigma}σ`, sub: "Level", color: T.cyan },
                 { label: `$${(PROJECT.savings / 1000).toFixed(0)}K`, sub: "Saved", color: T.yellow },
@@ -2819,7 +2819,7 @@ export default function App() {
                 },
                 { label: company.baselineMean + company.processUnit, sub: "Baseline", color: T.red },
                 { label: company.target + company.processUnit, sub: "Target", color: T.green },
-              ].map(k => (
+              ]).map(k => (
                 <div key={k.sub} style={{ textAlign: "center", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "0.3rem 0.6rem" }}>
                   <div style={{ color: k.color, fontFamily: T.mono, fontSize: "0.82rem", fontWeight: 700 }}>{k.label}</div>
                   <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.52rem", textTransform: "uppercase" }}>{k.sub}</div>
