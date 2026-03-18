@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -30,6 +30,317 @@ const T = {
   mono:     "'Space Mono', monospace",
   display:  "'Syne', sans-serif",
 };
+
+// ─── COMPANY CONTEXT ─────────────────────────────────────────────────────────
+import { createContext, useContext } from "react";
+
+const CompanyCtx = createContext(null);
+function useCompany() { return useContext(CompanyCtx); }
+
+const COMPANY_DEFAULTS = {
+  name: "Pulse Digital",
+  dept: "Technical Support",
+  industry: "IT / Tech Support",
+  country: "Indonesia",
+  teamSize: 27,
+  processName: "Customer Complaint Resolution",
+  processUnit: "hrs",
+  baselineMean: 72.1,
+  baselineStdDev: 17.4,
+  target: 48,
+  usl: 96,
+  lsl: 0,
+  currency: "USD",
+  laborRate: 45,
+  monthlyVolume: 295,
+  customerLTV: 3200,
+  isPulseDigital: true,
+};
+
+const INDUSTRY_OPTIONS = [
+  "IT / Tech Support", "Manufacturing", "Healthcare", "Financial Services",
+  "Retail / E-Commerce", "Logistics & Supply Chain", "HR / People Ops",
+  "Customer Service", "Food & Beverage", "Construction", "Education", "Other",
+];
+
+// ─── COMPANY SETUP MODAL ─────────────────────────────────────────────────────
+function CompanySetup({ company, onChange, onClose, isOpen }) {
+  const [draft, setDraft] = useState({ ...company });
+  const set = (k, v) => setDraft(p => ({ ...p, [k]: v }));
+  const isPD = draft.name === "Pulse Digital" && draft.dept === "Technical Support";
+
+  const save = () => {
+    onChange({ ...draft, isPulseDigital: isPD });
+    onClose();
+  };
+
+  const loadPulseDigital = () => {
+    setDraft({ ...COMPANY_DEFAULTS });
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        style={{
+          position: "fixed", inset: 0, zIndex: 10000,
+          background: "rgba(0,0,0,0.85)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "1rem",
+        }}
+        onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 30, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 20 }}
+          style={{
+            background: T.panel, border: `1px solid ${T.borderHi}`,
+            borderRadius: 12, width: "100%", maxWidth: 680,
+            maxHeight: "90vh", overflowY: "auto",
+            boxShadow: `0 24px 80px rgba(0,0,0,0.7), 0 0 40px ${T.cyan}11`,
+          }}
+        >
+          {/* Header */}
+          <div style={{
+            padding: "1.5rem 1.75rem", borderBottom: `1px solid ${T.border}`,
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            position: "sticky", top: 0, background: T.panel, zIndex: 1,
+          }}>
+            <div>
+              <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.6rem", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "0.3rem" }}>
+                ⚡ COMPANY PROFILE
+              </div>
+              <div style={{ color: T.text, fontFamily: T.display, fontSize: "1.1rem", fontWeight: 700 }}>
+                Configure Your Organization
+              </div>
+            </div>
+            <button onClick={onClose} style={{
+              background: "transparent", border: `1px solid ${T.border}`,
+              color: T.textDim, width: 32, height: 32, borderRadius: 4,
+              cursor: "pointer", fontFamily: T.mono, fontSize: "1rem",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>✕</button>
+          </div>
+
+          <div style={{ padding: "1.75rem" }}>
+            {/* Quick Load */}
+            <div style={{ marginBottom: "1.5rem" }}>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.6rem" }}>
+                Quick Load
+              </div>
+              <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                <button onClick={loadPulseDigital} style={{
+                  background: `${T.cyan}12`, border: `1px solid ${T.cyan}44`,
+                  color: T.cyan, padding: "0.5rem 1rem", borderRadius: 6,
+                  cursor: "pointer", fontFamily: T.mono, fontSize: "0.68rem",
+                }}>
+                  ◈ Load Pulse Digital (Demo)
+                </button>
+                <button onClick={() => setDraft({ ...COMPANY_DEFAULTS, name: "", dept: "", processName: "", baselineMean: 0, target: 0, usl: 0, lsl: 0, laborRate: 0, monthlyVolume: 0, customerLTV: 0, isPulseDigital: false })} style={{
+                  background: `${T.green}12`, border: `1px solid ${T.green}44`,
+                  color: T.green, padding: "0.5rem 1rem", borderRadius: 6,
+                  cursor: "pointer", fontFamily: T.mono, fontSize: "0.68rem",
+                }}>
+                  ⚡ Start Fresh (Your Company)
+                </button>
+              </div>
+            </div>
+
+            {/* Section: Organization */}
+            <div style={{ marginBottom: "1.5rem" }}>
+              <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.62rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "0.85rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: T.cyan, display: "inline-block" }} />
+                Organization
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "0.85rem" }}>
+                {[
+                  { label: "Company Name", key: "name", ph: "e.g. Acme Corp" },
+                  { label: "Department", key: "dept", ph: "e.g. Customer Service" },
+                  { label: "Country / Region", key: "country", ph: "e.g. Indonesia" },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{f.label}</label>
+                    <input value={draft[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.ph}
+                      style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.6rem 0.75rem", fontFamily: T.mono, fontSize: "0.82rem", boxSizing: "border-box" }} />
+                  </div>
+                ))}
+                <div>
+                  <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>Industry</label>
+                  <select value={draft.industry} onChange={e => set("industry", e.target.value)}
+                    style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.6rem 0.75rem", fontFamily: T.mono, fontSize: "0.82rem", boxSizing: "border-box", cursor: "pointer" }}>
+                    {INDUSTRY_OPTIONS.map(o => <option key={o} value={o} style={{ background: T.surface }}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>Team Size</label>
+                  <input type="number" value={draft.teamSize} onChange={e => set("teamSize", +e.target.value)} min={1}
+                    style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.6rem 0.75rem", fontFamily: T.mono, fontSize: "0.82rem", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>Currency</label>
+                  <select value={draft.currency} onChange={e => set("currency", e.target.value)}
+                    style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.6rem 0.75rem", fontFamily: T.mono, fontSize: "0.82rem", boxSizing: "border-box", cursor: "pointer" }}>
+                    {["USD", "IDR", "EUR", "GBP", "SGD", "AUD", "JPY", "MYR"].map(c => <option key={c} value={c} style={{ background: T.surface }}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Section: Process */}
+            <div style={{ marginBottom: "1.5rem" }}>
+              <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.62rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "0.85rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: T.green, display: "inline-block" }} />
+                Process Being Improved
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "0.85rem" }}>
+                {[
+                  { label: "Process Name", key: "processName", ph: "e.g. Order Fulfillment" },
+                  { label: "Measurement Unit", key: "processUnit", ph: "e.g. hrs, days, %" },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{f.label}</label>
+                    <input value={draft[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.ph}
+                      style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.6rem 0.75rem", fontFamily: T.mono, fontSize: "0.82rem", boxSizing: "border-box" }} />
+                  </div>
+                ))}
+                {[
+                  { label: "Baseline Mean", key: "baselineMean", ph: "72.1", step: "0.1" },
+                  { label: "Baseline Std Dev (σ)", key: "baselineStdDev", ph: "17.4", step: "0.1" },
+                  { label: "Target Value", key: "target", ph: "48", step: "0.1" },
+                  { label: "Upper Spec Limit (USL)", key: "usl", ph: "96", step: "1" },
+                  { label: "Lower Spec Limit (LSL)", key: "lsl", ph: "0", step: "1" },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{f.label}</label>
+                    <input type="number" step={f.step} value={draft[f.key]} onChange={e => set(f.key, parseFloat(e.target.value) || 0)} placeholder={f.ph}
+                      style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, color: T.cyan, padding: "0.6rem 0.75rem", fontFamily: T.mono, fontSize: "0.82rem", boxSizing: "border-box" }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Section: Financials */}
+            <div style={{ marginBottom: "1.75rem" }}>
+              <div style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.62rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "0.85rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: T.yellow, display: "inline-block" }} />
+                Financial Parameters
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "0.85rem" }}>
+                {[
+                  { label: "Staff Hourly Cost", key: "laborRate", ph: "45", step: "1", unit: "/hr" },
+                  { label: "Monthly Process Volume", key: "monthlyVolume", ph: "295", step: "10", unit: "units" },
+                  { label: "Customer / Contract Value", key: "customerLTV", ph: "3200", step: "100", unit: "" },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>
+                      {f.label} {f.unit && <span style={{ color: T.textDim }}>({draft.currency}{f.unit})</span>}
+                    </label>
+                    <input type="number" step={f.step} value={draft[f.key]} onChange={e => set(f.key, parseFloat(e.target.value) || 0)} placeholder={f.ph}
+                      style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, color: T.yellow, padding: "0.6rem 0.75rem", fontFamily: T.mono, fontSize: "0.82rem", boxSizing: "border-box" }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Preview */}
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1rem", marginBottom: "1.25rem" }}>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.6rem" }}>Preview</div>
+              <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                {[
+                  { label: "Ppk (baseline)", val: (() => { const ppk = draft.baselineStdDev > 0 ? Math.min((draft.usl - draft.baselineMean) / (3 * draft.baselineStdDev), (draft.baselineMean - draft.lsl) / (3 * draft.baselineStdDev)) : 0; return ppk.toFixed(2); })() },
+                  { label: "Gap to Close", val: `${(draft.baselineMean - draft.target).toFixed(1)} ${draft.processUnit}` },
+                  { label: "Est. Annual Volume", val: (draft.monthlyVolume * 12).toLocaleString() },
+                ].map(p => (
+                  <div key={p.label} style={{ flex: "1 1 100px" }}>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase" }}>{p.label}</div>
+                    <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.95rem", fontWeight: 700 }}>{p.val}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+              <button onClick={onClose} style={{
+                background: "transparent", border: `1px solid ${T.border}`, color: T.textDim,
+                padding: "0.75rem 1.5rem", borderRadius: 6, cursor: "pointer", fontFamily: T.mono, fontSize: "0.75rem",
+              }}>Cancel</button>
+              <button onClick={save} style={{
+                background: T.cyan, border: "none", color: T.bg,
+                padding: "0.75rem 2rem", borderRadius: 6, cursor: "pointer",
+                fontFamily: T.mono, fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em",
+                boxShadow: `0 0 20px ${T.cyan}44`,
+              }}>
+                ✓ Save Company Profile
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+// ─── COMPANY BADGE (shown in header) ─────────────────────────────────────────
+function CompanyBadge({ company, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      background: company.isPulseDigital ? `${T.cyan}10` : `${T.green}10`,
+      border: `1px solid ${company.isPulseDigital ? T.cyan + "44" : T.green + "66"}`,
+      borderRadius: 6, padding: "0.35rem 0.8rem", cursor: "pointer",
+      display: "flex", alignItems: "center", gap: "0.5rem",
+      transition: "all 0.2s",
+    }}>
+      <span style={{
+        width: 6, height: 6, borderRadius: "50%",
+        background: company.isPulseDigital ? T.cyan : T.green,
+        boxShadow: `0 0 6px ${company.isPulseDigital ? T.cyan : T.green}`,
+        flexShrink: 0,
+      }} />
+      <div style={{ textAlign: "left" }}>
+        <div style={{ color: company.isPulseDigital ? T.cyan : T.green, fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.05em", lineHeight: 1 }}>
+          {company.name || "Unnamed Company"}
+        </div>
+        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.52rem", lineHeight: 1, marginTop: "0.1rem" }}>
+          {company.dept} · {company.industry}
+        </div>
+      </div>
+      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", marginLeft: "0.2rem" }}>✎</span>
+    </button>
+  );
+}
+
+// ─── COMPANY CONTEXT BANNER (shown inside modules) ────────────────────────────
+function CompanyBanner() {
+  const company = useCompany();
+  if (!company || company.isPulseDigital) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{
+        background: `${T.green}0C`, border: `1px solid ${T.green}33`,
+        borderRadius: 8, padding: "0.85rem 1.25rem", marginBottom: "1.5rem",
+        display: "flex", alignItems: "center", gap: "0.85rem", flexWrap: "wrap",
+      }}
+    >
+      <span style={{ color: T.green, fontFamily: T.mono, fontSize: "0.68rem", fontWeight: 700 }}>
+        ⚡ COMPANY MODE ACTIVE
+      </span>
+      <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.68rem" }}>
+        {company.name} · {company.dept} · {company.industry}
+      </span>
+      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>
+        Process: {company.processName} · Baseline: {company.baselineMean} {company.processUnit} → Target: {company.target} {company.processUnit}
+      </span>
+    </motion.div>
+  );
+}
 
 // ─── PROJECT DATA (from real Black Belt report) ───────────────────────────────
 const PROJECT = {
@@ -2437,19 +2748,25 @@ function Hero({ onEnter }) {
 export default function App() {
   const [showApp, setShowApp] = useState(false);
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem("ss_tab") || "overview");
+  const [company, setCompany] = useState(COMPANY_DEFAULTS);
+  const [showCompanySetup, setShowCompanySetup] = useState(false);
 
   useEffect(() => { localStorage.setItem("ss_tab", activeTab); }, [activeTab]);
 
   useEffect(() => {
     const handler = (e) => {
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
       const tabs = ["overview","sigma","dmaic","fmea","copq","spc","pareto","rootcause","triage","universal"];
       if (e.key >= "1" && e.key <= "9") setActiveTab(tabs[parseInt(e.key) - 1]);
-      if (e.key === "Escape") setShowApp(false);
+      if (e.key === "0") setActiveTab("universal");
+      if (e.key === "Escape") {
+        if (showCompanySetup) setShowCompanySetup(false);
+        else setShowApp(false);
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [showCompanySetup]);
 
   const views = {
     overview: Overview, sigma: SigmaCalculator, dmaic: DMAICTracker,
@@ -2462,91 +2779,122 @@ export default function App() {
   if (!showApp) return <Hero onEnter={() => setShowApp(true)} />;
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", flexDirection: "column", color: T.text }}>
-      <Scanlines />
+    <CompanyCtx.Provider value={company}>
+      <div style={{ minHeight: "100vh", background: T.bg, display: "flex", flexDirection: "column", color: T.text }}>
+        <Scanlines />
 
-      {/* Header */}
-      <div style={{ background: T.panel, borderBottom: `1px solid ${T.border}`, padding: "0.75rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: T.green, boxShadow: `0 0 8px ${T.green}` }} />
-          <div>
-            <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.58rem", letterSpacing: "0.2em", textTransform: "uppercase" }}>
-              Six Sigma Black Belt · Project 02/14
-            </div>
-            <div style={{ color: T.text, fontFamily: T.display, fontSize: "1rem", fontWeight: 700, lineHeight: 1 }}>
-              DMAIC Intelligence Platform
-            </div>
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            {[
-              { label: `${PROJECT.final.ppk}`, sub: "Ppk", color: T.green },
-              { label: `${PROJECT.final.sigma}σ`, sub: "Level", color: T.cyan },
-              { label: `$${(PROJECT.savings / 1000).toFixed(0)}K`, sub: "Saved", color: T.yellow },
-            ].map(k => (
-              <div key={k.sub} style={{ textAlign: "center", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "0.3rem 0.6rem" }}>
-                <div style={{ color: k.color, fontFamily: T.mono, fontSize: "0.82rem", fontWeight: 700 }}>{k.label}</div>
-                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.52rem", textTransform: "uppercase" }}>{k.sub}</div>
+        {/* Header */}
+        <div style={{ background: T.panel, borderBottom: `1px solid ${T.border}`, padding: "0.75rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "1rem", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: T.green, boxShadow: `0 0 8px ${T.green}` }} />
+            <div>
+              <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.58rem", letterSpacing: "0.2em", textTransform: "uppercase" }}>
+                Six Sigma Black Belt · Project 02/14
               </div>
-            ))}
+              <div style={{ color: T.text, fontFamily: T.display, fontSize: "1rem", fontWeight: 700, lineHeight: 1 }}>
+                DMAIC Intelligence Platform
+              </div>
+            </div>
           </div>
-          <button onClick={() => setShowApp(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, borderRadius: 4, color: T.textDim, padding: "0.35rem 0.7rem", fontFamily: T.mono, fontSize: "0.62rem", cursor: "pointer" }}>
-            ← EXIT
-          </button>
+
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+            {/* Company Badge */}
+            <CompanyBadge company={company} onClick={() => setShowCompanySetup(true)} />
+
+            {/* KPI chips — show company data if available, else Pulse Digital */}
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              {company.isPulseDigital ? [
+                { label: `${PROJECT.final.ppk}`, sub: "Ppk", color: T.green },
+                { label: `${PROJECT.final.sigma}σ`, sub: "Level", color: T.cyan },
+                { label: `$${(PROJECT.savings / 1000).toFixed(0)}K`, sub: "Saved", color: T.yellow },
+              ] : [
+                {
+                  label: (() => {
+                    if (company.baselineStdDev <= 0) return "—";
+                    const ppk = Math.min(
+                      (company.usl - company.baselineMean) / (3 * company.baselineStdDev),
+                      (company.baselineMean - company.lsl) / (3 * company.baselineStdDev)
+                    );
+                    return ppk.toFixed(2);
+                  })(),
+                  sub: "Ppk", color: T.yellow,
+                },
+                { label: company.baselineMean + company.processUnit, sub: "Baseline", color: T.red },
+                { label: company.target + company.processUnit, sub: "Target", color: T.green },
+              ].map(k => (
+                <div key={k.sub} style={{ textAlign: "center", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "0.3rem 0.6rem" }}>
+                  <div style={{ color: k.color, fontFamily: T.mono, fontSize: "0.82rem", fontWeight: 700 }}>{k.label}</div>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.52rem", textTransform: "uppercase" }}>{k.sub}</div>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setShowApp(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, borderRadius: 4, color: T.textDim, padding: "0.35rem 0.7rem", fontFamily: T.mono, fontSize: "0.62rem", cursor: "pointer" }}>
+              ← EXIT
+            </button>
+          </div>
         </div>
-      </div>
 
-      <NavBar active={activeTab} setActive={setActiveTab} />
+        <NavBar active={activeTab} setActive={setActiveTab} />
 
-      <main style={{ flex: 1, padding: "2rem 1.5rem", overflowY: "auto" }}>
-        <AnimatePresence mode="wait">
-          <motion.div key={activeTab} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
-            <ActiveView />
-          </motion.div>
-        </AnimatePresence>
-      </main>
+        <main style={{ flex: 1, padding: "2rem 1.5rem", overflowY: "auto" }}>
+          <AnimatePresence mode="wait">
+            <motion.div key={activeTab} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
+              <ActiveView />
+            </motion.div>
+          </AnimatePresence>
+        </main>
 
-      {/* Footer */}
-      <div style={{ borderTop: `1px solid ${T.border}`, padding: "0.5rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, flexWrap: "wrap", gap: "0.5rem" }}>
-        <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>
-          © 2025 Alfin Maulana Yudistira · Six Sigma Black Belt · Technical Support Efficiency Transformation
-        </span>
-        <span style={{ color: "#112233", fontFamily: T.mono, fontSize: "0.58rem" }}>
-          
-        </span>
-      </div>
-
-      {/* Keyboard hints */}
-      <div style={{ background: "#030709", borderTop: `1px solid ${T.border}`, padding: "0.3rem 1.5rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-        {[["1-8","Switch modules"],["ESC","Return to landing"]].map(s => (
-          <span key={s[0]} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
-            <span style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 2, padding: "0.05rem 0.3rem", color: T.textMid, marginRight: "0.3rem" }}>{s[0]}</span>
-            {s[1]}
+        {/* Footer */}
+        <div style={{ borderTop: `1px solid ${T.border}`, padding: "0.5rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, flexWrap: "wrap", gap: "0.5rem" }}>
+          <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>
+            © 2025 Alfin Maulana Yudistira · Six Sigma Black Belt · Technical Support Efficiency Transformation
           </span>
-        ))}
+          <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
+            {company.isPulseDigital ? "Demo Mode: Pulse Digital" : `Company Mode: ${company.name}`}
+          </span>
+        </div>
+
+        {/* Keyboard hints */}
+        <div style={{ background: "#030709", borderTop: `1px solid ${T.border}`, padding: "0.3rem 1.5rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+          {[["1-9","Switch modules"],["ESC","Back / Exit"],["Click badge","Switch company"]].map(s => (
+            <span key={s[0]} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
+              <span style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 2, padding: "0.05rem 0.3rem", color: T.textMid, marginRight: "0.3rem" }}>{s[0]}</span>
+              {s[1]}
+            </span>
+          ))}
+        </div>
+
+        {/* Company Setup Modal */}
+        <CompanySetup
+          company={company}
+          onChange={setCompany}
+          onClose={() => setShowCompanySetup(false)}
+          isOpen={showCompanySetup}
+        />
+
+        <style>{`
+          * { box-sizing: border-box; }
+          body { margin: 0; background: ${T.bg}; color: ${T.text}; }
+          ::-webkit-scrollbar { width: 4px; height: 4px; }
+          ::-webkit-scrollbar-track { background: ${T.bg}; }
+          ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 2px; }
+          input:focus, textarea:focus, select:focus { outline: 1px solid ${T.cyan}44; }
+          button:hover { opacity: 0.85; }
+          select option { background: ${T.surface}; color: ${T.text}; }
+          @media (max-width: 600px) {
+            main { padding: 1.25rem 1rem !important; }
+            nav { padding: 0 0.5rem !important; }
+          }
+          @media print {
+            nav, footer, button { display: none !important; }
+            body { background: #fff !important; color: #000 !important; }
+          }
+        `}</style>
+
+        <Analytics />
+        <SpeedInsights />
       </div>
-
-      <style>{`
-        * { box-sizing: border-box; }
-        body { margin: 0; background: ${T.bg}; color: ${T.text}; }
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
-        ::-webkit-scrollbar-track { background: ${T.bg}; }
-        ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 2px; }
-        input:focus, textarea:focus, select:focus { outline: 1px solid ${T.cyan}44; }
-        button:hover { opacity: 0.85; }
-        @media (max-width: 600px) {
-          main { padding: 1.25rem 1rem !important; }
-          nav { padding: 0 0.5rem !important; }
-        }
-        @media print {
-          nav, footer, button { display: none !important; }
-          body { background: #fff !important; color: #000 !important; }
-        }
-      `}</style>
-
-      <Analytics />
-      <SpeedInsights />
-    </div>
+    </CompanyCtx.Provider>
   );
 }
+
