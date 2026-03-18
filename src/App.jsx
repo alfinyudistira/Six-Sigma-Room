@@ -514,6 +514,176 @@ function SmartTooltip({ id, children }) {
   );
 }
 
+
+// ── Universal localStorage hook ──────────────────────────────────────────────
+function useLocalState(key, initial) {
+  const [val, setVal] = useState(() => {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored !== null ? JSON.parse(stored) : initial;
+    } catch { return initial; }
+  });
+  const set = useCallback((v) => {
+    setVal(v);
+    try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
+  }, [key]);
+  const reset = useCallback(() => {
+    setVal(initial);
+    try { localStorage.removeItem(key); } catch {}
+  }, [key, initial]);
+  return [val, set, reset];
+}
+
+// ── Copy to clipboard ─────────────────────────────────────────────────────────
+function useCopyClipboard() {
+  const [copied, setCopied] = useState(false);
+  const copy = (text) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+  return [copied, copy];
+}
+
+// ── Screenshot/Export utility ─────────────────────────────────────────────────
+function ExportButton({ targetId, filename = "dmaic-export", label = "↓ Export PNG" }) {
+  const [loading, setLoading] = useState(false);
+  const handle = async () => {
+    setLoading(true);
+    try {
+      const el = document.getElementById(targetId);
+      if (!el) return;
+      // Use browser print as fallback since html2canvas not available
+      const printContent = el.innerHTML;
+      const win = window.open("", "_blank");
+      win.document.write(`
+        <html><head><title>${filename}</title>
+        <style>
+          body { background: #050A0F; color: #E2EEF9; font-family: monospace; padding: 2rem; }
+          * { box-sizing: border-box; }
+        </style></head>
+        <body>${printContent}</body></html>
+      `);
+      win.document.close();
+      win.print();
+    } finally { setLoading(false); }
+  };
+  return (
+    <button onClick={handle} disabled={loading} style={{
+      background: "transparent", border: `1px solid ${T.border}`,
+      color: T.textDim, padding: "0.35rem 0.8rem", borderRadius: 4,
+      cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+      transition: "all 0.2s",
+    }}>{loading ? "⏳ Exporting..." : label}</button>
+  );
+}
+
+// ── Copy Report Button ─────────────────────────────────────────────────────────
+function CopyReportButton({ data, label = "⎘ Copy Report" }) {
+  const [copied, copy] = useCopyClipboard();
+  return (
+    <button onClick={() => copy(data)} style={{
+      background: copied ? `${T.green}18` : "transparent",
+      border: `1px solid ${copied ? T.green : T.border}`,
+      color: copied ? T.green : T.textDim,
+      padding: "0.35rem 0.8rem", borderRadius: 4,
+      cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+      transition: "all 0.2s",
+    }}>{copied ? "✓ Copied!" : label}</button>
+  );
+}
+
+// ── Editable Label ────────────────────────────────────────────────────────────
+function EditableLabel({ value, onChange, style: s = {} }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  if (editing) return (
+    <input
+      autoFocus
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={() => { onChange(draft); setEditing(false); }}
+      onKeyDown={e => { if (e.key === "Enter") { onChange(draft); setEditing(false); } if (e.key === "Escape") setEditing(false); }}
+      style={{ background: "transparent", border: `1px solid ${T.cyan}55`, borderRadius: 3, color: T.cyan, fontFamily: T.mono, padding: "0.1rem 0.3rem", fontSize: "inherit", width: "100%", ...s }}
+    />
+  );
+  return (
+    <span onClick={() => { setDraft(value); setEditing(true); }} title="Click to edit"
+      style={{ cursor: "text", borderBottom: `1px dashed ${T.border}`, ...s }}>
+      {value} <span style={{ color: T.textDim, fontSize: "0.7em" }}>✎</span>
+    </span>
+  );
+}
+
+// ── Scenario Badge ────────────────────────────────────────────────────────────
+function ScenarioBadge({ label, color, active, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      background: active ? `${color}18` : T.surface,
+      border: `2px solid ${active ? color : T.border}`,
+      color: active ? color : T.textDim,
+      padding: "0.5rem 1.1rem", borderRadius: 6,
+      cursor: "pointer", fontFamily: T.mono, fontSize: "0.7rem",
+      fontWeight: active ? 700 : 400,
+      letterSpacing: "0.08em", textTransform: "uppercase",
+      transition: "all 0.2s",
+      textShadow: active ? `0 0 10px ${color}66` : "none",
+    }}>{label}</button>
+  );
+}
+
+// ── Delta Pill ────────────────────────────────────────────────────────────────
+function DeltaPill({ a, b, invert = false, fmtFn = v => v }) {
+  if (a === 0 || b === 0) return null;
+  const diff = b - a;
+  const pct = Math.abs(((b - a) / a) * 100).toFixed(1);
+  const better = invert ? diff < 0 : diff > 0;
+  const arrow = diff > 0 ? "↑" : "↓";
+  const color = better ? T.green : T.red;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: "0.2rem",
+      background: `${color}18`, border: `1px solid ${color}44`,
+      borderRadius: 20, padding: "0.15rem 0.5rem",
+      color, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700,
+    }}>
+      {arrow} {pct}%
+    </span>
+  );
+}
+
+// ── Module Toolbar (Export, Copy, Reset, Save indicator) ─────────────────────
+function ModuleToolbar({ onReset, copyData, exportId, saved, children }) {
+  return (
+    <div style={{
+      display: "flex", gap: "0.5rem", alignItems: "center",
+      marginBottom: "1.5rem", flexWrap: "wrap",
+      padding: "0.6rem 0.85rem",
+      background: T.surface, border: `1px solid ${T.border}`,
+      borderRadius: 6,
+    }}>
+      {saved !== undefined && (
+        <span style={{ color: saved ? T.green : T.textDim, fontFamily: T.mono, fontSize: "0.58rem", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: saved ? T.green : T.textDim, display: "inline-block" }} />
+          {saved ? "Auto-saved" : "Not saved"}
+        </span>
+      )}
+      <div style={{ flex: 1 }} />
+      {children}
+      {copyData && <CopyReportButton data={copyData} />}
+      {exportId && <ExportButton targetId={exportId} />}
+      {onReset && (
+        <button onClick={onReset} style={{
+          background: "transparent", border: `1px solid ${T.border}`,
+          color: T.textDim, padding: "0.35rem 0.8rem", borderRadius: 4,
+          cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+        }}>↺ Reset</button>
+      )}
+    </div>
+  );
+}
+
 // Section header
 function SectionHeader({ module, title, sub }) {
   return (
@@ -598,94 +768,321 @@ function NavBar({ active, setActive }) {
 }
 
 // ─── 01: MISSION STATUS (OVERVIEW) ───────────────────────────────────────────
+
+const OVERVIEW_DEFAULTS = {
+  projectName: "Reducing Customer Complaint Resolution Time",
+  dept: "Technical Support Department",
+  duration: "30 Weeks · Feb–Aug 2025",
+  metrics: [
+    { id: "resolution", label: "Avg Resolution Time", before: 72.1, after: 49.2, target: 48, unit: "h", invert: true, description: "End-to-end complaint resolution" },
+    { id: "ppk",        label: "Process Capability Ppk", before: 0.43, after: 1.41, target: 1.33, unit: "", invert: false, description: "Ppk ≥ 1.33 = capable process" },
+    { id: "csat",       label: "CSAT Score", before: 6.8, after: 8.1, target: 8.5, unit: "/10", invert: false, description: "Customer satisfaction score" },
+    { id: "miscat",     label: "Miscategorization Rate", before: 22, after: 6.2, target: 8, unit: "%", invert: true, description: "% of cases incorrectly routed" },
+    { id: "escalation", label: "Escalation Rate", before: 58, after: 28, target: 30, unit: "%", invert: true, description: "% requiring Tier 2/3 escalation" },
+    { id: "sigma",      label: "Sigma Level", before: 1.8, after: 3.4, target: 3.0, unit: "σ", invert: false, description: "Process sigma level" },
+  ],
+  financials: {
+    savings: 300000,
+    copq: 9000000,
+    investment: 180000,
+  },
+};
+
 function Overview() {
-  const metrics = [
-    { label: "Avg Resolution Time", before: PROJECT.baseline.resolution, after: PROJECT.final.resolution, target: PROJECT.target.resolution, unit: "h", invert: true },
-    { label: "Process Capability Ppk", before: PROJECT.baseline.ppk, after: PROJECT.final.ppk, target: PROJECT.target.ppk },
-    { label: "CSAT Score", before: PROJECT.baseline.csat, after: PROJECT.final.csat, target: PROJECT.target.csat },
-    { label: "Miscategorization Rate", before: PROJECT.baseline.miscat, after: PROJECT.final.miscat, target: PROJECT.target.miscat, unit: "%", invert: true },
-    { label: "Escalation Rate", before: PROJECT.baseline.escalation, after: PROJECT.final.escalation, target: PROJECT.target.escalation, unit: "%", invert: true },
-    { label: "Sigma Level", before: PROJECT.baseline.sigma, after: PROJECT.final.sigma, target: PROJECT.target.sigma },
-  ];
+  const [data, setData] = useLocalState("overview_data", OVERVIEW_DEFAULTS);
+  const [editMode, setEditMode] = useState(false);
+  const [activeMetric, setActiveMetric] = useState(null);
+
+  const setMetricVal = (id, field, val) => {
+    setData(prev => ({
+      ...prev,
+      metrics: prev.metrics.map(m => m.id === id ? { ...m, [field]: parseFloat(val) || 0 } : m),
+    }));
+  };
+  const setMetricLabel = (id, val) => {
+    setData(prev => ({ ...prev, metrics: prev.metrics.map(m => m.id === id ? { ...m, label: val } : m) }));
+  };
+  const setFinancial = (key, val) => {
+    setData(prev => ({ ...prev, financials: { ...prev.financials, [key]: parseFloat(val) || 0 } }));
+  };
+
+  const fmt = (n) => n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${(n / 1e3).toFixed(0)}K`;
+  const roi = data.financials.investment > 0
+    ? ((data.financials.savings / data.financials.investment) * 100).toFixed(1)
+    : "0";
 
   const timelineData = [
-    { phase: "Define",   week: 4,  resolution: 72.1, milestone: "Charter approved" },
-    { phase: "Measure",  week: 12, resolution: 72.1, milestone: "547 cases analyzed" },
-    { phase: "Analyze",  week: 17, resolution: 72.1, milestone: "5 root causes validated" },
-    { phase: "Improve",  week: 22, resolution: 58.4, milestone: "Pilot: -19% reduction" },
-    { phase: "Control",  week: 29, resolution: 49.2, milestone: "Ppk = 1.41 achieved" },
+    { phase: "Define",  week: 4,  resolution: data.metrics.find(m=>m.id==="resolution")?.before || 72, milestone: "Charter approved" },
+    { phase: "Measure", week: 12, resolution: data.metrics.find(m=>m.id==="resolution")?.before || 72, milestone: "Data collected" },
+    { phase: "Analyze", week: 17, resolution: data.metrics.find(m=>m.id==="resolution")?.before || 72, milestone: "Root causes validated" },
+    { phase: "Improve", week: 22, resolution: +(((data.metrics.find(m=>m.id==="resolution")?.before||72) + (data.metrics.find(m=>m.id==="resolution")?.after||49)) / 2).toFixed(1), milestone: "Pilot: improvement" },
+    { phase: "Control", week: 29, resolution: data.metrics.find(m=>m.id==="resolution")?.after || 49, milestone: "Gains locked in" },
   ];
+
+  const sigmaMetric = data.metrics.find(m => m.id === "sigma");
+
+  const copyReport = `PROJECT RESULTS REPORT
+${data.projectName}
+${data.dept} · ${data.duration}
+
+KEY METRICS:
+${data.metrics.map(m => {
+  const improved = m.invert ? m.after < m.before : m.after > m.before;
+  const pct = m.before > 0 ? Math.abs(((m.after - m.before) / m.before) * 100).toFixed(1) : 0;
+  return `  ${m.label}: ${m.before}${m.unit} → ${m.after}${m.unit} (${improved ? "↓" : "↑"} ${pct}%) | Target: ${m.target}${m.unit}`;
+}).join('\n')}
+
+FINANCIAL IMPACT:
+  Annual Savings: ${fmt(data.financials.savings)}
+  Total COPQ: ${fmt(data.financials.copq)}
+  Investment: ${fmt(data.financials.investment)}
+  ROI Year 1: ${roi}%`;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1200, margin: "0 auto" }}>
       <SectionHeader
         module="Module 01 — Executive Dashboard"
-        title="Mission Status: Project Complete"
-        sub={`${PROJECT.title} · ${PROJECT.dept} · ${PROJECT.duration}`}
+        title={
+          <EditableLabel
+            value={data.projectName}
+            onChange={v => setData(p => ({ ...p, projectName: v }))}
+            style={{ color: T.text, fontFamily: "'Syne', sans-serif", fontSize: "inherit", fontWeight: 800 }}
+          />
+        }
+        sub={`${data.dept} · ${data.duration}`}
       />
 
-      {/* KPI Row */}
+      {/* Toolbar */}
+      <ModuleToolbar
+        onReset={() => setData(OVERVIEW_DEFAULTS)}
+        copyData={copyReport}
+        saved={true}
+      >
+        <button onClick={() => setEditMode(p => !p)} style={{
+          background: editMode ? `${T.yellow}18` : "transparent",
+          border: `1px solid ${editMode ? T.yellow : T.border}`,
+          color: editMode ? T.yellow : T.textDim,
+          padding: "0.35rem 0.8rem", borderRadius: 4,
+          cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+          transition: "all 0.2s",
+        }}>
+          {editMode ? "✓ Done Editing" : "✎ Edit All Values"}
+        </button>
+      </ModuleToolbar>
+
+      {/* Edit Mode Banner */}
+      {editMode && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          style={{ background: `${T.yellow}0C`, border: `1px solid ${T.yellow}44`, borderRadius: 8, padding: "0.85rem 1.25rem", marginBottom: "1.5rem", fontFamily: T.mono, fontSize: "0.72rem", color: T.yellow }}>
+          ✎ Edit Mode ON — click any metric value to edit. Input your own before/after data.
+        </motion.div>
+      )}
+
+      {/* KPI Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: "1rem", marginBottom: "2rem" }}>
-        {metrics.map(m => <MetricCard key={m.label} {...m} />)}
+        {data.metrics.map(m => {
+          const improved = m.invert ? m.after < m.before : m.after > m.before;
+          const onTarget = m.invert ? m.after <= m.target : m.after >= m.target;
+          const pct = m.before > 0 ? Math.abs(((m.after - m.before) / m.before) * 100).toFixed(1) : 0;
+          const arrow = m.invert ? (m.after < m.before ? "↓" : "↑") : (m.after > m.before ? "↑" : "↓");
+          const arrowColor = improved ? T.green : T.red;
+          const isActive = activeMetric === m.id;
+
+          return (
+            <motion.div key={m.id} whileHover={{ scale: 1.02 }}
+              onClick={() => setActiveMetric(isActive ? null : m.id)}
+              style={{
+                background: T.surface,
+                border: `1px solid ${isActive ? T.cyan : (onTarget ? T.green + "44" : T.border)}`,
+                borderRadius: 8, padding: "1.25rem",
+                position: "relative", overflow: "hidden", cursor: "pointer",
+                transition: "border-color 0.2s",
+              }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: onTarget ? T.green : T.yellow, opacity: 0.8 }} />
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
+                {editMode ? (
+                  <EditableLabel value={m.label} onChange={v => setMetricLabel(m.id, v)}
+                    style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", letterSpacing: "0.1em", textTransform: "uppercase" }} />
+                ) : (
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", letterSpacing: "0.1em", textTransform: "uppercase" }}>{m.label}</div>
+                )}
+                <Badge label={onTarget ? "TARGET MET ✓" : "IN PROGRESS"} color={onTarget ? T.green : T.yellow} />
+              </div>
+
+              <div style={{ display: "flex", alignItems: "flex-end", gap: "0.75rem", marginBottom: "0.5rem" }}>
+                {editMode ? (
+                  <>
+                    <input type="number" value={m.before} onChange={e => setMetricVal(m.id, "before", e.target.value)}
+                      style={{ width: 65, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.textDim, fontFamily: T.mono, fontSize: "0.9rem", padding: "0.2rem 0.3rem", textDecoration: "line-through" }} />
+                    <span style={{ color: T.textDim, fontFamily: T.mono }}>→</span>
+                    <input type="number" value={m.after} onChange={e => setMetricVal(m.id, "after", e.target.value)}
+                      style={{ width: 65, background: T.panel, border: `1px solid ${T.cyan}55`, borderRadius: 3, color: T.text, fontFamily: T.mono, fontSize: "1.3rem", fontWeight: 700, padding: "0.2rem 0.3rem" }} />
+                  </>
+                ) : (
+                  <>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "1rem", textDecoration: "line-through" }}>{m.before}{m.unit}</div>
+                    <div style={{ color: T.text, fontFamily: T.mono, fontSize: "1.6rem", fontWeight: 700, lineHeight: 1 }}>{m.after}{m.unit}</div>
+                  </>
+                )}
+                <div style={{ color: arrowColor, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700, paddingBottom: "0.2rem" }}>{arrow} {pct}%</div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ height: 4, background: T.panel, borderRadius: 2, overflow: "hidden", flex: 1, marginRight: "0.75rem" }}>
+                  <motion.div
+                    animate={{ width: `${Math.min((m.invert ? (m.before - m.after) / (m.before - m.target) : (m.after - m.before) / (m.target - m.before)) * 100, 100)}%` }}
+                    transition={{ duration: 0.6 }}
+                    style={{ height: "100%", background: onTarget ? T.green : T.yellow, borderRadius: 2 }}
+                  />
+                </div>
+                {editMode ? (
+                  <input type="number" value={m.target} onChange={e => setMetricVal(m.id, "target", e.target.value)}
+                    style={{ width: 65, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", padding: "0.15rem 0.25rem" }} />
+                ) : (
+                  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>TARGET: {m.target}{m.unit}</span>
+                )}
+              </div>
+
+              {/* Expanded detail */}
+              <AnimatePresence>
+                {isActive && !editMode && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                    style={{ marginTop: "0.85rem", paddingTop: "0.85rem", borderTop: `1px solid ${T.border}` }}>
+                    <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.68rem", lineHeight: 1.6 }}>{m.description}</div>
+                    <div style={{ display: "flex", gap: "1rem", marginTop: "0.5rem" }}>
+                      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>
+                        Gap closed: <span style={{ color: T.cyan }}>{Math.abs(m.after - m.before).toFixed(1)}{m.unit}</span>
+                      </div>
+                      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>
+                        Remaining: <span style={{ color: onTarget ? T.green : T.yellow }}>
+                          {onTarget ? "0 (done)" : Math.abs(m.after - m.target).toFixed(1) + m.unit}
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          );
+        })}
       </div>
 
-      {/* Financial Impact */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: "1rem", marginBottom: "2rem" }}>
+      {/* Financial Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "1rem", marginBottom: "2rem" }}>
         {[
-          { label: "Annual Savings Realized", val: PROJECT.savings, color: T.green, prefix: "$" },
-          { label: "Total COPQ Identified", val: PROJECT.copq, color: T.red, prefix: "$" },
-          { label: "Total Investment", val: PROJECT.investment, color: T.cyan, prefix: "$" },
-          { label: "ROI Year 1", val: 66.7, color: T.yellow, suffix: "%" },
+          { key: "savings",    label: "Annual Savings Realized", color: T.green, prefix: "$" },
+          { key: "copq",       label: "Total COPQ Identified",   color: T.red,   prefix: "$" },
+          { key: "investment", label: "Total Investment",         color: T.cyan,  prefix: "$" },
+          { label: "ROI Year 1", color: T.yellow, val: roi + "%" },
         ].map(k => (
-          <div key={k.label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", textAlign: "center", position: "relative", overflow: "hidden" }}>
+          <motion.div key={k.label} whileHover={{ scale: 1.02 }}
+            style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", textAlign: "center", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 0%, ${k.color}08 0%, transparent 70%)` }} />
             <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.75rem" }}>{k.label}</div>
-            <div style={{ fontFamily: T.display, fontSize: "2rem", fontWeight: 800, color: k.color, textShadow: `0 0 20px ${k.color}66` }}>
-              {k.prefix && k.prefix}
-              <Counter value={k.val} decimals={k.label.includes("ROI") ? 1 : 0} color={k.color} />
-              {k.suffix && k.suffix}
-            </div>
-          </div>
+            {editMode && k.key ? (
+              <input type="number" value={data.financials[k.key]}
+                onChange={e => setFinancial(k.key, e.target.value)}
+                style={{ width: "100%", background: T.panel, border: `1px solid ${k.color}44`, borderRadius: 4, color: k.color, fontFamily: T.display, fontSize: "1.6rem", fontWeight: 800, textAlign: "center", padding: "0.25rem", boxSizing: "border-box" }} />
+            ) : (
+              <div style={{ fontFamily: T.display, fontSize: "2rem", fontWeight: 800, color: k.color, textShadow: `0 0 20px ${k.color}66` }}>
+                {k.val || fmt(data.financials[k.key])}
+              </div>
+            )}
+          </motion.div>
         ))}
       </div>
 
-      {/* Project Timeline */}
+      {/* Timeline */}
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "2rem" }}>
         <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "1.25rem" }}>
-          [ DMAIC TIMELINE — RESOLUTION TIME TRAJECTORY ]
+          [ DMAIC TIMELINE — RESOLUTION TRAJECTORY ]
         </div>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={timelineData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="2 4" stroke={T.border} vertical={false} />
             <XAxis dataKey="phase" tick={{ fill: T.textDim, fontSize: 11, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-            <YAxis domain={[40, 80]} tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, borderRadius: 6, fontFamily: T.mono, fontSize: "0.75rem", color: T.text }} />
-            <ReferenceLine y={48} stroke={T.green} strokeDasharray="4 4" label={{ value: "TARGET 48h", fill: T.green, fontSize: 10, fontFamily: T.mono }} />
-            <Line type="monotone" dataKey="resolution" stroke={T.cyan} strokeWidth={2} dot={{ fill: T.cyan, r: 5, strokeWidth: 0 }} activeDot={{ r: 7, fill: T.cyan, boxShadow: `0 0 12px ${T.cyan}` }} />
+            <YAxis domain={[
+              Math.max(0, (data.metrics.find(m=>m.id==="resolution")?.after || 40) - 10),
+              (data.metrics.find(m=>m.id==="resolution")?.before || 80) + 5
+            ]} tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+            <Tooltip
+              contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, borderRadius: 6, fontFamily: T.mono, fontSize: "0.75rem", color: T.text }}
+              formatter={(v) => [`${v}h`, "Resolution Time"]}
+              labelFormatter={(l, p) => p?.[0] ? `${l} · ${p[0].payload.milestone}` : l}
+            />
+            <ReferenceLine y={data.metrics.find(m=>m.id==="resolution")?.target || 48} stroke={T.green} strokeDasharray="4 4"
+              label={{ value: `TARGET ${data.metrics.find(m=>m.id==="resolution")?.target || 48}h`, fill: T.green, fontSize: 10, fontFamily: T.mono }} />
+            <Line type="monotone" dataKey="resolution" stroke={T.cyan} strokeWidth={2.5}
+              dot={{ fill: T.cyan, r: 6, strokeWidth: 0 }}
+              activeDot={{ r: 8, fill: T.cyan, style: { filter: `drop-shadow(0 0 8px ${T.cyan})` } }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
 
-      {/* SIGMA improvement visual */}
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2rem", textAlign: "center" }}>
-        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "1.5rem" }}>
-          [ SIGMA LEVEL PROGRESSION ]
+      {/* Sigma + Scores visual */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "1.5rem" }}>
+        {/* Sigma progression */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2rem", textAlign: "center" }}>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "1.5rem" }}>
+            [ SIGMA PROGRESSION ]
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "2rem", flexWrap: "wrap" }}>
+            <div>
+              <div style={{ color: T.red, fontFamily: T.display, fontSize: "3.5rem", fontWeight: 800, lineHeight: 1, textShadow: `0 0 30px ${T.red}66` }}>
+                {sigmaMetric?.before || 1.8}σ
+              </div>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.7rem", marginTop: "0.4rem" }}>BASELINE</div>
+            </div>
+            <div style={{ color: T.textDim, fontFamily: T.display, fontSize: "2rem" }}>→</div>
+            <div>
+              <div style={{ color: T.green, fontFamily: T.display, fontSize: "3.5rem", fontWeight: 800, lineHeight: 1, textShadow: `0 0 30px ${T.green}66` }}>
+                {sigmaMetric?.after || 3.4}σ
+              </div>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.7rem", marginTop: "0.4rem" }}>ACHIEVED</div>
+            </div>
+          </div>
+          {/* Mini sigma progress bars */}
+          <div style={{ marginTop: "1.5rem" }}>
+            {[
+              { label: "Baseline", val: (sigmaMetric?.before || 1.8) / 6 * 100, color: T.red, sigma: sigmaMetric?.before || 1.8 },
+              { label: "Current", val: (sigmaMetric?.after || 3.4) / 6 * 100, color: T.green, sigma: sigmaMetric?.after || 3.4 },
+              { label: "Six Sigma Goal", val: 100, color: T.textDim, sigma: 6 },
+            ].map(s => (
+              <div key={s.label} style={{ marginBottom: "0.6rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
+                  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>{s.label}</span>
+                  <span style={{ color: s.color, fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700 }}>{s.sigma}σ</span>
+                </div>
+                <div style={{ height: 6, background: T.panel, borderRadius: 3, overflow: "hidden" }}>
+                  <motion.div animate={{ width: `${s.val}%` }} transition={{ duration: 0.8 }}
+                    style={{ height: "100%", background: s.color, borderRadius: 3, opacity: s.label === "Six Sigma Goal" ? 0.3 : 1 }} />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "3rem", flexWrap: "wrap" }}>
-          <div>
-            <div style={{ color: T.red, fontFamily: T.display, fontSize: "4rem", fontWeight: 800, lineHeight: 1, textShadow: `0 0 30px ${T.red}66` }}>1.8σ</div>
-            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.7rem", marginTop: "0.4rem" }}>BASELINE</div>
-            <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.75rem" }}>382,000 DPMO</div>
+
+        {/* Radar — all metrics */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "1rem" }}>
+            [ BEFORE vs AFTER — ALL METRICS ]
           </div>
-          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "2rem" }}>→</div>
-          <div>
-            <div style={{ color: T.green, fontFamily: T.display, fontSize: "4rem", fontWeight: 800, lineHeight: 1, textShadow: `0 0 30px ${T.green}66` }}>3.4σ</div>
-            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.7rem", marginTop: "0.4rem" }}>ACHIEVED</div>
-            <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.75rem" }}>1,350 DPMO</div>
-          </div>
-          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.8rem", maxWidth: 200, lineHeight: 1.6 }}>
-            <span style={{ color: T.cyan }}>282x</span> reduction in defects per million opportunities
-          </div>
+          <ResponsiveContainer width="100%" height={250}>
+            <RadarChart data={data.metrics.map(m => ({
+              metric: m.label.split(" ").slice(0,2).join(" "),
+              Before: Math.round((m.invert ? (1 - m.before / (m.before * 1.2)) : m.before / (m.target * 1.5)) * 100),
+              After: Math.round((m.invert ? (1 - m.after / (m.before * 1.2)) : m.after / (m.target * 1.5)) * 100),
+            }))} margin={{ top: 10, right: 30, left: 30, bottom: 10 }}>
+              <PolarGrid stroke={T.border} />
+              <PolarAngleAxis dataKey="metric" tick={{ fill: T.textDim, fontSize: 9, fontFamily: T.mono }} />
+              <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+              <Radar name="Before" dataKey="Before" stroke={T.red} fill={T.red} fillOpacity={0.15} strokeWidth={2} />
+              <Radar name="After" dataKey="After" stroke={T.green} fill={T.green} fillOpacity={0.2} strokeWidth={2} />
+              <Legend formatter={v => <span style={{ color: v === "Before" ? T.red : T.green, fontFamily: T.mono, fontSize: "0.62rem" }}>{v}</span>} />
+              <Tooltip contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: "0.72rem", color: T.text }} formatter={v => [`${v} pts`, ""]} />
+            </RadarChart>
+          </ResponsiveContainer>
         </div>
       </div>
     </motion.div>
@@ -694,456 +1091,1420 @@ function Overview() {
 
 // ─── 02: SIGMA CALCULATOR ────────────────────────────────────────────────────
 function SigmaCalculator() {
-  const [mode, setMode] = useState("dpmo"); // dpmo | yield | ppk
-  const [defects, setDefects] = useState(382000);
-  const [opportunities, setOpportunities] = useState(1000000);
-  const [yieldPct, setYieldPct] = useState(61.8);
-  const [mean, setMean] = useState(72.1);
-  const [stdDev, setStdDev] = useState(17.4);
-  const [usl, setUsl] = useState(96);
-  const [lsl, setLsl] = useState(0);
+  const [mode, setMode] = useLocalState("sigma_mode", "dpmo");
+  const [defects, setDefects] = useLocalState("sigma_defects", 382000);
+  const [opportunities, setOpportunities] = useLocalState("sigma_opps", 1000000);
+  const [yieldPct, setYieldPct] = useLocalState("sigma_yield", 61.8);
+  const [mean, setMean] = useLocalState("sigma_mean", 72.1);
+  const [stdDev, setStdDev] = useLocalState("sigma_std", 17.4);
+  const [usl, setUsl] = useLocalState("sigma_usl", 96);
+  const [lsl, setLsl] = useLocalState("sigma_lsl", 0);
+  const [history, setHistory] = useLocalState("sigma_history", []);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showDistribution, setShowDistribution] = useState(true);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareB, setCompareB] = useLocalState("sigma_compareB", { defects: 1350, opportunities: 1000000 });
 
-  const dpmo = mode === "dpmo" ? Math.round((defects / opportunities) * 1e6)
-    : mode === "yield" ? Math.round((1 - yieldPct / 100) * 1e6)
-    : Math.round(sigmaToDpmo(calcPpk(mean, stdDev, usl, lsl) * 3));
+  const calcAll = (d, o, y, m, s, u, l, md) => {
+    let dpmoVal;
+    if (md === "dpmo") dpmoVal = Math.round((d / Math.max(o, 1)) * 1e6);
+    else if (md === "yield") dpmoVal = Math.round((1 - y / 100) * 1e6);
+    else dpmoVal = Math.round(sigmaToDpmo(calcPpk(m, s, u, l) * 3));
+    dpmoVal = Math.max(dpmoVal, 0);
+    const sig = dpmoToSigma(Math.max(dpmoVal, 3.4));
+    const pk = md === "ppk" ? calcPpk(m, s, u, l) : +(sig / 3).toFixed(3);
+    const yld = +((1 - dpmoVal / 1e6) * 100).toFixed(4);
+    return { dpmo: dpmoVal, sigma: sig, ppk: pk, yield: yld };
+  };
 
-  const sigma = dpmoToSigma(Math.max(dpmo, 3.4));
-  const ppk = mode === "ppk" ? calcPpk(mean, stdDev, usl, lsl) : +(sigma / 3).toFixed(3);
-  const yld = +((1 - dpmo / 1e6) * 100).toFixed(2);
-  const sc = sigmaColor(sigma);
-  const ps = ppkStatus(ppk);
+  const res = calcAll(defects, opportunities, yieldPct, mean, stdDev, usl, lsl, mode);
+  const resB = calcAll(compareB.defects, compareB.opportunities, 50, 72, 17, 96, 0, "dpmo");
+  const sc = sigmaColor(res.sigma);
+  const ps = ppkStatus(res.ppk);
 
-  const gaugeAngle = Math.min((sigma / 6) * 180, 180);
+  // Save to history
+  const saveSnapshot = () => {
+    const snap = { ...res, mode, timestamp: new Date().toLocaleTimeString(), label: `${res.sigma}σ` };
+    setHistory(prev => [snap, ...prev].slice(0, 10));
+  };
 
-  // Gauge SVG
-  const GaugeArc = ({ sigma }) => {
+  // Normal distribution curve data
+  const distData = Array.from({ length: 61 }, (_, i) => {
+    const x = (i - 30) / 5;
+    const y = Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+    const sigmaX = mode === "ppk" ? mean + x * stdDev : x * (res.sigma > 0 ? 1 : 1);
+    const inSpec = mode === "ppk" ? (sigmaX <= usl && sigmaX >= lsl) : Math.abs(x) <= res.sigma / 3;
+    return { x: x.toFixed(2), y: +y.toFixed(4), inSpec, sigmaX: +sigmaX.toFixed(1) };
+  });
+
+  // Benchmark comparison data
+  const benchmarkData = [
+    { industry: "Healthcare", sigma: 3.5, dpmo: 22750 },
+    { industry: "Airlines (safety)", sigma: 6.0, dpmo: 3.4 },
+    { industry: "Retail Banking", sigma: 3.0, dpmo: 66807 },
+    { industry: "Your Process", sigma: res.sigma, dpmo: res.dpmo, highlight: true },
+    { industry: "Project Target", sigma: 3.4, dpmo: 1350 },
+    { industry: "Six Sigma Goal", sigma: 6.0, dpmo: 3.4 },
+    { industry: "World Class Mfg", sigma: 5.7, dpmo: 19 },
+  ].sort((a, b) => a.sigma - b.sigma);
+
+  const PRESETS = [
+    { label: "Project Baseline", dpmo: 382000, mode: "dpmo" },
+    { label: "Project Final", dpmo: 1350, mode: "dpmo" },
+    { label: "3σ Standard", dpmo: 66807, mode: "dpmo" },
+    { label: "4σ Target", dpmo: 6210, mode: "dpmo" },
+    { label: "5σ World Class", dpmo: 233, mode: "dpmo" },
+    { label: "6σ Ideal", dpmo: 3, mode: "dpmo" },
+  ];
+
+  const copyReport = `SIGMA LEVEL ANALYSIS
+Mode: ${mode.toUpperCase()} | ${new Date().toLocaleDateString()}
+
+Results:
+  Sigma Level: ${res.sigma}σ (${ps.label})
+  DPMO: ${res.dpmo.toLocaleString()}
+  Process Yield: ${res.yield}%
+  Ppk Index: ${res.ppk}
+
+${compareMode ? `Comparison (Baseline):
+  Sigma: ${resB.sigma}σ
+  DPMO: ${resB.dpmo.toLocaleString()}
+  Improvement: ${(res.sigma - resB.sigma).toFixed(2)}σ | ${Math.round(((resB.dpmo - res.dpmo)/resB.dpmo)*100)}% defect reduction` : ""}`;
+
+  // Big animated gauge
+  const BigGauge = ({ sigma, color }) => {
     const angle = Math.min((sigma / 6) * 180, 180);
-    const r = 80, cx = 100, cy = 100;
+    const r = 90, cx = 110, cy = 110;
     const toRad = (deg) => (deg - 180) * (Math.PI / 180);
     const x = cx + r * Math.cos(toRad(angle));
     const y = cy + r * Math.sin(toRad(angle));
-    const colors = ["#FF3B5C", "#FF8C00", "#FFD60A", "#00D4FF", "#00FF9C", "#00FF9C"];
+    const zones = [
+      { start: 0, end: 30, color: T.red, label: "1σ" },
+      { start: 30, end: 60, color: T.orange, label: "2σ" },
+      { start: 60, end: 90, color: T.yellow, label: "3σ" },
+      { start: 90, end: 120, color: T.cyan, label: "4σ" },
+      { start: 120, end: 150, color: "#7EB5FF", label: "5σ" },
+      { start: 150, end: 180, color: T.green, label: "6σ" },
+    ];
     return (
-      <svg width="200" height="110" viewBox="0 0 200 110">
-        {colors.map((c, i) => {
-          const startAngle = i * 30 - 180;
-          const endAngle = (i + 1) * 30 - 180;
-          const r2 = toRad(startAngle + 180), r3 = toRad(endAngle + 180);
-          const x1 = cx + r * Math.cos(r2), y1 = cy + r * Math.sin(r2);
-          const x2 = cx + r * Math.cos(r3), y2 = cy + r * Math.sin(r3);
-          return <path key={i} d={`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2} Z`} fill={`${c}33`} stroke={c} strokeWidth="0.5" />;
+      <svg width="220" height="125" viewBox="0 0 220 125">
+        {/* Outer ring */}
+        <path d={`M ${cx - r - 8} ${cy} A ${r + 8} ${r + 8} 0 0 1 ${cx + r + 8} ${cy}`}
+          fill="none" stroke={T.border} strokeWidth="2" />
+        {/* Colored zones */}
+        {zones.map((z, i) => {
+          const s1 = toRad(z.start), s2 = toRad(z.end);
+          const x1 = cx + r * Math.cos(s1), y1 = cy + r * Math.sin(s1);
+          const x2 = cx + r * Math.cos(s2), y2 = cy + r * Math.sin(s2);
+          const ri = r - 12;
+          const xi1 = cx + ri * Math.cos(s1), yi1 = cy + ri * Math.sin(s1);
+          const xi2 = cx + ri * Math.cos(s2), yi2 = cy + ri * Math.sin(s2);
+          return (
+            <g key={i}>
+              <path d={`M ${xi1} ${yi1} A ${ri} ${ri} 0 0 1 ${xi2} ${yi2} L ${x2} ${y2} A ${r} ${r} 0 0 0 ${x1} ${y1} Z`}
+                fill={`${z.color}33`} stroke={z.color} strokeWidth="0.5" />
+              <text x={cx + (r + 14) * Math.cos(toRad((z.start + z.end) / 2))}
+                y={cy + (r + 14) * Math.sin(toRad((z.start + z.end) / 2))}
+                fill={T.textDim} fontSize="8" fontFamily={T.mono} textAnchor="middle" dominantBaseline="middle">
+                {z.label}
+              </text>
+            </g>
+          );
         })}
-        <line x1={cx} y1={cy} x2={x} y2={y} stroke={sc} strokeWidth="3" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 6px ${sc})` }} />
-        <circle cx={cx} cy={cy} r={5} fill={sc} style={{ filter: `drop-shadow(0 0 4px ${sc})` }} />
-        {[0,1,2,3,4,5,6].map(i => {
+        {/* Needle */}
+        <line x1={cx} y1={cy} x2={x} y2={y} stroke={color} strokeWidth="3.5" strokeLinecap="round"
+          style={{ filter: `drop-shadow(0 0 8px ${color})` }} />
+        {/* Center dot */}
+        <circle cx={cx} cy={cy} r={7} fill={color} style={{ filter: `drop-shadow(0 0 6px ${color})` }} />
+        <circle cx={cx} cy={cy} r={3} fill={T.bg} />
+        {/* Tick marks */}
+        {[0, 1, 2, 3, 4, 5, 6].map(i => {
           const a = toRad(i * 30);
-          return <text key={i} x={cx + (r + 14) * Math.cos(a)} y={cy + (r + 14) * Math.sin(a)} fill={T.textDim} fontSize="9" fontFamily={T.mono} textAnchor="middle" dominantBaseline="middle">{i}σ</text>;
+          const x1t = cx + (r - 16) * Math.cos(a), y1t = cy + (r - 16) * Math.sin(a);
+          const x2t = cx + (r - 8) * Math.cos(a), y2t = cy + (r - 8) * Math.sin(a);
+          return <line key={i} x1={x1t} y1={y1t} x2={x2t} y2={y2t} stroke={T.textDim} strokeWidth="1.5" />;
         })}
       </svg>
     );
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1100, margin: "0 auto" }}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1200, margin: "0 auto" }}>
       <SectionHeader
         module="Module 02 — Process Capability"
         title="Sigma Level Calculator"
-        sub="Convert between DPMO, yield percentage, and process capability indices. Real data from Project 02 pre-loaded."
+        sub="Convert between DPMO, yield, and capability indices. Distribution visualizer, benchmarks, and multi-sigma comparison."
       />
 
-      {/* Mode Tabs */}
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "2rem" }}>
-        {[
-          { id: "dpmo", label: "From DPMO" },
-          { id: "yield", label: "From Yield %" },
-          { id: "ppk", label: "From Ppk / Stats" },
-        ].map(m => (
-          <button key={m.id} onClick={() => setMode(m.id)} style={{
-            background: mode === m.id ? `${T.cyan}18` : T.surface,
-            border: `1px solid ${mode === m.id ? T.cyan : T.border}`,
-            color: mode === m.id ? T.cyan : T.textDim,
-            padding: "0.6rem 1.25rem", borderRadius: 4, cursor: "pointer",
-            fontFamily: T.mono, fontSize: "0.72rem", letterSpacing: "0.08em", textTransform: "uppercase",
+      {/* Toolbar */}
+      <ModuleToolbar
+        onReset={() => { setDefects(382000); setOpportunities(1000000); setYieldPct(61.8); setMean(72.1); setStdDev(17.4); setUsl(96); setLsl(0); setMode("dpmo"); }}
+        copyData={copyReport}
+        saved={true}
+      >
+        <button onClick={() => setCompareMode(p => !p)} style={{
+          background: compareMode ? `${T.yellow}18` : "transparent",
+          border: `1px solid ${compareMode ? T.yellow : T.border}`,
+          color: compareMode ? T.yellow : T.textDim,
+          padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+        }}>⇄ Compare A vs B</button>
+        <button onClick={() => setShowDistribution(p => !p)} style={{
+          background: showDistribution ? `${T.cyan}15` : "transparent",
+          border: `1px solid ${showDistribution ? T.cyan : T.border}`,
+          color: showDistribution ? T.cyan : T.textDim,
+          padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+        }}>~ Distribution</button>
+        <button onClick={() => setShowHistory(p => !p)} style={{
+          background: showHistory ? `${T.green}15` : "transparent",
+          border: `1px solid ${showHistory ? T.green : T.border}`,
+          color: showHistory ? T.green : T.textDim,
+          padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+        }}>⏱ History ({history.length})</button>
+        <button onClick={saveSnapshot} style={{
+          background: `${T.cyan}18`, border: `1px solid ${T.cyan}`,
+          color: T.cyan, padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+        }}>+ Save Snapshot</button>
+      </ModuleToolbar>
+
+      {/* Preset quick buttons */}
+      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
+        <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", alignSelf: "center" }}>PRESETS:</span>
+        {PRESETS.map(p => (
+          <button key={p.label} onClick={() => {
+            setMode(p.mode);
+            if (p.mode === "dpmo") { setDefects(p.dpmo); setOpportunities(1000000); }
+          }} style={{
+            background: res.dpmo === p.dpmo && mode === "dpmo" ? `${T.cyan}18` : T.panel,
+            border: `1px solid ${res.dpmo === p.dpmo && mode === "dpmo" ? T.cyan : T.border}`,
+            color: res.dpmo === p.dpmo && mode === "dpmo" ? T.cyan : T.textDim,
+            padding: "0.3rem 0.7rem", borderRadius: 20, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
             transition: "all 0.2s",
-          }}>{m.label}</button>
+          }}>{p.label}</button>
         ))}
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem" }}>
-        {/* Inputs */}
-        <div style={{ flex: "1 1 350px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
-          <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "1.5rem" }}>[ INPUT PARAMETERS ]</div>
-
-          {mode === "dpmo" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+        {/* Input Panel */}
+        <div style={{ flex: "1 1 320px", display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {/* Mode selector */}
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem" }}>
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.85rem" }}>Input Mode</div>
+            <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "1.25rem" }}>
               {[
-                { label: "Total Defects", val: defects, set: setDefects, min: 0, max: 1000000, step: 1000 },
-                { label: "Total Opportunities", val: opportunities, set: setOpportunities, min: 1000, max: 10000000, step: 10000 },
-              ].map(f => (
-                <div key={f.label}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
-                    <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.72rem" }}>{f.label}</span>
-                    <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}>{f.val.toLocaleString()}</span>
-                  </div>
-                  <input type="range" min={f.min} max={f.max} step={f.step} value={f.val} onChange={e => f.set(+e.target.value)}
-                    style={{ width: "100%", accentColor: T.cyan, cursor: "pointer" }} />
-                </div>
+                { id: "dpmo", label: "DPMO", desc: "Defects per million" },
+                { id: "yield", label: "Yield %", desc: "Process success rate" },
+                { id: "ppk", label: "Ppk / Stats", desc: "Statistical params" },
+              ].map(m => (
+                <button key={m.id} onClick={() => setMode(m.id)} style={{
+                  flex: "1 1 80px",
+                  background: mode === m.id ? `${T.cyan}18` : T.panel,
+                  border: `2px solid ${mode === m.id ? T.cyan : T.border}`,
+                  color: mode === m.id ? T.cyan : T.textDim,
+                  padding: "0.65rem 0.5rem", borderRadius: 6, cursor: "pointer",
+                  fontFamily: T.mono, textAlign: "center", transition: "all 0.2s",
+                }}>
+                  <div style={{ fontSize: "0.72rem", fontWeight: mode === m.id ? 700 : 400, letterSpacing: "0.05em" }}>{m.label}</div>
+                  <div style={{ fontSize: "0.55rem", opacity: 0.6, marginTop: "0.15rem" }}>{m.desc}</div>
+                </button>
               ))}
             </div>
-          )}
 
-          {mode === "yield" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
-                <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.72rem" }}>Process Yield (%)</span>
-                <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}>{yieldPct}%</span>
+            {/* Inputs with both slider + number input */}
+            {mode === "dpmo" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                {[
+                  { label: "Total Defects", val: defects, set: setDefects, min: 0, max: 1000000, step: 100, fmtV: v => v.toLocaleString() },
+                  { label: "Total Opportunities", val: opportunities, set: setOpportunities, min: 1000, max: 10000000, step: 10000, fmtV: v => v.toLocaleString() },
+                ].map(f => (
+                  <div key={f.label}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.35rem", alignItems: "center" }}>
+                      <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.7rem" }}>{f.label}</span>
+                      <input type="number" value={f.val} onChange={e => f.set(Math.max(0, +e.target.value))}
+                        style={{ width: 100, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.cyan, fontFamily: T.mono, fontSize: "0.8rem", padding: "0.2rem 0.35rem", textAlign: "right", fontWeight: 700 }} />
+                    </div>
+                    <input type="range" min={f.min} max={f.max} step={f.step} value={f.val} onChange={e => f.set(+e.target.value)}
+                      style={{ width: "100%", accentColor: T.cyan, cursor: "pointer" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.15rem" }}>
+                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>{f.min.toLocaleString()}</span>
+                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>{f.max.toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
+                <div style={{ background: T.panel, borderRadius: 6, padding: "0.75rem", textAlign: "center" }}>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>Calculated DPMO</div>
+                  <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "1.25rem", fontWeight: 700 }}>
+                    {Math.round((defects / Math.max(opportunities, 1)) * 1e6).toLocaleString()}
+                  </div>
+                </div>
               </div>
-              <input type="range" min={50} max={99.9997} step={0.01} value={yieldPct} onChange={e => setYieldPct(+e.target.value)}
-                style={{ width: "100%", accentColor: T.cyan, cursor: "pointer" }} />
-            </div>
-          )}
+            )}
 
-          {mode === "ppk" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-              {[
-                { label: "Process Mean (hrs)", val: mean, set: setMean, min: 1, max: 200, step: 0.1 },
-                { label: "Std Deviation σ (hrs)", val: stdDev, set: setStdDev, min: 0.1, max: 50, step: 0.1 },
-                { label: "Upper Spec Limit", val: usl, set: setUsl, min: 10, max: 300, step: 1 },
-                { label: "Lower Spec Limit", val: lsl, set: setLsl, min: 0, max: 50, step: 1 },
-              ].map(f => (
-                <div key={f.label}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
-                    <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.72rem" }}>{f.label}</span>
-                    <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}>{f.val}</span>
+            {mode === "yield" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.35rem", alignItems: "center" }}>
+                  <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.7rem" }}>Process Yield (%)</span>
+                  <input type="number" value={yieldPct} step={0.01} min={0} max={100} onChange={e => setYieldPct(Math.min(100, Math.max(0, +e.target.value)))}
+                    style={{ width: 80, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.cyan, fontFamily: T.mono, fontSize: "0.8rem", padding: "0.2rem 0.35rem", textAlign: "right", fontWeight: 700 }} />
+                </div>
+                <input type="range" min={30} max={99.9997} step={0.01} value={yieldPct} onChange={e => setYieldPct(+e.target.value)}
+                  style={{ width: "100%", accentColor: T.cyan, cursor: "pointer" }} />
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  {[50, 69, 93.3, 99.4, 99.98, 99.9997].map((v, i) => (
+                    <button key={v} onClick={() => setYieldPct(v)} style={{ background: "transparent", border: "none", color: T.textDim, cursor: "pointer", fontFamily: T.mono, fontSize: "0.55rem", padding: "0.2rem" }}>{i+1}σ</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {mode === "ppk" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                {[
+                  { label: "Process Mean", val: mean, set: setMean, min: 0, max: 200, step: 0.1 },
+                  { label: "Std Deviation (σ)", val: stdDev, set: setStdDev, min: 0.1, max: 50, step: 0.1 },
+                  { label: "Upper Spec Limit (USL)", val: usl, set: setUsl, min: 1, max: 300, step: 1 },
+                  { label: "Lower Spec Limit (LSL)", val: lsl, set: setLsl, min: 0, max: 200, step: 1 },
+                ].map(f => (
+                  <div key={f.label}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.35rem", alignItems: "center" }}>
+                      <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.68rem" }}>{f.label}</span>
+                      <input type="number" value={f.val} step={f.step} onChange={e => f.set(+e.target.value)}
+                        style={{ width: 75, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.cyan, fontFamily: T.mono, fontSize: "0.8rem", padding: "0.2rem 0.35rem", textAlign: "right", fontWeight: 700 }} />
+                    </div>
+                    <input type="range" min={f.min} max={f.max} step={f.step} value={f.val} onChange={e => f.set(+e.target.value)}
+                      style={{ width: "100%", accentColor: T.cyan, cursor: "pointer" }} />
                   </div>
-                  <input type="range" min={f.min} max={f.max} step={f.step} value={f.val} onChange={e => f.set(+e.target.value)}
-                    style={{ width: "100%", accentColor: T.cyan, cursor: "pointer" }} />
+                ))}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                  {[
+                    { label: "Cpu (upper)", val: stdDev > 0 ? ((usl - mean) / (3 * stdDev)).toFixed(3) : "—" },
+                    { label: "Cpl (lower)", val: stdDev > 0 && mean > lsl ? ((mean - lsl) / (3 * stdDev)).toFixed(3) : "—" },
+                    { label: "Cp (potential)", val: stdDev > 0 ? ((usl - lsl) / (6 * stdDev)).toFixed(3) : "—" },
+                    { label: "Ppk (actual)", val: res.ppk },
+                  ].map(k => (
+                    <div key={k.label} style={{ background: T.panel, borderRadius: 4, padding: "0.5rem 0.65rem", textAlign: "center" }}>
+                      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase" }}>{k.label}</div>
+                      <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.9rem", fontWeight: 700 }}>{k.val}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Compare B panel */}
+          {compareMode && (
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+              style={{ background: `${T.yellow}0A`, border: `1px solid ${T.yellow}33`, borderRadius: 8, padding: "1.25rem" }}>
+              <div style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.85rem" }}>[ SCENARIO B — BASELINE ]</div>
+              {[
+                { label: "Defects B", val: compareB.defects, key: "defects", min: 0, max: 1000000, step: 100 },
+                { label: "Opportunities B", val: compareB.opportunities, key: "opportunities", min: 1000, max: 10000000, step: 10000 },
+              ].map(f => (
+                <div key={f.key} style={{ marginBottom: "0.85rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
+                    <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.67rem" }}>{f.label}</span>
+                    <input type="number" value={f.val} onChange={e => setCompareB(p => ({ ...p, [f.key]: +e.target.value }))}
+                      style={{ width: 90, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.yellow, fontFamily: T.mono, fontSize: "0.78rem", padding: "0.2rem 0.35rem", textAlign: "right" }} />
+                  </div>
+                  <input type="range" min={f.min} max={f.max} step={f.step} value={f.val}
+                    onChange={e => setCompareB(p => ({ ...p, [f.key]: +e.target.value }))}
+                    style={{ width: "100%", accentColor: T.yellow, cursor: "pointer" }} />
                 </div>
               ))}
-            </div>
+            </motion.div>
           )}
-
-          {/* Quick presets */}
-          <div style={{ marginTop: "1.5rem", paddingTop: "1rem", borderTop: `1px solid ${T.border}` }}>
-            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.75rem" }}>Quick Presets</div>
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              {[
-                { label: "Baseline (1.8σ)", action: () => { setMode("dpmo"); setDefects(382000); setOpportunities(1000000); }},
-                { label: "Final (3.4σ)", action: () => { setMode("dpmo"); setDefects(1350); setOpportunities(1000000); }},
-                { label: "Six Sigma", action: () => { setMode("dpmo"); setDefects(3); setOpportunities(1000000); }},
-              ].map(p => (
-                <button key={p.label} onClick={p.action} style={{
-                  background: T.panel, border: `1px solid ${T.border}`, color: T.textMid,
-                  padding: "0.35rem 0.65rem", borderRadius: 3, cursor: "pointer",
-                  fontFamily: T.mono, fontSize: "0.62rem",
-                }}>{p.label}</button>
-              ))}
-            </div>
-          </div>
         </div>
 
-        {/* Results */}
+        {/* Results Panel */}
         <div style={{ flex: "1 1 350px", display: "flex", flexDirection: "column", gap: "1rem" }}>
-          {/* Gauge */}
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", textAlign: "center" }}>
-            <GaugeArc sigma={sigma} />
-            <div style={{ color: sc, fontFamily: T.display, fontSize: "3rem", fontWeight: 800, lineHeight: 1, textShadow: `0 0 30px ${sc}66`, marginTop: "0.5rem" }}>{sigma}σ</div>
-            <Badge label={ps.label} color={ps.color} />
+          {/* Big Gauge */}
+          <div style={{ background: T.surface, border: `2px solid ${sc}33`, borderRadius: 8, padding: "1.5rem", textAlign: "center", position: "relative", overflow: "hidden" }}>
+            <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 30%, ${sc}08 0%, transparent 70%)` }} />
+            <BigGauge sigma={res.sigma} color={sc} />
+            <motion.div key={res.sigma} initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+              style={{ color: sc, fontFamily: T.display, fontSize: "3.5rem", fontWeight: 800, lineHeight: 1, textShadow: `0 0 40px ${sc}77`, marginTop: "0.5rem" }}>
+              {res.sigma}σ
+            </motion.div>
+            <div style={{ marginTop: "0.4rem" }}><Badge label={ps.label} color={ps.color} /></div>
+            {compareMode && (
+              <div style={{ marginTop: "0.75rem", padding: "0.5rem", background: `${T.yellow}10`, borderRadius: 6 }}>
+                <div style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.65rem" }}>
+                  Baseline B: {resB.sigma}σ · {res.sigma > resB.sigma ? `↑ +${(res.sigma - resB.sigma).toFixed(2)}σ improvement` : `↓ ${(resB.sigma - res.sigma).toFixed(2)}σ regression`}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Output cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "0.65rem" }}>
             {[
-              { label: "DPMO", val: dpmo.toLocaleString(), color: sc },
-              { label: "Yield", val: `${yld}%`, color: sc },
-              { label: "Ppk Index", val: ppk, color: ps.color },
-              { label: "Cp Index", val: (ppk + 0.1).toFixed(3), color: T.textMid },
+              { label: "DPMO", val: res.dpmo.toLocaleString(), sub: "defects per million", color: sc },
+              { label: "Yield", val: `${res.yield}%`, sub: "process success", color: sc },
+              { label: "Ppk Index", val: res.ppk, sub: ppkStatus(res.ppk).label, color: ppkStatus(res.ppk).color },
+              { label: "% Defective", val: `${(100 - res.yield).toFixed(4)}%`, sub: "failure rate", color: res.yield > 99 ? T.green : res.yield > 93 ? T.yellow : T.red },
             ].map(r => (
-              <div key={r.label} style={{ background: T.panel, border: `1px solid ${T.border}`, borderRadius: 6, padding: "1rem", textAlign: "center" }}>
-                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{r.label}</div>
-                <div style={{ color: r.color, fontFamily: T.mono, fontSize: "1.2rem", fontWeight: 700 }}>{r.val}</div>
-              </div>
+              <motion.div key={r.label} whileHover={{ scale: 1.03 }}
+                style={{ background: T.surface, border: `1px solid ${r.color}22`, borderRadius: 6, padding: "0.9rem", textAlign: "center" }}>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>{r.label}</div>
+                <motion.div key={r.val} initial={{ scale: 0.85 }} animate={{ scale: 1 }}
+                  style={{ color: r.color, fontFamily: T.mono, fontSize: "1.1rem", fontWeight: 800, textShadow: `0 0 10px ${r.color}44` }}>
+                  {r.val}
+                </motion.div>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.56rem", marginTop: "0.15rem" }}>{r.sub}</div>
+              </motion.div>
             ))}
           </div>
 
-          {/* Sigma reference table */}
+          {/* Sigma reference table — highlighted */}
           <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1rem" }}>
-            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.75rem" }}>Sigma Reference Table</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.25rem" }}>
-              {[["σ Level","DPMO","Yield"],["1σ","691,462","30.9%"],["2σ","308,537","69.1%"],["3σ","66,807","93.3%"],["4σ","6,210","99.4%"],["5σ","233","99.98%"],["6σ","3.4","99.9997%"]].map((row, i) => (
-                row.map((cell, j) => (
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.75rem" }}>Sigma Reference Table</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "0" }}>
+              {[["σ", "DPMO", "Yield", "Ppk"], ["1σ","691,462","30.9%","0.33"], ["2σ","308,537","69.1%","0.67"], ["3σ","66,807","93.3%","1.00"], ["4σ","6,210","99.4%","1.33"], ["5σ","233","99.98%","1.67"], ["6σ","3.4","99.9997%","2.00"]].map((row, i) => {
+                const sigRow = parseFloat(row[0]);
+                const isActive = Math.round(res.sigma) === sigRow;
+                return row.map((cell, j) => (
                   <div key={`${i}-${j}`} style={{
-                    color: i === 0 ? T.textDim : (parseFloat(row[0]) === Math.round(sigma) ? T.cyan : T.textMid),
-                    fontFamily: T.mono, fontSize: "0.65rem", padding: "0.2rem 0.3rem",
-                    background: parseFloat(row[0]) === Math.round(sigma) ? `${T.cyan}11` : "transparent",
-                    borderRadius: 2,
-                  }}>{cell}</div>
-                ))
-              ))}
+                    color: i === 0 ? T.textDim : (isActive ? (j === 0 ? sc : T.text) : T.textMid),
+                    fontFamily: T.mono, fontSize: "0.63rem", padding: "0.3rem 0.4rem",
+                    background: isActive ? `${sc}15` : "transparent",
+                    borderBottom: `1px solid ${T.border}`,
+                    borderLeft: j === 0 ? "none" : `1px solid ${T.border}`,
+                    fontWeight: isActive ? 700 : 400,
+                    position: "relative",
+                  }}>
+                    {cell}
+                    {isActive && j === 0 && <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 2, background: sc, borderRadius: "2px 0 0 2px" }} />}
+                  </div>
+                ));
+              })}
             </div>
           </div>
         </div>
       </div>
-    </motion.div>
-  );
-}
 
-// ─── 03: DMAIC TRACKER ───────────────────────────────────────────────────────
-function DMAICTracker() {
-  const [activePhase, setActivePhase] = useState("D");
-
-  const phases = {
-    D: {
-      name: "DEFINE", color: "#00D4FF", status: "COMPLETE",
-      tools: ["Project Charter", "SIPOC", "Stakeholder Analysis", "VOC / Kano Model", "CTS Analysis"],
-      keyOutputs: [
-        { label: "Problem", val: "Avg resolution 72h → target 48h" },
-        { label: "Business Impact", val: "$450K annual churn (conservative)" },
-        { label: "Scope", val: "Escalated Tier 2/3 complaints only" },
-        { label: "Team", val: "5 core + 12 extended SMEs" },
-        { label: "Duration", val: "4 weeks (Month 1)" },
-      ],
-      insight: "The SIPOC reveals Support operates as a reactive 'shock absorber' for product defects. True optimization requires closing the feedback loop to Engineering.",
-    },
-    M: {
-      name: "MEASURE", color: "#00FF9C", status: "COMPLETE",
-      tools: ["Process Mapping", "Gage R&R (MSA)", "Pareto Analysis", "Process Capability (Ppk)", "Data Collection Plan"],
-      keyOutputs: [
-        { label: "Sample Size", val: "n = 547 cases over 8 weeks" },
-        { label: "Baseline Ppk", val: "0.43 — process incapable" },
-        { label: "DPMO", val: "382,000 (1.8σ level)" },
-        { label: "Gage R&R", val: "12.4% — acceptable (<30%)" },
-        { label: "Top Variation Source", val: "Investigation phase (σ = 14.3h)" },
-      ],
-      insight: "The mean of 72.1h is operationally deceptive due to +1.28 skewness. Managing to the mean is a strategic error — we must manage to tail risk (90th percentile = 102.4h).",
-    },
-    A: {
-      name: "ANALYZE", color: "#FFD60A", status: "COMPLETE",
-      tools: ["5 Whys", "Fishbone (Ishikawa)", "Regression Analysis", "ANOVA", "8 Wastes", "COPQ", "FMEA"],
-      keyOutputs: [
-        { label: "Root Cause #1", val: "Technician experience gap (84% of gap)" },
-        { label: "Root Cause #2", val: "Skills mismatch (23% contribution)" },
-        { label: "Root Cause #3", val: "Scattered knowledge — 5 systems (21%)" },
-        { label: "NVA Time", val: "56% of 72h is non-value-added" },
-        { label: "Total COPQ", val: "$9M annually identified" },
-      ],
-      insight: "Experience is not a 'soft' HR concern — it is a hard operational variable. Each year of experience lost to turnover costs the operation one full business day per case. R² = 0.58.",
-    },
-    I: {
-      name: "IMPROVE", color: "#FF8C00", status: "COMPLETE",
-      tools: ["Design of Experiments (DoE)", "Quality Function Deployment (QFD)", "Pilot Testing", "Solution Matrix", "Action Plan"],
-      keyOutputs: [
-        { label: "Solution 1", val: "Extended 6-week training + mentoring" },
-        { label: "Solution 2", val: "Skills-based intelligent routing" },
-        { label: "Solution 3", val: "Unified knowledge platform" },
-        { label: "Solution 4", val: "Automated customer communication" },
-        { label: "Pilot Result", val: "-19% resolution time (p = 0.003)" },
-      ],
-      insight: "DoE revealed A×C interaction: skills-based routing delivers most value when technicians are better trained. Parallel deployment of both is mandatory, not optional.",
-    },
-    C: {
-      name: "CONTROL", color: "#00FF9C", status: "ACTIVE",
-      tools: ["SPC Charts (I-MR)", "Control Plan", "Error-Proofing (Poka-Yoke)", "SOPs", "Training Plan", "Escalation Protocol"],
-      keyOutputs: [
-        { label: "Final Ppk", val: "1.41 — process now CAPABLE" },
-        { label: "Final Sigma", val: "3.4σ (from 1.8σ baseline)" },
-        { label: "DPMO Reduction", val: "382,000 → 1,350 (282x better)" },
-        { label: "RPN Reduction", val: "73% aggregate FMEA risk eliminated" },
-        { label: "Annual Savings", val: "$300,000 realized" },
-      ],
-      insight: "The project achieved what DMAIC is designed to deliver: not just fixing the process, but making failure structurally impossible through system-enforced controls.",
-    },
-  };
-
-  const p = phases[activePhase];
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <SectionHeader
-        module="Module 03 — DMAIC Intelligence"
-        title="Full Cycle DMAIC Tracker"
-        sub="Interactive phase navigator — click any phase to explore tools, outputs, and strategic insights."
-      />
-
-      {/* Phase selector */}
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "2rem", flexWrap: "wrap" }}>
-        {Object.entries(phases).map(([key, ph]) => (
-          <button key={key} onClick={() => setActivePhase(key)} style={{
-            flex: "1 1 80px",
-            background: activePhase === key ? `${ph.color}18` : T.surface,
-            border: `2px solid ${activePhase === key ? ph.color : T.border}`,
-            color: activePhase === key ? ph.color : T.textDim,
-            padding: "1rem 0.75rem", borderRadius: 8, cursor: "pointer",
-            fontFamily: T.display, fontSize: "1.25rem", fontWeight: 800,
-            textAlign: "center", transition: "all 0.2s",
-            textShadow: activePhase === key ? `0 0 15px ${ph.color}88` : "none",
-            boxShadow: activePhase === key ? `0 0 20px ${ph.color}22` : "none",
-          }}>
-            <div>{key}</div>
-            <div style={{ fontFamily: T.mono, fontSize: "0.55rem", letterSpacing: "0.1em", marginTop: "0.25rem" }}>{ph.name}</div>
-            <div style={{ marginTop: "0.3rem" }}><Badge label={ph.status} color={ph.color} /></div>
-          </button>
-        ))}
-      </div>
-
-      {/* Phase Detail */}
-      <AnimatePresence mode="wait">
-        <motion.div key={activePhase} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }}
-          style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "1.5rem" }}>
-
-          {/* Tools */}
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
-            <div style={{ color: p.color, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "1rem", borderBottom: `1px solid ${T.border}`, paddingBottom: "0.5rem" }}>
-              [ TOOLS DEPLOYED ]
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              {p.tools.map(tool => (
-                <div key={tool} style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.color, flexShrink: 0, boxShadow: `0 0 6px ${p.color}` }} />
-                  <span style={{ color: T.text, fontFamily: T.mono, fontSize: "0.8rem" }}>{tool}</span>
-                </div>
-              ))}
-            </div>
+      {/* Distribution curve */}
+      {showDistribution && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+          style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginTop: "1.5rem" }}>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>
+            Normal Distribution — Spec Limits Visualization
           </div>
-
-          {/* Key Outputs */}
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
-            <div style={{ color: p.color, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "1rem", borderBottom: `1px solid ${T.border}`, paddingBottom: "0.5rem" }}>
-              [ KEY OUTPUTS ]
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={distData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }} barCategoryGap="0%">
+              <CartesianGrid strokeDasharray="2 4" stroke={T.border} vertical={false} />
+              <XAxis dataKey="x" tick={{ fill: T.textDim, fontSize: 8, fontFamily: T.mono }} axisLine={false} tickLine={false}
+                tickFormatter={(v, i) => i % 10 === 0 ? `${v}σ` : ""} />
+              <YAxis tick={{ fill: T.textDim, fontSize: 8, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: "0.68rem", color: T.text }}
+                formatter={(v, n, p) => [`σ = ${p.payload.x}`, "Position"]} />
+              <Bar dataKey="y" radius={[2, 2, 0, 0]}>
+                {distData.map((d, i) => <Cell key={i} fill={d.inSpec ? `${sc}88` : `${T.red}44`} />)}
+              </Bar>
+              <ReferenceLine x="0.00" stroke={T.cyan} strokeDasharray="3 3" label={{ value: "μ", fill: T.cyan, fontSize: 10, fontFamily: T.mono }} />
+            </BarChart>
+          </ResponsiveContainer>
+          <div style={{ display: "flex", gap: "1.5rem", marginTop: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <div style={{ width: 12, height: 12, borderRadius: 2, background: `${sc}88` }} />
+              <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>Within spec ({res.yield}%)</span>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
-              {p.keyOutputs.map(o => (
-                <div key={o.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", paddingBottom: "0.6rem", borderBottom: `1px solid ${T.border}` }}>
-                  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", textTransform: "uppercase", flexShrink: 0 }}>{o.label}</span>
-                  <span style={{ color: T.text, fontFamily: T.mono, fontSize: "0.78rem", textAlign: "right" }}>{o.val}</span>
-                </div>
-              ))}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <div style={{ width: 12, height: 12, borderRadius: 2, background: `${T.red}44` }} />
+              <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>Outside spec ({(100 - res.yield).toFixed(3)}%)</span>
             </div>
-          </div>
-
-          {/* Strategic Insight */}
-          <div style={{ background: `${p.color}08`, border: `1px solid ${p.color}33`, borderRadius: 8, padding: "1.5rem", gridColumn: "1 / -1" }}>
-            <div style={{ color: p.color, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "0.75rem" }}>
-              [ STRATEGIC INSIGHT — {p.name} PHASE ]
-            </div>
-            <p style={{ color: T.text, fontSize: "0.9rem", lineHeight: 1.7, margin: 0 }}>{p.insight}</p>
           </div>
         </motion.div>
+      )}
+
+      {/* Industry Benchmarks */}
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginTop: "1.5rem" }}>
+        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>
+          Industry Benchmark Comparison
+        </div>
+        {benchmarkData.map(b => {
+          const pct = (b.sigma / 6) * 100;
+          const c = b.highlight ? sc : sigmaColor(b.sigma);
+          return (
+            <div key={b.industry} style={{ marginBottom: "0.6rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <div style={{ width: 150, color: b.highlight ? sc : T.textMid, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: b.highlight ? 700 : 400, flexShrink: 0 }}>
+                {b.industry} {b.highlight && "◀"}
+              </div>
+              <div style={{ flex: 1, height: 10, background: T.panel, borderRadius: 5, overflow: "hidden" }}>
+                <motion.div animate={{ width: `${pct}%` }} transition={{ duration: 0.8 }}
+                  style={{ height: "100%", background: b.highlight ? `linear-gradient(90deg,${c}88,${c})` : c + "66", borderRadius: 5,
+                    boxShadow: b.highlight ? `0 0 8px ${c}55` : "none" }} />
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", minWidth: 130, flexShrink: 0 }}>
+                <span style={{ color: c, fontFamily: T.mono, fontSize: "0.72rem", fontWeight: b.highlight ? 700 : 400 }}>{b.sigma}σ</span>
+                <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>{b.dpmo.toLocaleString()} DPMO</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* History panel */}
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", marginTop: "1.5rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.85rem", alignItems: "center" }}>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase" }}>[ CALCULATION HISTORY ]</div>
+                <button onClick={() => setHistory([])} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.2rem 0.5rem", borderRadius: 3, cursor: "pointer", fontFamily: T.mono, fontSize: "0.58rem" }}>Clear</button>
+              </div>
+              {history.length === 0 ? (
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.72rem" }}>No snapshots yet. Click "+ Save Snapshot" to save current calculation.</div>
+              ) : (
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  {history.map((h, i) => {
+                    const c = sigmaColor(h.sigma);
+                    return (
+                      <div key={i} style={{ background: T.panel, border: `1px solid ${c}33`, borderRadius: 6, padding: "0.65rem 0.85rem", minWidth: 120 }}>
+                        <div style={{ color: c, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}>{h.sigma}σ</div>
+                        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>{h.dpmo.toLocaleString()} DPMO</div>
+                        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", marginTop: "0.15rem" }}>{h.timestamp}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </motion.div>
   );
 }
 
-// ─── 04: FMEA RISK SCORER ────────────────────────────────────────────────────
-function FMEAScorer() {
-  const [items, setItems] = useState([
-    { id: 1, process: "Customer Communication", failure: "No proactive status update", cause: "No automated system", effect: "Customer frustration, churn", S: 9, O: 8, D: 7, fixed: false },
-    { id: 2, process: "Case Assignment", failure: "Assigned to wrong skill level", cause: "Random queue assignment", effect: "32% longer resolution", S: 8, O: 7, D: 8, fixed: false },
-    { id: 3, process: "Initial Triage", failure: "Case miscategorization", cause: "Rigid 12-question script", effect: "+21.5 hrs per case", S: 8, O: 8, D: 5, fixed: false },
-    { id: 4, process: "Case Documentation", failure: "Incomplete closure notes", cause: "No mandatory fields", effect: "Knowledge loss, rework", S: 7, O: 7, D: 8, fixed: false },
-    { id: 5, process: "Resolution Verification", failure: "Premature case closure", cause: "Pressure to meet metrics", effect: "28% reopen rate", S: 8, O: 6, D: 6, fixed: false },
-  ]);
 
-  const [newItem, setNewItem] = useState({ process: "", failure: "", cause: "", effect: "", S: 5, O: 5, D: 5 });
-  const [showAdd, setShowAdd] = useState(false);
 
-  const rpn = (item) => item.S * item.O * item.D;
-  const riskColor = (rpn) => rpn > 400 ? T.red : rpn > 200 ? T.orange : rpn > 100 ? T.yellow : T.green;
-  const riskLabel = (rpn) => rpn > 400 ? "CRITICAL" : rpn > 200 ? "HIGH" : rpn > 100 ? "MODERATE" : "LOW";
+// ─── 03: DMAIC TRACKER ───────────────────────────────────────────────────────
+const DMAIC_DEFAULTS = {
+  D: {
+    name: "DEFINE", color: "#00D4FF", status: "COMPLETE", progress: 100,
+    startWeek: 1, endWeek: 4,
+    tools: [
+      { name: "Project Charter", done: true, note: "Executive sign-off secured" },
+      { name: "SIPOC Diagram", done: true, note: "8 suppliers, 10-step process mapped" },
+      { name: "Stakeholder Analysis", done: true, note: "7 stakeholders mapped, 3 champions" },
+      { name: "VOC / Kano Model", done: true, note: "126 customer responses collected" },
+      { name: "CTS Analysis", done: true, note: "3 tiers: Must-Have, Satisfier, Delighter" },
+    ],
+    keyOutputs: [
+      { label: "Problem Statement", val: "Avg resolution 72h → target 48h", editable: true },
+      { label: "Business Impact", val: "$450K annual churn (conservative)", editable: true },
+      { label: "Scope", val: "Escalated Tier 2/3 complaints only", editable: true },
+      { label: "Team Size", val: "5 core + 12 extended SMEs", editable: true },
+      { label: "Duration", val: "4 weeks (Month 1)", editable: true },
+    ],
+    insight: "The SIPOC reveals Support operates as a reactive 'shock absorber' for product defects. True optimization requires closing the feedback loop to Engineering.",
+    risk: "HIGH — scope too broad initially. Narrowed to Tier 2/3 only.",
+    riskColor: T => T.orange,
+    decisions: [
+      "Scope narrowed from all complaints → Tier 2/3 escalated only",
+      "Timeline extended 4→6 months to ensure thorough data collection",
+      "Budget revised to include KM system investment",
+    ],
+  },
+  M: {
+    name: "MEASURE", color: "#00FF9C", status: "COMPLETE", progress: 100,
+    startWeek: 5, endWeek: 12,
+    tools: [
+      { name: "Current State Process Map", done: true, note: "16-step map, bottlenecks at steps 5 & 10" },
+      { name: "Gage R&R (MSA)", done: true, note: "12.4% — acceptable (<30% threshold)" },
+      { name: "Pareto Analysis", done: true, note: "Top 3 categories = 65% of resolution time" },
+      { name: "Process Capability (Ppk)", done: true, note: "Ppk = 0.43 — process incapable" },
+      { name: "Data Collection Plan", done: true, note: "n = 547 cases over 8 weeks" },
+    ],
+    keyOutputs: [
+      { label: "Sample Size", val: "n = 547 cases / 8 weeks", editable: true },
+      { label: "Baseline Ppk", val: "0.43 — process incapable", editable: true },
+      { label: "Baseline DPMO", val: "382,000 (1.8σ level)", editable: true },
+      { label: "Gage R&R", val: "12.4% — acceptable", editable: true },
+      { label: "Top Variation", val: "Diagnosis phase (σ = 14.3h)", editable: true },
+    ],
+    insight: "The mean of 72.1h is operationally deceptive (+1.28 skewness). Managing to the mean is a strategic error — tail risk (90th pct = 102.4h) is the real target.",
+    risk: "MEDIUM — Hawthorne Effect risk during data collection. Mitigated with blind historical review.",
+    riskColor: T => T.yellow,
+    decisions: [
+      "Scope refined: simple FCR cases excluded — fundamentally different behavior",
+      "Added 'time-to-first-response' as secondary metric (r = 0.61 correlation)",
+      "Analyze phase extended +2 weeks for hypothesis investigation depth",
+    ],
+  },
+  A: {
+    name: "ANALYZE", color: "#FFD60A", status: "COMPLETE", progress: 100,
+    startWeek: 13, endWeek: 17,
+    tools: [
+      { name: "5 Whys Analysis", done: true, note: "3 root causes drilled to fundamental level" },
+      { name: "Fishbone (Ishikawa)", done: true, note: "6 categories: Man, Method, Machine, Material, Measurement, Environment" },
+      { name: "Regression Analysis", done: true, note: "Experience → time: R² = 0.58, p < 0.001" },
+      { name: "ANOVA Testing", done: true, note: "Day-of-week effect: F = 11.8, p < 0.001" },
+      { name: "8 Wastes Analysis", done: true, note: "56% NVA time — 33.5h waste per case" },
+      { name: "COPQ Analysis", done: true, note: "$9M total COPQ identified" },
+    ],
+    keyOutputs: [
+      { label: "Root Cause #1", val: "Technician experience gap (84% of gap)", editable: true },
+      { label: "Root Cause #2", val: "Skills mismatch (23% contribution)", editable: true },
+      { label: "Root Cause #3", val: "Scattered knowledge — 5 systems (21%)", editable: true },
+      { label: "NVA Time", val: "56% of 72h is non-value-added", editable: true },
+      { label: "Total COPQ", val: "$9M annually identified", editable: true },
+    ],
+    insight: "Experience is not a soft HR concern — it's a hard operational variable. Each year of experience lost to turnover costs one full business day per case. R² = 0.58.",
+    risk: "LOW — all 6 root causes validated at p < 0.001. Scope refined to exclude vendor-dependent Integration Problems.",
+    riskColor: T => T.green,
+    decisions: [
+      "Integration Problems (9.9%) removed — external vendor dependencies outside our control",
+      "Added 'skill-to-case match rate' as new KPI — unmeasured but critical",
+      "Phase 1 target revised: 72h → 60h (not 48h), accounting for training maturation",
+    ],
+  },
+  I: {
+    name: "IMPROVE", color: "#FF8C00", status: "COMPLETE", progress: 100,
+    startWeek: 18, endWeek: 24,
+    tools: [
+      { name: "Design of Experiments (DoE)", done: true, note: "2³⁻¹ fractional factorial — A×C interaction discovered" },
+      { name: "Quality Function Deployment (QFD)", done: true, note: "Skills routing scored 5.77 — highest priority" },
+      { name: "Pilot Testing (30-day)", done: true, note: "n=50 cases, −19% resolution time (p=0.003)" },
+      { name: "Solution Selection Matrix", done: true, note: "5 solutions, composite score >70 each" },
+      { name: "Wave Implementation Plan", done: true, note: "3 waves: Quick wins → Structural → Sustained" },
+    ],
+    keyOutputs: [
+      { label: "Solution 1", val: "6-week training + mentoring (+90 days)", editable: true },
+      { label: "Solution 2", val: "Skills-based intelligent routing", editable: true },
+      { label: "Solution 3", val: "Unified knowledge platform", editable: true },
+      { label: "Solution 4", val: "Automated customer communication", editable: true },
+      { label: "Pilot Result", val: "−19% resolution time (p = 0.003)", editable: true },
+    ],
+    insight: "DoE revealed A×C interaction: skills-based routing delivers max value only when technicians are better trained. Parallel deployment is mandatory, not optional.",
+    risk: "MEDIUM — Knowledge platform delayed Week 22 due to data migration. Manual workaround activated.",
+    riskColor: T => T.yellow,
+    decisions: [
+      "Wave 1 (quick wins) launched Week 18 — immediate CSAT +0.8 pts",
+      "DoE confirmed: routing + training must be simultaneous, not sequential",
+      "Budget $180K maintained — custom AI engine descoped, off-shelf modules used",
+    ],
+  },
+  C: {
+    name: "CONTROL", color: "#00FF9C", status: "ACTIVE", progress: 85,
+    startWeek: 25, endWeek: 30,
+    tools: [
+      { name: "I-MR Control Charts", done: true, note: "5 weeks in-control, no WE violations" },
+      { name: "Control Plan", done: true, note: "8 metrics, weekly cadence, 3-tier escalation" },
+      { name: "Error-Proofing (Poka-Yoke)", done: true, note: "5 mechanisms, 73% aggregate RPN reduction" },
+      { name: "SOPs (5 documents)", done: true, note: "TS-01 to TS-05 — intake to escalation" },
+      { name: "Training Plan (6 modules)", done: true, note: "TM-01 to TM-06, 100% completion on core" },
+      { name: "Quarterly Review Cadence", done: false, note: "Scheduled Week 32 — upcoming" },
+    ],
+    keyOutputs: [
+      { label: "Final Ppk", val: "1.41 — process CAPABLE", editable: true },
+      { label: "Final Sigma", val: "3.4σ (from 1.8σ baseline)", editable: true },
+      { label: "DPMO Reduction", val: "382,000 → 1,350 (282x better)", editable: true },
+      { label: "RPN Reduction", val: "73% aggregate risk eliminated", editable: true },
+      { label: "Annual Savings", val: "$300,000 realized", editable: true },
+    ],
+    insight: "The project achieved what DMAIC is designed to deliver: making failure structurally impossible through system-enforced controls. Process is in statistical control.",
+    risk: "LOW — all metrics GREEN for 5 consecutive weeks. Entropy risk flagged for 3-6 month horizon.",
+    riskColor: T => T.green,
+    decisions: [
+      "Process ownership transferred to Support Ops Manager",
+      "Automated OCAP triggers activated on SPC violations",
+      "Project 3 (HR Analytics) formally initiated — human capital sustainability",
+    ],
+  },
+};
 
-  const toggle = (id) => setItems(prev => prev.map(i => i.id === id ? { ...i, fixed: !i.fixed } : i));
-  const update = (id, field, val) => setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: +val } : i));
-  const addItem = () => {
-    setItems(prev => [...prev, { ...newItem, id: Date.now(), fixed: false }]);
-    setNewItem({ process: "", failure: "", cause: "", effect: "", S: 5, O: 5, D: 5 });
-    setShowAdd(false);
+function DMAICTracker() {
+  const [phases, setPhases] = useLocalState("dmaic_phases", DMAIC_DEFAULTS);
+  const [activePhase, setActivePhase] = useLocalState("dmaic_activePhase", "D");
+  const [viewMode, setViewMode] = useLocalState("dmaic_view", "detail"); // detail | timeline | checklist | custom
+  const [editMode, setEditMode] = useState(false);
+  const [expandedTool, setExpandedTool] = useState(null);
+  const [customProject, setCustomProject] = useLocalState("dmaic_custom", {
+    name: "", problem: "", metric: "", baseline: "", target: "", dept: "",
+    D: { status: "NOT STARTED", progress: 0, notes: "" },
+    M: { status: "NOT STARTED", progress: 0, notes: "" },
+    A: { status: "NOT STARTED", progress: 0, notes: "" },
+    I: { status: "NOT STARTED", progress: 0, notes: "" },
+    C: { status: "NOT STARTED", progress: 0, notes: "" },
+  });
+  const [showCustomSetup, setShowCustomSetup] = useState(false);
+
+  const p = phases[activePhase];
+  const phaseKeys = ["D", "M", "A", "I", "C"];
+  const totalComplete = phaseKeys.filter(k => phases[k].status === "COMPLETE").length;
+  const overallProgress = Math.round(phaseKeys.reduce((acc, k) => acc + phases[k].progress, 0) / 5);
+
+  const toggleTool = (phaseKey, toolIdx) => {
+    setPhases(prev => ({
+      ...prev,
+      [phaseKey]: {
+        ...prev[phaseKey],
+        tools: prev[phaseKey].tools.map((t, i) => i === toolIdx ? { ...t, done: !t.done } : t),
+      }
+    }));
   };
 
-  const sorted = [...items].sort((a, b) => rpn(b) - rpn(a));
-  const totalRpnBefore = items.reduce((acc, i) => acc + rpn(i), 0);
-  const totalRpnAfter = items.filter(i => !i.fixed).reduce((acc, i) => acc + rpn(i), 0);
-  const reduction = totalRpnBefore > 0 ? Math.round(((totalRpnBefore - totalRpnAfter) / totalRpnBefore) * 100) : 0;
+  const setPhaseProgress = (phaseKey, val) => {
+    setPhases(prev => ({
+      ...prev,
+      [phaseKey]: { ...prev[phaseKey], progress: val, status: val === 100 ? "COMPLETE" : val > 0 ? "ACTIVE" : "NOT STARTED" }
+    }));
+  };
 
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <SectionHeader
-        module="Module 04 — Risk Intelligence"
-        title="FMEA Risk Priority Scorer"
-        sub="Failure Mode & Effects Analysis. RPN = Severity × Occurrence × Detection. Click ✓ to mark a failure mode as controlled."
-      />
+  const updateOutput = (phaseKey, idx, val) => {
+    setPhases(prev => ({
+      ...prev,
+      [phaseKey]: {
+        ...prev[phaseKey],
+        keyOutputs: prev[phaseKey].keyOutputs.map((o, i) => i === idx ? { ...o, val } : o),
+      }
+    }));
+  };
 
-      {/* RPN Summary */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "1rem", marginBottom: "2rem" }}>
-        {[
-          { label: "Total RPN (Before)", val: totalRpnBefore, color: T.red },
-          { label: "Total RPN (After Controls)", val: totalRpnAfter, color: T.green },
-          { label: "Risk Reduction", val: `${reduction}%`, color: T.cyan },
-          { label: "Critical Items (>400)", val: items.filter(i => rpn(i) > 400 && !i.fixed).length, color: T.red },
-        ].map(k => (
-          <div key={k.label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", textAlign: "center" }}>
-            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.5rem" }}>{k.label}</div>
-            <div style={{ color: k.color, fontFamily: T.display, fontSize: "1.8rem", fontWeight: 800 }}>{k.val}</div>
+  const statusColor = (status) => {
+    if (status === "COMPLETE") return T.green;
+    if (status === "ACTIVE") return T.cyan;
+    return T.textDim;
+  };
+
+  const phaseFlowData = phaseKeys.map(k => ({
+    phase: k, name: phases[k].name, progress: phases[k].progress,
+    color: phases[k].color, status: phases[k].status,
+    weeks: `W${phases[k].startWeek}–${phases[k].endWeek}`,
+  }));
+
+  const copyReport = `DMAIC PROJECT TRACKER REPORT
+Overall Progress: ${overallProgress}% (${totalComplete}/5 phases complete)
+
+${phaseKeys.map(k => {
+  const ph = phases[k];
+  const doneCt = ph.tools.filter(t => t.done).length;
+  return `${k} — ${ph.name} [${ph.status}] ${ph.progress}%
+  Tools: ${doneCt}/${ph.tools.length} complete
+  ${ph.keyOutputs.map(o => `  ${o.label}: ${o.val}`).join('\n')}`;
+}).join('\n\n')}`;
+
+  // ── TIMELINE VIEW ────────────────────────────────────────────────────────
+  const TimelineView = () => (
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2rem", marginBottom: "1.5rem" }}>
+      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "2rem" }}>
+        30-Week DMAIC Journey
+      </div>
+      {/* Horizontal flow */}
+      <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: "2rem", overflowX: "auto", padding: "0.5rem 0" }}>
+        {phaseFlowData.map((ph, i) => (
+          <div key={ph.phase} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              onClick={() => { setActivePhase(ph.phase); setViewMode("detail"); }}
+              style={{
+                background: `${ph.color}15`,
+                border: `2px solid ${ph.color}`,
+                borderRadius: 8, padding: "1rem 1.25rem",
+                textAlign: "center", cursor: "pointer",
+                boxShadow: `0 0 20px ${ph.color}22`,
+                minWidth: 110,
+              }}>
+              <div style={{ color: ph.color, fontFamily: T.display, fontSize: "1.5rem", fontWeight: 800, textShadow: `0 0 15px ${ph.color}88` }}>{ph.phase}</div>
+              <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.55rem", letterSpacing: "0.1em", marginTop: "0.2rem" }}>{ph.name}</div>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", marginTop: "0.2rem" }}>{ph.weeks}</div>
+              {/* Progress arc */}
+              <div style={{ marginTop: "0.6rem", height: 5, background: T.panel, borderRadius: 3, overflow: "hidden" }}>
+                <motion.div animate={{ width: `${ph.progress}%` }} transition={{ duration: 0.8, delay: i * 0.1 }}
+                  style={{ height: "100%", background: ph.color, borderRadius: 3 }} />
+              </div>
+              <div style={{ color: ph.color, fontFamily: T.mono, fontSize: "0.6rem", marginTop: "0.3rem", fontWeight: 700 }}>{ph.progress}%</div>
+              <div style={{ marginTop: "0.4rem" }}><Badge label={ph.status} color={statusColor(ph.status)} /></div>
+            </motion.div>
+            {i < phaseFlowData.length - 1 && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", margin: "0 0.25rem" }}>
+                <motion.div animate={{ scaleX: [1, 1.3, 1] }} transition={{ repeat: Infinity, duration: 2, delay: i * 0.4 }}
+                  style={{ color: phases[phaseFlowData[i + 1].phase].status === "COMPLETE" || phases[phaseFlowData[i + 1].phase].status === "ACTIVE" ? T.cyan : T.textDim, fontFamily: T.mono, fontSize: "1.2rem" }}>
+                  →
+                </motion.div>
+              </div>
+            )}
           </div>
         ))}
       </div>
 
-      {/* FMEA Table */}
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", marginBottom: "1.5rem" }}>
-        <div style={{ padding: "1rem 1.5rem", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase" }}>[ FAILURE MODE REGISTER ]</span>
-          <button onClick={() => setShowAdd(!showAdd)} style={{
-            background: `${T.cyan}18`, border: `1px solid ${T.cyan}`, color: T.cyan,
-            padding: "0.4rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
-          }}>+ Add Failure Mode</button>
+      {/* Gantt-style bar */}
+      <div style={{ marginTop: "1rem" }}>
+        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.75rem" }}>
+          Week-by-Week Gantt
         </div>
-
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.mono, fontSize: "0.75rem" }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                {["Status", "Process Step", "Failure Mode", "S", "O", "D", "RPN", "Risk Level"].map(h => (
-                  <th key={h} style={{ color: T.textDim, textAlign: "left", padding: "0.75rem 1rem", fontSize: "0.6rem", letterSpacing: "0.08em", textTransform: "uppercase" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map(item => {
-                const r = rpn(item);
-                const rc = riskColor(r);
-                return (
-                  <motion.tr key={item.id} layout style={{ borderBottom: `1px solid ${T.border}`, opacity: item.fixed ? 0.4 : 1, background: r > 400 && !item.fixed ? `${T.red}08` : "transparent" }}>
-                    <td style={{ padding: "0.75rem 1rem" }}>
-                      <button onClick={() => toggle(item.id)} style={{
-                        width: 24, height: 24, borderRadius: 4,
-                        background: item.fixed ? T.green : "transparent",
-                        border: `1px solid ${item.fixed ? T.green : T.border}`,
-                        color: item.fixed ? T.bg : T.textDim,
-                        cursor: "pointer", fontSize: "0.7rem",
-                      }}>{item.fixed ? "✓" : ""}</button>
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem", color: T.textMid }}>{item.process}</td>
-                    <td style={{ padding: "0.75rem 1rem", color: T.text, maxWidth: 200 }}>
-                      <div>{item.failure}</div>
-                      <div style={{ color: T.textDim, fontSize: "0.65rem" }}>→ {item.effect}</div>
-                    </td>
-                    {["S","O","D"].map(field => (
-                      <td key={field} style={{ padding: "0.75rem 0.5rem" }}>
-                        <input type="number" min={1} max={10} value={item[field]}
-                          onChange={e => update(item.id, field, e.target.value)}
-                          style={{ width: 40, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.cyan, fontFamily: T.mono, fontSize: "0.8rem", padding: "0.2rem 0.3rem", textAlign: "center" }} />
-                      </td>
-                    ))}
-                    <td style={{ padding: "0.75rem 1rem" }}>
-                      <span style={{ color: rc, fontFamily: T.mono, fontSize: "1rem", fontWeight: 700, textShadow: `0 0 8px ${rc}66` }}>{r}</span>
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem" }}><Badge label={riskLabel(r)} color={rc} /></td>
-                  </motion.tr>
-                );
-              })}
-            </tbody>
-          </table>
+        {phaseFlowData.map((ph) => (
+          <div key={ph.phase} style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
+            <div style={{ color: ph.color, fontFamily: T.mono, fontSize: "0.65rem", width: 80, flexShrink: 0, fontWeight: 700 }}>{ph.phase} — {ph.name.slice(0, 3)}</div>
+            <div style={{ flex: 1, height: 16, background: T.panel, borderRadius: 4, overflow: "hidden", position: "relative" }}>
+              <motion.div
+                animate={{ width: `${ph.progress}%` }}
+                transition={{ duration: 1, delay: 0.2 }}
+                style={{
+                  position: "absolute", top: 0, bottom: 0,
+                  left: `${((phases[ph.phase].startWeek - 1) / 30) * 100}%`,
+                  width: `${((phases[ph.phase].endWeek - phases[ph.phase].startWeek + 1) / 30) * 100}%`,
+                  background: `linear-gradient(90deg, ${ph.color}99, ${ph.color})`,
+                  borderRadius: 4,
+                }}
+              />
+            </div>
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", width: 50, flexShrink: 0, textAlign: "right" }}>{ph.weeks}</div>
+          </div>
+        ))}
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.3rem", padding: "0 80px 0 0" }}>
+          {[1, 5, 10, 15, 20, 25, 30].map(w => (
+            <span key={w} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>W{w}</span>
+          ))}
         </div>
       </div>
+    </div>
+  );
+
+  // ── CHECKLIST VIEW ────────────────────────────────────────────────────────
+  const ChecklistView = () => (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "1rem" }}>
+      {phaseKeys.map(key => {
+        const ph = phases[key];
+        const doneCount = ph.tools.filter(t => t.done).length;
+        const pct = Math.round((doneCount / ph.tools.length) * 100);
+        return (
+          <div key={key} style={{ background: T.surface, border: `1px solid ${ph.color}33`, borderRadius: 8, padding: "1.25rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <div style={{ color: ph.color, fontFamily: T.display, fontSize: "1rem", fontWeight: 800 }}>{key} — {ph.name}</div>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <span style={{ color: ph.color, fontFamily: T.mono, fontSize: "0.72rem", fontWeight: 700 }}>{doneCount}/{ph.tools.length}</span>
+                <input type="range" min={0} max={100} step={5} value={ph.progress}
+                  onChange={e => setPhaseProgress(key, +e.target.value)}
+                  style={{ width: 70, accentColor: ph.color, cursor: "pointer" }} />
+                <span style={{ color: ph.color, fontFamily: T.mono, fontSize: "0.65rem" }}>{ph.progress}%</span>
+              </div>
+            </div>
+            <div style={{ height: 4, background: T.panel, borderRadius: 2, overflow: "hidden", marginBottom: "1rem" }}>
+              <motion.div animate={{ width: `${pct}%` }} transition={{ duration: 0.5 }}
+                style={{ height: "100%", background: ph.color, borderRadius: 2 }} />
+            </div>
+            {ph.tools.map((tool, i) => (
+              <motion.div key={tool.name} whileHover={{ x: 3 }}
+                onClick={() => toggleTool(key, i)}
+                style={{ display: "flex", gap: "0.6rem", alignItems: "flex-start", padding: "0.5rem 0.4rem", cursor: "pointer", borderRadius: 4, marginBottom: "0.2rem",
+                  background: tool.done ? `${ph.color}08` : "transparent", transition: "background 0.2s" }}>
+                <div style={{
+                  width: 18, height: 18, borderRadius: 4, flexShrink: 0, marginTop: "0.05rem",
+                  background: tool.done ? ph.color : "transparent",
+                  border: `2px solid ${tool.done ? ph.color : T.border}`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  transition: "all 0.2s",
+                  boxShadow: tool.done ? `0 0 8px ${ph.color}55` : "none",
+                }}>
+                  {tool.done && <span style={{ color: T.bg, fontSize: "0.65rem", fontWeight: 900 }}>✓</span>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: tool.done ? T.text : T.textMid, fontFamily: T.mono, fontSize: "0.72rem", fontWeight: tool.done ? 700 : 400, textDecoration: tool.done ? "none" : "none" }}>
+                    {tool.name}
+                  </div>
+                  {expandedTool === `${key}-${i}` && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", marginTop: "0.25rem", lineHeight: 1.5 }}>
+                      {tool.note}
+                    </motion.div>
+                  )}
+                </div>
+                <button onClick={e => { e.stopPropagation(); setExpandedTool(expandedTool === `${key}-${i}` ? null : `${key}-${i}`); }}
+                  style={{ background: "transparent", border: "none", color: T.textDim, cursor: "pointer", fontFamily: T.mono, fontSize: "0.7rem", padding: "0 0.2rem" }}>
+                  {expandedTool === `${key}-${i}` ? "▲" : "▼"}
+                </button>
+              </motion.div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // ── CUSTOM PROJECT VIEW ────────────────────────────────────────────────────
+  const CustomView = () => (
+    <div>
+      <div style={{ background: `${T.green}0C`, border: `1px solid ${T.green}33`, borderRadius: 8, padding: "1.25rem", marginBottom: "1.5rem" }}>
+        <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700, marginBottom: "0.75rem" }}>⚡ YOUR DMAIC PROJECT TRACKER</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
+          {[
+            { label: "Project Name", key: "name", ph: "e.g. Reduce Defect Rate" },
+            { label: "Department", key: "dept", ph: "e.g. Production Line A" },
+            { label: "Problem Metric", key: "metric", ph: "e.g. Defect Rate (%)" },
+            { label: "Baseline Value", key: "baseline", ph: "e.g. 8.5%" },
+            { label: "Target Value", key: "target", ph: "e.g. 2.0%" },
+          ].map(f => (
+            <div key={f.key}>
+              <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>{f.label}</label>
+              <input value={customProject[f.key]} onChange={e => setCustomProject(p => ({ ...p, [f.key]: e.target.value }))}
+                placeholder={f.ph} style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.5rem 0.65rem", fontFamily: T.mono, fontSize: "0.78rem", boxSizing: "border-box" }} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "1rem" }}>
+        {phaseKeys.map(key => {
+          const ph = phases[key];
+          const cp = customProject[key];
+          return (
+            <div key={key} style={{ background: T.surface, border: `2px solid ${ph.color}33`, borderRadius: 8, padding: "1.25rem" }}>
+              <div style={{ color: ph.color, fontFamily: T.display, fontSize: "1rem", fontWeight: 800, marginBottom: "0.75rem" }}>
+                {key} — {ph.name}
+              </div>
+              <div style={{ marginBottom: "0.75rem" }}>
+                <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>Status</label>
+                <select value={cp.status}
+                  onChange={e => setCustomProject(p => ({ ...p, [key]: { ...p[key], status: e.target.value } }))}
+                  style={{ width: "100%", background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.45rem 0.65rem", fontFamily: T.mono, fontSize: "0.75rem", cursor: "pointer" }}>
+                  {["NOT STARTED", "IN PROGRESS", "ACTIVE", "COMPLETE", "ON HOLD"].map(s => (
+                    <option key={s} value={s} style={{ background: T.surface }}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ marginBottom: "0.75rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
+                  <label style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase" }}>Progress</label>
+                  <span style={{ color: ph.color, fontFamily: T.mono, fontSize: "0.72rem", fontWeight: 700 }}>{cp.progress}%</span>
+                </div>
+                <input type="range" min={0} max={100} step={5} value={cp.progress}
+                  onChange={e => setCustomProject(p => ({ ...p, [key]: { ...p[key], progress: +e.target.value } }))}
+                  style={{ width: "100%", accentColor: ph.color, cursor: "pointer" }} />
+                <div style={{ height: 4, background: T.panel, borderRadius: 2, overflow: "hidden", marginTop: "0.3rem" }}>
+                  <motion.div animate={{ width: `${cp.progress}%` }} transition={{ duration: 0.5 }}
+                    style={{ height: "100%", background: ph.color, borderRadius: 2 }} />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>Notes / Key Output</label>
+                <textarea value={cp.notes}
+                  onChange={e => setCustomProject(p => ({ ...p, [key]: { ...p[key], notes: e.target.value } }))}
+                  placeholder={`Key findings or outputs for ${ph.name} phase...`}
+                  style={{ width: "100%", minHeight: 70, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.5rem 0.65rem", fontFamily: T.mono, fontSize: "0.72rem", resize: "vertical", boxSizing: "border-box", lineHeight: 1.5 }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1200, margin: "0 auto" }}>
+      <SectionHeader
+        module="Module 03 — DMAIC Intelligence"
+        title="Full Cycle DMAIC Tracker"
+        sub="Interactive navigator — explore Pulse Digital project or track your own. Checklist, timeline, and custom project modes."
+      />
+
+      {/* Overall progress bar */}
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1rem 1.25rem", marginBottom: "1.25rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+          <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase" }}>Overall Project Progress</span>
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+            <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}>{overallProgress}%</span>
+            <Badge label={`${totalComplete}/5 Phases Complete`} color={totalComplete === 5 ? T.green : T.cyan} />
+          </div>
+        </div>
+        <div style={{ height: 8, background: T.panel, borderRadius: 4, overflow: "hidden" }}>
+          <motion.div animate={{ width: `${overallProgress}%` }} transition={{ duration: 1 }}
+            style={{ height: "100%", background: `linear-gradient(90deg, ${T.cyan}, ${T.green})`, borderRadius: 4, boxShadow: `0 0 12px ${T.cyan}55` }} />
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <ModuleToolbar
+        onReset={() => { setPhases(DMAIC_DEFAULTS); }}
+        copyData={copyReport}
+        saved={true}
+      >
+        {[
+          { id: "detail", label: "◈ Phase Detail" },
+          { id: "timeline", label: "⟶ Timeline" },
+          { id: "checklist", label: "✓ Checklist" },
+          { id: "custom", label: "⚡ My Project", highlight: true },
+        ].map(v => (
+          <button key={v.id} onClick={() => setViewMode(v.id)} style={{
+            background: viewMode === v.id ? (v.highlight ? `${T.green}18` : `${T.cyan}15`) : "transparent",
+            border: `1px solid ${viewMode === v.id ? (v.highlight ? T.green : T.cyan) : T.border}`,
+            color: viewMode === v.id ? (v.highlight ? T.green : T.cyan) : T.textDim,
+            padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer",
+            fontFamily: T.mono, fontSize: "0.62rem", transition: "all 0.2s",
+          }}>{v.label}</button>
+        ))}
+        <button onClick={() => setEditMode(p => !p)} style={{
+          background: editMode ? `${T.yellow}18` : "transparent",
+          border: `1px solid ${editMode ? T.yellow : T.border}`,
+          color: editMode ? T.yellow : T.textDim,
+          padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer",
+          fontFamily: T.mono, fontSize: "0.62rem",
+        }}>{editMode ? "✓ Done" : "✎ Edit"}</button>
+      </ModuleToolbar>
+
+      {/* Timeline view */}
+      {viewMode === "timeline" && <TimelineView />}
+
+      {/* Checklist view */}
+      {viewMode === "checklist" && <ChecklistView />}
+
+      {/* Custom project view */}
+      {viewMode === "custom" && <CustomView />}
+
+      {/* Detail view */}
+      {viewMode === "detail" && (
+        <>
+          {/* Phase selector */}
+          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
+            {phaseKeys.map(key => {
+              const ph = phases[key];
+              return (
+                <motion.button key={key} onClick={() => setActivePhase(key)} whileHover={{ scale: 1.03 }} style={{
+                  flex: "1 1 80px",
+                  background: activePhase === key ? `${ph.color}18` : T.surface,
+                  border: `2px solid ${activePhase === key ? ph.color : T.border}`,
+                  color: activePhase === key ? ph.color : T.textDim,
+                  padding: "1rem 0.75rem", borderRadius: 8, cursor: "pointer",
+                  fontFamily: T.display, fontSize: "1.25rem", fontWeight: 800,
+                  textAlign: "center", transition: "all 0.2s",
+                  textShadow: activePhase === key ? `0 0 15px ${ph.color}88` : "none",
+                  boxShadow: activePhase === key ? `0 0 25px ${ph.color}22` : "none",
+                  position: "relative", overflow: "hidden",
+                }}>
+                  {/* Progress bar on button */}
+                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 3, background: T.panel }}>
+                    <div style={{ width: `${ph.progress}%`, height: "100%", background: ph.color, transition: "width 0.5s" }} />
+                  </div>
+                  <div>{key}</div>
+                  <div style={{ fontFamily: T.mono, fontSize: "0.52rem", letterSpacing: "0.1em", marginTop: "0.2rem" }}>{ph.name}</div>
+                  <div style={{ fontFamily: T.mono, fontSize: "0.5rem", color: T.textDim, marginTop: "0.15rem" }}>W{ph.startWeek}–{ph.endWeek}</div>
+                  <div style={{ marginTop: "0.3rem" }}><Badge label={ph.status} color={statusColor(ph.status)} /></div>
+                </motion.button>
+              );
+            })}
+          </div>
+
+          <AnimatePresence mode="wait">
+            <motion.div key={activePhase} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }}>
+
+              {/* Phase meta row */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
+                {[
+                  { label: "Phase Progress", val: `${p.progress}%`, color: p.color },
+                  { label: "Tools Deployed", val: `${p.tools.filter(t => t.done).length}/${p.tools.length}`, color: T.cyan },
+                  { label: "Weeks", val: `W${p.startWeek} – W${p.endWeek}`, color: T.textMid },
+                  { label: "Risk Level", val: p.risk.split("—")[0].trim(), color: p.riskColor(T) },
+                ].map(k => (
+                  <div key={k.label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "0.75rem 1rem", textAlign: "center" }}>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{k.label}</div>
+                    <div style={{ color: k.color, fontFamily: T.mono, fontSize: "0.9rem", fontWeight: 700 }}>{k.val}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "1.5rem", marginBottom: "1.5rem" }}>
+                {/* Tools panel with checkboxes */}
+                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
+                  <div style={{ color: p.color, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "1rem", borderBottom: `1px solid ${T.border}`, paddingBottom: "0.5rem" }}>
+                    [ TOOLS DEPLOYED ]
+                  </div>
+                  {p.tools.map((tool, i) => (
+                    <motion.div key={tool.name} whileHover={{ x: 3 }}
+                      onClick={() => toggleTool(activePhase, i)}
+                      style={{ display: "flex", gap: "0.7rem", alignItems: "flex-start", padding: "0.55rem 0.3rem", cursor: "pointer", borderRadius: 4, marginBottom: "0.2rem", background: tool.done ? `${p.color}08` : "transparent" }}>
+                      <div style={{
+                        width: 18, height: 18, borderRadius: 4, flexShrink: 0, marginTop: "0.05rem",
+                        background: tool.done ? p.color : "transparent",
+                        border: `2px solid ${tool.done ? p.color : T.border}`,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        boxShadow: tool.done ? `0 0 8px ${p.color}44` : "none",
+                        transition: "all 0.2s",
+                      }}>
+                        {tool.done && <span style={{ color: T.bg, fontSize: "0.65rem", fontWeight: 900 }}>✓</span>}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ color: tool.done ? T.text : T.textMid, fontFamily: T.mono, fontSize: "0.78rem", fontWeight: tool.done ? 700 : 400 }}>{tool.name}</div>
+                        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", marginTop: "0.2rem", lineHeight: 1.4 }}>{tool.note}</div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+
+                {/* Key outputs — editable */}
+                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
+                  <div style={{ color: p.color, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "1rem", borderBottom: `1px solid ${T.border}`, paddingBottom: "0.5rem" }}>
+                    [ KEY OUTPUTS ] {editMode && <span style={{ color: T.yellow, fontSize: "0.55rem" }}>· EDIT MODE</span>}
+                  </div>
+                  {p.keyOutputs.map((o, i) => (
+                    <div key={o.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", paddingBottom: "0.6rem", marginBottom: "0.6rem", borderBottom: `1px solid ${T.border}` }}>
+                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", flexShrink: 0 }}>{o.label}</span>
+                      {editMode ? (
+                        <input value={o.val} onChange={e => updateOutput(activePhase, i, e.target.value)}
+                          style={{ flex: 1, background: T.panel, border: `1px solid ${T.cyan}44`, borderRadius: 3, color: T.cyan, fontFamily: T.mono, fontSize: "0.75rem", padding: "0.2rem 0.4rem", textAlign: "right" }} />
+                      ) : (
+                        <span style={{ color: T.text, fontFamily: T.mono, fontSize: "0.78rem", textAlign: "right" }}>{o.val}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Strategic Insight */}
+              <div style={{ background: `${p.color}08`, border: `1px solid ${p.color}33`, borderRadius: 8, padding: "1.5rem", marginBottom: "1rem" }}>
+                <div style={{ color: p.color, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "0.75rem" }}>
+                  [ STRATEGIC INSIGHT — {p.name} ]
+                </div>
+                <p style={{ color: T.text, fontSize: "0.88rem", lineHeight: 1.7, margin: 0 }}>{p.insight}</p>
+              </div>
+
+              {/* Risk + Decisions */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "1rem" }}>
+                <div style={{ background: `${p.riskColor(T)}0A`, border: `1px solid ${p.riskColor(T)}33`, borderRadius: 8, padding: "1.25rem" }}>
+                  <div style={{ color: p.riskColor(T), fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.6rem" }}>[ RISK ASSESSMENT ]</div>
+                  <p style={{ color: T.text, fontFamily: T.mono, fontSize: "0.78rem", lineHeight: 1.6, margin: 0 }}>{p.risk}</p>
+                </div>
+                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem" }}>
+                  <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.6rem" }}>[ KEY DECISIONS MADE ]</div>
+                  {p.decisions.map((d, i) => (
+                    <div key={i} style={{ display: "flex", gap: "0.6rem", marginBottom: "0.5rem", alignItems: "flex-start" }}>
+                      <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", flexShrink: 0, marginTop: "0.05rem" }}>→</span>
+                      <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.72rem", lineHeight: 1.5 }}>{d}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </>
+      )}
+    </motion.div>
+  );
+}
+
+// ─── 04: FMEA RISK SCORER ────────────────────────────────────────────────────
+const FMEA_DEFAULTS = [
+  { id: 1, process: "Customer Communication", failure: "No proactive status update", cause: "No automated system", effect: "Customer frustration, churn", S: 9, O: 8, D: 7, fixed: false, action: "Automated status engine", owner: "IT Ops", dueWeek: 18 },
+  { id: 2, process: "Case Assignment",        failure: "Assigned to wrong skill level", cause: "Random queue assignment", effect: "32% longer resolution", S: 8, O: 7, D: 8, fixed: false, action: "Skills-based routing algorithm", owner: "IT Dev", dueWeek: 22 },
+  { id: 3, process: "Case Documentation",     failure: "Incomplete closure notes", cause: "No mandatory fields", effect: "Knowledge loss, rework", S: 7, O: 7, D: 8, fixed: false, action: "Mandatory field enforcement", owner: "Support Ops", dueWeek: 20 },
+  { id: 4, process: "Initial Triage",         failure: "Case miscategorization", cause: "Rigid 12-question script", effect: "+21.5 hrs per case", S: 8, O: 8, D: 5, fixed: false, action: "AI-assisted categorization", owner: "IT Dev", dueWeek: 22 },
+  { id: 5, process: "Resolution Verification",failure: "Premature case closure", cause: "Pressure to meet metrics", effect: "28% reopen rate", S: 8, O: 6, D: 6, fixed: false, action: "48hr cooling period + flag", owner: "Support Mgr", dueWeek: 19 },
+];
+
+function FMEAScorer() {
+  const [items, setItems] = useLocalState("fmea_items", FMEA_DEFAULTS);
+  const [newItem, setNewItem] = useState({ process: "", failure: "", cause: "", effect: "", S: 5, O: 5, D: 5, action: "", owner: "", dueWeek: 0 });
+  const [showAdd, setShowAdd] = useState(false);
+  const [viewMode, setViewMode] = useLocalState("fmea_view", "table"); // table | matrix | heatmap
+  const [sortBy, setSortBy] = useLocalState("fmea_sort", "rpn");
+  const [filterMin, setFilterMin] = useState(0);
+
+  const rpn = (item) => item.S * item.O * item.D;
+  const rpnColor = (r) => r > 400 ? T.red : r > 200 ? T.orange : r > 100 ? T.yellow : T.green;
+  const rpnLabel = (r) => r > 400 ? "CRITICAL" : r > 200 ? "HIGH" : r > 100 ? "MODERATE" : "LOW";
+
+  const toggle = (id) => setItems(prev => prev.map(i => i.id === id ? { ...i, fixed: !i.fixed } : i));
+  const update = (id, field, val) => setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: field === "S" || field === "O" || field === "D" ? +val : val } : i));
+  const addItem = () => {
+    if (!newItem.process || !newItem.failure) return;
+    setItems(prev => [...prev, { ...newItem, id: Date.now(), fixed: false }]);
+    setNewItem({ process: "", failure: "", cause: "", effect: "", S: 5, O: 5, D: 5, action: "", owner: "", dueWeek: 0 });
+    setShowAdd(false);
+  };
+  const deleteItem = (id) => setItems(prev => prev.filter(i => i.id !== id));
+
+  const sorted = [...items]
+    .filter(i => rpn(i) >= filterMin)
+    .sort((a, b) => {
+      if (sortBy === "rpn") return rpn(b) - rpn(a);
+      if (sortBy === "severity") return b.S - a.S;
+      if (sortBy === "status") return a.fixed === b.fixed ? 0 : a.fixed ? 1 : -1;
+      return 0;
+    });
+
+  const totalBefore = items.reduce((acc, i) => acc + rpn(i), 0);
+  const totalAfter = items.filter(i => !i.fixed).reduce((acc, i) => acc + rpn(i), 0);
+  const reduction = totalBefore > 0 ? Math.round(((totalBefore - totalAfter) / totalBefore) * 100) : 0;
+  const criticalCount = items.filter(i => rpn(i) > 400 && !i.fixed).length;
+
+  // Heatmap grid: S (1-10) vs O (1-10), value = count of items in that cell
+  const heatmapData = Array.from({ length: 10 }, (_, si) =>
+    Array.from({ length: 10 }, (_, oi) => ({
+      s: si + 1, o: oi + 1,
+      count: items.filter(i => i.S === si + 1 && i.O === oi + 1).length,
+      items: items.filter(i => i.S === si + 1 && i.O === oi + 1),
+      baseRpn: (si + 1) * (oi + 1) * 5, // assume D=5 for heatmap
+    }))
+  );
+
+  const copyReport = `FMEA RISK REGISTER
+Total RPN Before: ${totalBefore} | After Controls: ${totalAfter} | Reduction: ${reduction}%
+Critical Items: ${criticalCount}
+
+${sorted.map(i => `[${rpnLabel(rpn(i))}] RPN ${rpn(i)} | ${i.process}: ${i.failure}
+  Cause: ${i.cause} | Effect: ${i.effect}
+  S=${i.S} O=${i.O} D=${i.D} | Status: ${i.fixed ? "CONTROLLED" : "OPEN"}
+  Action: ${i.action} | Owner: ${i.owner}`).join('\n\n')}`;
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1200, margin: "0 auto" }}>
+      <SectionHeader
+        module="Module 04 — Risk Intelligence"
+        title="FMEA Risk Priority Scorer"
+        sub="Live editable risk register. Heat map, matrix view, and scenario modelling. Click any S/O/D value to edit live."
+      />
+
+      {/* KPI Row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
+        {[
+          { label: "Total RPN (Open)", val: totalAfter, color: criticalCount > 0 ? T.red : T.yellow },
+          { label: "Total RPN (All)", val: totalBefore, color: T.textDim },
+          { label: "Risk Reduction", val: `${reduction}%`, color: T.green },
+          { label: "Critical (>400)", val: criticalCount, color: criticalCount > 0 ? T.red : T.green },
+          { label: "Controlled", val: items.filter(i => i.fixed).length, color: T.green },
+          { label: "Total Items", val: items.length, color: T.textMid },
+        ].map(k => (
+          <motion.div key={k.label} whileHover={{ scale: 1.03 }}
+            style={{ background: T.surface, border: `1px solid ${k.color}22`, borderRadius: 8, padding: "1rem", textAlign: "center" }}>
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.35rem" }}>{k.label}</div>
+            <motion.div key={k.val} initial={{ scale: 0.8 }} animate={{ scale: 1 }}
+              style={{ color: k.color, fontFamily: T.display, fontSize: "1.6rem", fontWeight: 800, textShadow: `0 0 15px ${k.color}44` }}>
+              {k.val}
+            </motion.div>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <ModuleToolbar
+        onReset={() => setItems(FMEA_DEFAULTS)}
+        copyData={copyReport}
+        saved={true}
+      >
+        {[
+          { id: "table", label: "≡ Register" },
+          { id: "matrix", label: "◫ Matrix" },
+          { id: "heatmap", label: "⬛ Heat Map" },
+        ].map(v => (
+          <button key={v.id} onClick={() => setViewMode(v.id)} style={{
+            background: viewMode === v.id ? `${T.cyan}15` : "transparent",
+            border: `1px solid ${viewMode === v.id ? T.cyan : T.border}`,
+            color: viewMode === v.id ? T.cyan : T.textDim,
+            padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer",
+            fontFamily: T.mono, fontSize: "0.62rem",
+          }}>{v.label}</button>
+        ))}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+          <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>Min RPN:</span>
+          <input type="number" value={filterMin} onChange={e => setFilterMin(+e.target.value)} min={0} max={1000}
+            style={{ width: 55, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.text, fontFamily: T.mono, fontSize: "0.72rem", padding: "0.2rem 0.35rem" }} />
+        </div>
+        {["rpn", "severity", "status"].map(s => (
+          <button key={s} onClick={() => setSortBy(s)} style={{
+            background: sortBy === s ? `${T.yellow}15` : "transparent",
+            border: `1px solid ${sortBy === s ? T.yellow : T.border}`,
+            color: sortBy === s ? T.yellow : T.textDim,
+            padding: "0.35rem 0.7rem", borderRadius: 4, cursor: "pointer",
+            fontFamily: T.mono, fontSize: "0.6rem",
+          }}>Sort: {s.toUpperCase()}</button>
+        ))}
+      </ModuleToolbar>
+
+      {/* ── TABLE VIEW ── */}
+      {viewMode === "table" && (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", marginBottom: "1.5rem" }}>
+          <div style={{ padding: "0.85rem 1.25rem", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase" }}>[ FAILURE MODE REGISTER — {sorted.length} items ]</span>
+            <button onClick={() => setShowAdd(!showAdd)} style={{
+              background: `${T.cyan}18`, border: `1px solid ${T.cyan}`, color: T.cyan,
+              padding: "0.4rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
+            }}>+ Add Failure Mode</button>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.mono, fontSize: "0.72rem" }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                  {["✓", "Process Step", "Failure Mode / Effect", "Cause", "S", "O", "D", "RPN", "Level", "Action", "Owner", "🗑"].map(h => (
+                    <th key={h} style={{ color: T.textDim, textAlign: "left", padding: "0.65rem 0.75rem", fontSize: "0.58rem", letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map(item => {
+                  const r = rpn(item);
+                  const rc = rpnColor(r);
+                  return (
+                    <motion.tr key={item.id} layout
+                      style={{ borderBottom: `1px solid ${T.border}`, opacity: item.fixed ? 0.45 : 1, background: r > 400 && !item.fixed ? `${T.red}06` : "transparent", transition: "opacity 0.3s" }}>
+                      <td style={{ padding: "0.65rem 0.75rem" }}>
+                        <button onClick={() => toggle(item.id)} style={{
+                          width: 22, height: 22, borderRadius: 4,
+                          background: item.fixed ? T.green : "transparent",
+                          border: `1.5px solid ${item.fixed ? T.green : T.border}`,
+                          color: item.fixed ? T.bg : T.textDim, cursor: "pointer", fontSize: "0.7rem",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          boxShadow: item.fixed ? `0 0 8px ${T.green}55` : "none",
+                          transition: "all 0.2s",
+                        }}>{item.fixed ? "✓" : ""}</button>
+                      </td>
+                      <td style={{ padding: "0.65rem 0.75rem", color: T.textMid, whiteSpace: "nowrap" }}>
+                        <EditableLabel value={item.process} onChange={v => update(item.id, "process", v)} style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.72rem" }} />
+                      </td>
+                      <td style={{ padding: "0.65rem 0.75rem", color: T.text, maxWidth: 180 }}>
+                        <EditableLabel value={item.failure} onChange={v => update(item.id, "failure", v)} style={{ color: T.text, fontFamily: T.mono, fontSize: "0.72rem" }} />
+                        <div style={{ color: T.textDim, fontSize: "0.62rem", marginTop: "0.15rem" }}>→ <EditableLabel value={item.effect} onChange={v => update(item.id, "effect", v)} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }} /></div>
+                      </td>
+                      <td style={{ padding: "0.65rem 0.75rem", color: T.textMid, maxWidth: 130 }}>
+                        <EditableLabel value={item.cause} onChange={v => update(item.id, "cause", v)} style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.68rem" }} />
+                      </td>
+                      {["S","O","D"].map(field => (
+                        <td key={field} style={{ padding: "0.5rem 0.4rem" }}>
+                          <input type="number" min={1} max={10} value={item[field]}
+                            onChange={e => update(item.id, field, e.target.value)}
+                            style={{ width: 38, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.cyan, fontFamily: T.mono, fontSize: "0.82rem", padding: "0.2rem 0.25rem", textAlign: "center", fontWeight: 700 }} />
+                        </td>
+                      ))}
+                      <td style={{ padding: "0.65rem 0.75rem" }}>
+                        <span style={{ color: rc, fontFamily: T.mono, fontSize: "1.05rem", fontWeight: 800, textShadow: `0 0 8px ${rc}66` }}>{r}</span>
+                      </td>
+                      <td style={{ padding: "0.65rem 0.75rem" }}><Badge label={rpnLabel(r)} color={rc} /></td>
+                      <td style={{ padding: "0.65rem 0.75rem", maxWidth: 140, color: T.textDim, fontSize: "0.62rem" }}>
+                        <EditableLabel value={item.action || "—"} onChange={v => update(item.id, "action", v)} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }} />
+                      </td>
+                      <td style={{ padding: "0.65rem 0.75rem" }}>
+                        <EditableLabel value={item.owner || "—"} onChange={v => update(item.id, "owner", v)} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem" }} />
+                      </td>
+                      <td style={{ padding: "0.65rem 0.5rem" }}>
+                        <button onClick={() => deleteItem(item.id)} style={{ background: "transparent", border: "none", color: T.textDim, cursor: "pointer", fontFamily: T.mono, fontSize: "0.75rem", padding: "0.1rem 0.3rem" }}>✕</button>
+                      </td>
+                    </motion.tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── MATRIX VIEW ── */}
+      {viewMode === "matrix" && (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1.25rem" }}>
+            RPN Risk Matrix — Severity vs Occurrence (size = Detection difficulty)
+          </div>
+          <div style={{ position: "relative", height: 320, background: T.panel, borderRadius: 8, overflow: "hidden" }}>
+            {/* Quadrant labels */}
+            {[
+              { x: "5%", y: "5%", label: "LOW RISK", color: T.green },
+              { x: "75%", y: "5%", label: "CRITICAL", color: T.red },
+              { x: "5%", y: "75%", label: "WATCH", color: T.yellow },
+              { x: "75%", y: "75%", label: "HIGH RISK", color: T.orange },
+            ].map(q => (
+              <div key={q.label} style={{ position: "absolute", left: q.x, top: q.y, color: q.color, fontFamily: T.mono, fontSize: "0.55rem", opacity: 0.4, letterSpacing: "0.1em" }}>{q.label}</div>
+            ))}
+            {/* Quadrant dividers */}
+            <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: `${T.border}`, opacity: 0.5 }} />
+            <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: `${T.border}`, opacity: 0.5 }} />
+            {/* Bubbles */}
+            {items.map(item => {
+              const r = rpn(item);
+              const rc = rpnColor(r);
+              const x = ((item.O - 1) / 9) * 85 + 5;
+              const y = (1 - (item.S - 1) / 9) * 80 + 5;
+              const size = Math.max(16, Math.min(40, item.D * 3));
+              return (
+                <motion.div key={item.id}
+                  initial={{ scale: 0 }} animate={{ scale: item.fixed ? 0.5 : 1 }} transition={{ type: "spring", delay: 0.1 }}
+                  title={`${item.failure}\nS=${item.S} O=${item.O} D=${item.D} RPN=${r}`}
+                  style={{
+                    position: "absolute", left: `${x}%`, top: `${y}%`,
+                    width: size, height: size, borderRadius: "50%",
+                    background: `${rc}33`, border: `2px solid ${rc}`,
+                    transform: "translate(-50%,-50%)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    cursor: "pointer", opacity: item.fixed ? 0.3 : 1,
+                    boxShadow: `0 0 12px ${rc}44`,
+                    transition: "opacity 0.3s",
+                    zIndex: 1,
+                  }}
+                  onClick={() => toggle(item.id)}
+                >
+                  <span style={{ color: rc, fontFamily: T.mono, fontSize: `${Math.max(8, size * 0.35)}px`, fontWeight: 700 }}>{r}</span>
+                </motion.div>
+              );
+            })}
+            {/* Axis labels */}
+            <div style={{ position: "absolute", bottom: 4, left: "50%", transform: "translateX(-50%)", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>← Occurrence →</div>
+            <div style={{ position: "absolute", left: 4, top: "50%", transform: "translateY(-50%) rotate(-90deg)", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>← Severity →</div>
+          </div>
+          <div style={{ marginTop: "0.75rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>
+            Bubble size = Detection difficulty (D). Click any bubble to toggle controlled. Position = S × O risk zone.
+          </div>
+        </div>
+      )}
+
+      {/* ── HEAT MAP VIEW ── */}
+      {viewMode === "heatmap" && (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem", overflowX: "auto" }}>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>
+            RPN Heat Map — Severity (rows) × Occurrence (columns) · Color = Risk Zone
+          </div>
+          <div style={{ display: "inline-grid", gridTemplateColumns: `40px repeat(10, 36px)`, gap: 2, minWidth: 410 }}>
+            {/* Header row */}
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", display: "flex", alignItems: "center", justifyContent: "center" }}>S\O</div>
+            {Array.from({ length: 10 }, (_, i) => (
+              <div key={i} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textAlign: "center", padding: "0.2rem 0" }}>{i + 1}</div>
+            ))}
+            {/* Data rows — S from 10 down to 1 */}
+            {Array.from({ length: 10 }, (_, si) => {
+              const s = 10 - si;
+              return (
+                <React.Fragment key={s}>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", display: "flex", alignItems: "center", justifyContent: "center" }}>{s}</div>
+                  {Array.from({ length: 10 }, (_, oi) => {
+                    const o = oi + 1;
+                    const baseRpn = s * o * 5;
+                    const cellItems = items.filter(i => i.S === s && i.O === o);
+                    const cellColor = baseRpn > 400 ? T.red : baseRpn > 200 ? T.orange : baseRpn > 100 ? T.yellow : baseRpn > 50 ? T.cyan : T.green;
+                    const hasItem = cellItems.length > 0;
+                    return (
+                      <div key={o} title={cellItems.map(i => `${i.failure} (RPN ${rpn(i)})`).join('\n') || `S=${s} O=${o} RPN≈${baseRpn}`}
+                        style={{
+                          width: 36, height: 36, borderRadius: 4,
+                          background: hasItem ? `${cellColor}55` : `${cellColor}15`,
+                          border: `1px solid ${hasItem ? cellColor : cellColor + "33"}`,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          cursor: hasItem ? "pointer" : "default",
+                          boxShadow: hasItem ? `0 0 8px ${cellColor}44` : "none",
+                          transition: "all 0.2s",
+                          position: "relative",
+                        }}>
+                        {hasItem && (
+                          <span style={{ color: cellColor, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 800 }}>
+                            {cellItems.length > 1 ? cellItems.length : rpn(cellItems[0])}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: "1rem", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+            {[
+              { label: "Critical (RPN >400)", color: T.red },
+              { label: "High (200-400)", color: T.orange },
+              { label: "Moderate (100-200)", color: T.yellow },
+              { label: "Low (<100)", color: T.green },
+            ].map(l => (
+              <div key={l.label} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <div style={{ width: 12, height: 12, borderRadius: 2, background: `${l.color}55`, border: `1px solid ${l.color}` }} />
+                <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>{l.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Add form */}
       <AnimatePresence>
@@ -1151,30 +2512,42 @@ function FMEAScorer() {
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
             style={{ background: T.surface, border: `1px solid ${T.cyan}33`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
             <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "1rem" }}>[ ADD NEW FAILURE MODE ]</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
               {[
                 { label: "Process Step", key: "process" },
                 { label: "Failure Mode", key: "failure" },
                 { label: "Root Cause", key: "cause" },
                 { label: "Effect on Customer", key: "effect" },
+                { label: "Recommended Action", key: "action" },
+                { label: "Owner", key: "owner" },
               ].map(f => (
                 <div key={f.key}>
-                  <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{f.label}</label>
+                  <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>{f.label}</label>
                   <input value={newItem[f.key]} onChange={e => setNewItem(p => ({ ...p, [f.key]: e.target.value }))}
-                    style={{ width: "100%", background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.6rem", fontFamily: T.mono, fontSize: "0.8rem", boxSizing: "border-box" }} />
+                    style={{ width: "100%", background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.55rem 0.65rem", fontFamily: T.mono, fontSize: "0.78rem", boxSizing: "border-box" }} />
                 </div>
               ))}
               {["S","O","D"].map(f => (
                 <div key={f}>
-                  <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{f === "S" ? "Severity (1-10)" : f === "O" ? "Occurrence (1-10)" : "Detection (1-10)"}</label>
-                  <input type="number" min={1} max={10} value={newItem[f]} onChange={e => setNewItem(p => ({ ...p, [f]: +e.target.value }))}
-                    style={{ width: "100%", background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.cyan, padding: "0.6rem", fontFamily: T.mono, fontSize: "0.8rem", boxSizing: "border-box" }} />
+                  <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>
+                    {f === "S" ? "Severity (1-10)" : f === "O" ? "Occurrence (1-10)" : "Detection (1-10)"}
+                  </label>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    <input type="range" min={1} max={10} value={newItem[f]} onChange={e => setNewItem(p => ({ ...p, [f]: +e.target.value }))}
+                      style={{ flex: 1, accentColor: T.cyan, cursor: "pointer" }} />
+                    <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.9rem", fontWeight: 700, minWidth: 20 }}>{newItem[f]}</span>
+                  </div>
                 </div>
               ))}
             </div>
-            <button onClick={addItem} style={{ marginTop: "1rem", background: T.cyan, border: "none", color: T.bg, padding: "0.75rem 1.5rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.75rem", fontWeight: 700 }}>
-              Add to Register
-            </button>
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+              <button onClick={addItem} style={{ background: T.cyan, border: "none", color: T.bg, padding: "0.65rem 1.5rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.75rem", fontWeight: 700 }}>
+                ✓ Add to Register (RPN: {newItem.S * newItem.O * newItem.D})
+              </button>
+              <button onClick={() => setShowAdd(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.65rem 1rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem" }}>
+                Cancel
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1183,127 +2556,358 @@ function FMEAScorer() {
 }
 
 // ─── 05: COPQ ENGINE ─────────────────────────────────────────────────────────
-function COPQEngine() {
-  const [caseVol, setCaseVol] = useState(3543);
-  const [reopenRate, setReopenRate] = useState(28);
-  const [escalRate, setEscalRate] = useState(58);
-  const [wasteHrs, setWasteHrs] = useState(33.5);
-  const [techCost, setTechCost] = useState(45);
-  const [churnRate, setChurnRate] = useState(35);
-  const [slaBreachPct, setSlaBreachPct] = useState(38);
-  const [ltv, setLtv] = useState(3200);
 
-  const rework = Math.round(caseVol * (reopenRate / 100) * 285);
-  const escalation = Math.round(caseVol * (escalRate / 100) * 175);
-  const wastedCap = Math.round(caseVol * wasteHrs * techCost);
-  const churn = Math.round(caseVol * (slaBreachPct / 100) * (churnRate / 100) * ltv);
-  const reputation = Math.round(28000000 * 0.05);
-  const appraisal = Math.round(caseVol * 0.1 * (20 / 60) * techCost);
-  const totalCOPQ = rework + escalation + wastedCap + churn + reputation + appraisal;
+const COPQ_DEFAULTS = {
+  A: { name: "Scenario A — Baseline", caseVol: 3543, reopenRate: 28, escalRate: 58, wasteHrs: 33.5, techCost: 45, churnRate: 35, slaBreachPct: 38, ltv: 3200, annualRevenue: 28000000 },
+  B: { name: "Scenario B — Post-DMAIC", caseVol: 3543, reopenRate: 11, escalRate: 28, wasteHrs: 18, techCost: 45, churnRate: 15, slaBreachPct: 10, ltv: 3200, annualRevenue: 28000000 },
+};
+
+function calcCOPQ(p) {
+  const rework   = Math.round(p.caseVol * (p.reopenRate / 100) * 285);
+  const escalation = Math.round(p.caseVol * (p.escalRate / 100) * 175);
+  const wastedCap  = Math.round(p.caseVol * p.wasteHrs * p.techCost);
+  const churn    = Math.round(p.caseVol * (p.slaBreachPct / 100) * (p.churnRate / 100) * p.ltv);
+  const reputation = Math.round(p.annualRevenue * 0.05);
+  const appraisal  = Math.round(p.caseVol * 0.1 * (20 / 60) * p.techCost);
+  const total    = rework + escalation + wastedCap + churn + reputation + appraisal;
+  return { rework, escalation, wastedCap, churn, reputation, appraisal, total };
+}
+
+function COPQEngine() {
+  const [activeScenario, setActiveScenario] = useLocalState("copq_activeScenario", "A");
+  const [scenarios, setScenarios] = useLocalState("copq_scenarios", COPQ_DEFAULTS);
+  const [viewMode, setViewMode] = useLocalState("copq_viewMode", "single"); // "single" | "compare"
+  const [scenarioNames, setScenarioNames] = useLocalState("copq_scenarioNames", { A: COPQ_DEFAULTS.A.name, B: COPQ_DEFAULTS.B.name });
+
+  const setParam = (scenario, key, val) => {
+    setScenarios(prev => ({ ...prev, [scenario]: { ...prev[scenario], [key]: val } }));
+  };
+
+  const fmt = (n) => {
+    if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+    return `$${(n / 1e3).toFixed(0)}K`;
+  };
+
+  const fmtFull = (n) => `$${n.toLocaleString()}`;
+
+  const copqA = calcCOPQ(scenarios.A);
+  const copqB = calcCOPQ(scenarios.B);
+  const activeCopq = activeScenario === "A" ? copqA : copqB;
+  const activeParams = scenarios[activeScenario];
+
+  const savings = copqA.total - copqB.total;
+  const roiPct = scenarios.B.techCost > 0 ? Math.round((savings / 180000) * 100) : 0;
 
   const categories = [
-    { name: "Wasted Technician Capacity", val: wastedCap, color: T.red, type: "Internal" },
-    { name: "Customer Churn", val: churn, color: T.orange, type: "External" },
-    { name: "Reputation Damage", val: reputation, color: "#FF6B9D", type: "External" },
-    { name: "Escalation Premium", val: escalation, color: T.yellow, type: "Internal" },
-    { name: "Rework / Reopened Cases", val: rework, color: T.cyan, type: "Internal" },
-    { name: "Quality Appraisal", val: appraisal, color: T.green, type: "Appraisal" },
-  ].sort((a, b) => b.val - a.val);
+    { key: "wastedCap",   name: "Wasted Labor Capacity",    color: T.red,    type: "Internal" },
+    { key: "churn",       name: "Customer Churn",           color: T.orange, type: "External" },
+    { key: "reputation",  name: "Reputation Damage",        color: "#FF6B9D",type: "External" },
+    { key: "escalation",  name: "Escalation Premium",       color: T.yellow, type: "Internal" },
+    { key: "rework",      name: "Rework / Reopened Cases",  color: T.cyan,   type: "Internal" },
+    { key: "appraisal",   name: "Quality Appraisal",        color: T.green,  type: "Appraisal" },
+  ];
 
-  const fmt = (n) => n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${(n / 1e3).toFixed(0)}K`;
+  const PARAMS = [
+    { key: "caseVol",      label: "Annual Case Volume",        min: 500,  max: 20000, step: 100, fmt: v => v.toLocaleString(),  unit: "cases" },
+    { key: "reopenRate",   label: "Case Reopen Rate",          min: 0,    max: 60,    step: 1,   fmt: v => `${v}%`,            unit: "%" },
+    { key: "escalRate",    label: "Escalation Rate",           min: 0,    max: 80,    step: 1,   fmt: v => `${v}%`,            unit: "%" },
+    { key: "wasteHrs",     label: "Waste Hours / Case",        min: 0,    max: 60,    step: 0.5, fmt: v => `${v}h`,            unit: "hrs" },
+    { key: "techCost",     label: "Staff Hourly Cost",         min: 10,   max: 200,   step: 5,   fmt: v => `$${v}`,            unit: "$/hr" },
+    { key: "churnRate",    label: "Churn Rate (SLA breach)",   min: 0,    max: 70,    step: 1,   fmt: v => `${v}%`,            unit: "%" },
+    { key: "slaBreachPct", label: "SLA Breach Rate",           min: 0,    max: 80,    step: 1,   fmt: v => `${v}%`,            unit: "%" },
+    { key: "ltv",          label: "Customer LTV",              min: 100,  max: 20000, step: 100, fmt: v => `$${v.toLocaleString()}`, unit: "$" },
+    { key: "annualRevenue",label: "Annual Revenue",            min: 1e6,  max: 500e6, step: 1e6, fmt: v => fmt(v),             unit: "$" },
+  ];
+
+  // Radar data for comparison
+  const radarData = [
+    { metric: "Rework", A: Math.round((copqA.rework / copqA.total) * 100), B: Math.round((copqB.rework / copqB.total) * 100) },
+    { metric: "Escalation", A: Math.round((copqA.escalation / copqA.total) * 100), B: Math.round((copqB.escalation / copqB.total) * 100) },
+    { metric: "Waste Cap.", A: Math.round((copqA.wastedCap / copqA.total) * 100), B: Math.round((copqB.wastedCap / copqB.total) * 100) },
+    { metric: "Churn", A: Math.round((copqA.churn / copqA.total) * 100), B: Math.round((copqB.churn / copqB.total) * 100) },
+    { metric: "Reputation", A: Math.round((copqA.reputation / copqA.total) * 100), B: Math.round((copqB.reputation / copqB.total) * 100) },
+  ];
+
+  // Copy report text
+  const reportText = `COPQ ANALYSIS REPORT
+Generated: ${new Date().toLocaleDateString()}
+
+${scenarioNames.A}: ${fmt(copqA.total)}
+${scenarioNames.B}: ${fmt(copqB.total)}
+Savings Realized: ${fmt(savings)}
+ROI: ${roiPct}%
+
+BREAKDOWN (${scenarioNames.A}):
+${categories.map(c => `  ${c.name}: ${fmt(copqA[c.key])} (${((copqA[c.key]/copqA.total)*100).toFixed(1)}%)`).join('\n')}
+
+BREAKDOWN (${scenarioNames.B}):
+${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB.total)*100).toFixed(1)}%)`).join('\n')}`;
+
+  const renderParamPanel = (scenario) => {
+    const params = scenarios[scenario];
+    const sc = scenario === "A" ? T.red : T.green;
+    return (
+      <div style={{ background: T.surface, border: `2px solid ${sc}33`, borderRadius: 8, padding: "1.5rem", flex: "1 1 300px" }}>
+        <div style={{ color: sc, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "0.5rem" }}>
+          [ {scenario === "A" ? "▲" : "▼"} SCENARIO {scenario} ]
+        </div>
+        <div style={{ marginBottom: "1.25rem" }}>
+          <EditableLabel
+            value={scenarioNames[scenario]}
+            onChange={v => setScenarioNames(p => ({ ...p, [scenario]: v }))}
+            style={{ color: sc, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}
+          />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+          {PARAMS.map(p => (
+            <div key={p.key}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem", alignItems: "center" }}>
+                <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.67rem" }}>{p.label}</span>
+                <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+                  {viewMode === "compare" && (
+                    <DeltaPill a={scenarios.A[p.key]} b={scenarios.B[p.key]}
+                      invert={["caseVol","techCost","ltv","annualRevenue"].indexOf(p.key) === -1}
+                      fmtFn={p.fmt} />
+                  )}
+                  <input
+                    type="number"
+                    value={params[p.key]}
+                    onChange={e => setParam(scenario, p.key, parseFloat(e.target.value) || 0)}
+                    style={{
+                      width: 70, background: T.panel, border: `1px solid ${T.border}`,
+                      borderRadius: 3, color: sc, fontFamily: T.mono,
+                      fontSize: "0.78rem", padding: "0.15rem 0.35rem",
+                      textAlign: "right", fontWeight: 700,
+                    }}
+                  />
+                </div>
+              </div>
+              <input type="range" min={p.min} max={p.max} step={p.step} value={params[p.key]}
+                onChange={e => setParam(scenario, p.key, parseFloat(e.target.value))}
+                style={{ width: "100%", accentColor: sc, cursor: "pointer" }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderResultPanel = (scenario, copq) => {
+    const sc = scenario === "A" ? T.red : T.green;
+    const cats = [...categories].sort((a, b) => copq[b.key] - copq[a.key]);
+    return (
+      <div style={{ flex: "1 1 280px", display: "flex", flexDirection: "column", gap: "1rem" }}>
+        {/* Big number */}
+        <div id={`copq-total-${scenario}`} style={{ background: T.surface, border: `2px solid ${sc}44`, borderRadius: 8, padding: "1.75rem", textAlign: "center", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 0%, ${sc}10 0%, transparent 70%)` }} />
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "0.5rem" }}>
+            Total Annual COPQ
+          </div>
+          <motion.div key={copq.total} initial={{ scale: 0.9, opacity: 0.5 }} animate={{ scale: 1, opacity: 1 }}
+            style={{ color: sc, fontFamily: T.display, fontSize: "2.5rem", fontWeight: 800, textShadow: `0 0 30px ${sc}66`, lineHeight: 1 }}>
+            {fmt(copq.total)}
+          </motion.div>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", marginTop: "0.5rem" }}>
+            {fmtFull(copq.total)} / year
+          </div>
+          {viewMode === "compare" && scenario === "B" && (
+            <div style={{ marginTop: "0.75rem", padding: "0.5rem", background: `${T.green}12`, borderRadius: 4 }}>
+              <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.72rem", fontWeight: 700 }}>
+                {savings >= 0 ? `↓ ${fmt(savings)} saved vs Scenario A` : `↑ ${fmt(Math.abs(savings))} more than A`}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Breakdown bars */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", flex: 1 }}>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.85rem" }}>Breakdown</div>
+          {cats.map(c => {
+            const pct = ((copq[c.key] / copq.total) * 100).toFixed(1);
+            const aVal = copqA[c.key];
+            const bVal = copqB[c.key];
+            return (
+              <div key={c.key} style={{ marginBottom: "0.7rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem", alignItems: "center" }}>
+                  <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.65rem" }}>{c.name}</span>
+                  <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+                    {viewMode === "compare" && <DeltaPill a={aVal} b={bVal} invert fmtFn={fmt} />}
+                    <span style={{ color: c.color, fontFamily: T.mono, fontSize: "0.72rem", fontWeight: 700 }}>{fmt(copq[c.key])}</span>
+                  </div>
+                </div>
+                <div style={{ height: 5, background: T.panel, borderRadius: 3, overflow: "hidden" }}>
+                  <motion.div animate={{ width: `${pct}%` }} transition={{ duration: 0.4 }}
+                    style={{ height: "100%", background: c.color, borderRadius: 3 }} />
+                </div>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textAlign: "right", marginTop: "0.1rem" }}>
+                  {pct}% · {c.type}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1100, margin: "0 auto" }}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1200, margin: "0 auto" }}>
       <SectionHeader
         module="Module 05 — Financial Intelligence"
         title="COPQ Engine"
-        sub="Cost of Poor Quality simulator. Adjust process parameters to see the true financial cost of process failure. Real data pre-loaded."
+        sub="Cost of Poor Quality with full scenario comparison. Edit any value directly. All data auto-saved."
       />
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem" }}>
-        {/* Sliders */}
-        <div style={{ flex: "1 1 350px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
-          <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "1.5rem" }}>[ PROCESS PARAMETERS ]</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+      {/* Toolbar */}
+      <ModuleToolbar
+        onReset={() => { setScenarios(COPQ_DEFAULTS); setScenarioNames({ A: COPQ_DEFAULTS.A.name, B: COPQ_DEFAULTS.B.name }); }}
+        copyData={reportText}
+        saved={true}
+      >
+        <ScenarioBadge label="Single View" color={T.cyan} active={viewMode === "single"} onClick={() => setViewMode("single")} />
+        <ScenarioBadge label="⇄ Compare A vs B" color={T.yellow} active={viewMode === "compare"} onClick={() => setViewMode("compare")} />
+      </ModuleToolbar>
+
+      {/* Scenario tabs (single mode) */}
+      {viewMode === "single" && (
+        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
+          {["A", "B"].map(s => (
+            <ScenarioBadge key={s} label={`${s === "A" ? "▲" : "▼"} ${scenarioNames[s]}`}
+              color={s === "A" ? T.red : T.green}
+              active={activeScenario === s}
+              onClick={() => setActiveScenario(s)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* SINGLE MODE */}
+      {viewMode === "single" && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem" }}>
+          {renderParamPanel(activeScenario)}
+          {renderResultPanel(activeScenario, activeCopq)}
+        </div>
+      )}
+
+      {/* COMPARE MODE */}
+      {viewMode === "compare" && (
+        <>
+          {/* Savings Hero */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
             {[
-              { label: "Annual Case Volume", val: caseVol, set: setCaseVol, min: 500, max: 20000, step: 100, fmt: v => v.toLocaleString() },
-              { label: "Case Reopen Rate (%)", val: reopenRate, set: setReopenRate, min: 0, max: 60, step: 1, fmt: v => `${v}%` },
-              { label: "Escalation Rate (%)", val: escalRate, set: setEscalRate, min: 0, max: 80, step: 1, fmt: v => `${v}%` },
-              { label: "Waste Hours / Case", val: wasteHrs, set: setWasteHrs, min: 0, max: 60, step: 0.5, fmt: v => `${v}h` },
-              { label: "Technician Cost ($/hr)", val: techCost, set: setTechCost, min: 20, max: 150, step: 5, fmt: v => `$${v}` },
-              { label: "Churn Rate (SLA breach)", val: churnRate, set: setChurnRate, min: 0, max: 70, step: 1, fmt: v => `${v}%` },
-              { label: "SLA Breach Rate (%)", val: slaBreachPct, set: setSlaBreachPct, min: 0, max: 80, step: 1, fmt: v => `${v}%` },
-              { label: "Customer LTV ($)", val: ltv, set: setLtv, min: 500, max: 10000, step: 100, fmt: v => `$${v.toLocaleString()}` },
-            ].map(s => (
-              <div key={s.label}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.35rem" }}>
-                  <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.7rem" }}>{s.label}</span>
-                  <span style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.8rem", fontWeight: 700 }}>{s.fmt(s.val)}</span>
-                </div>
-                <input type="range" min={s.min} max={s.max} step={s.step} value={s.val} onChange={e => s.set(+e.target.value)}
-                  style={{ width: "100%", accentColor: T.yellow, cursor: "pointer" }} />
-              </div>
+              { label: scenarioNames.A + " COPQ", val: fmt(copqA.total), color: T.red, sub: "Before improvement" },
+              { label: scenarioNames.B + " COPQ", val: fmt(copqB.total), color: T.green, sub: "After improvement" },
+              { label: "COPQ Savings", val: fmt(Math.abs(savings)), color: savings >= 0 ? T.green : T.red, sub: savings >= 0 ? "Annual savings unlocked" : "Increase — review B params" },
+              { label: "ROI Estimate", val: `${roiPct}%`, color: T.yellow, sub: "vs $180K investment" },
+              { label: "Reduction", val: `${copqA.total > 0 ? Math.abs(((copqB.total - copqA.total) / copqA.total) * 100).toFixed(1) : 0}%`, color: T.cyan, sub: "COPQ reduction achieved" },
+            ].map(k => (
+              <motion.div key={k.label} whileHover={{ scale: 1.02 }}
+                style={{ background: T.surface, border: `1px solid ${k.color}33`, borderRadius: 8, padding: "1.25rem", textAlign: "center", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 0%, ${k.color}08 0%, transparent 70%)` }} />
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.4rem" }}>{k.label}</div>
+                <motion.div key={k.val} initial={{ scale: 0.85 }} animate={{ scale: 1 }}
+                  style={{ color: k.color, fontFamily: T.display, fontSize: "1.7rem", fontWeight: 800, textShadow: `0 0 20px ${k.color}55` }}>
+                  {k.val}
+                </motion.div>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", marginTop: "0.25rem" }}>{k.sub}</div>
+              </motion.div>
             ))}
           </div>
+
+          {/* Side-by-side params + results */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
+            {renderParamPanel("A")}
+            {renderParamPanel("B")}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
+            {renderResultPanel("A", copqA)}
+            {renderResultPanel("B", copqB)}
+          </div>
+        </>
+      )}
+
+      {/* Charts row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: "1.5rem", marginTop: "0.5rem" }}>
+        {/* Bar chart */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>
+            {viewMode === "compare" ? "A vs B — Side by Side" : "Cost Breakdown"}
+          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            {viewMode === "compare" ? (
+              <BarChart data={categories.map(c => ({ name: c.name.split(" ").slice(0,2).join(" "), A: copqA[c.key], B: copqB[c.key], color: c.color }))}
+                margin={{ top: 5, right: 10, left: 10, bottom: 30 }}>
+                <CartesianGrid strokeDasharray="2 4" stroke={T.border} vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: T.textDim, fontSize: 8, fontFamily: T.mono }} axisLine={false} tickLine={false} angle={-30} textAnchor="end" />
+                <YAxis tickFormatter={v => `${(v/1000).toFixed(0)}K`} tick={{ fill: T.textDim, fontSize: 9, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v, n) => [fmt(v), n === "A" ? scenarioNames.A : scenarioNames.B]} contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: "0.72rem", color: T.text }} />
+                <Legend formatter={v => <span style={{ color: v === "A" ? T.red : T.green, fontFamily: T.mono, fontSize: "0.65rem" }}>{v === "A" ? scenarioNames.A : scenarioNames.B}</span>} />
+                <Bar dataKey="A" fill={T.red} fillOpacity={0.8} radius={[3,3,0,0]} />
+                <Bar dataKey="B" fill={T.green} fillOpacity={0.8} radius={[3,3,0,0]} />
+              </BarChart>
+            ) : (
+              <BarChart data={[...categories].sort((a,b) => activeCopq[b.key]-activeCopq[a.key]).map(c => ({ name: c.name.split(" ").slice(0,2).join(" "), val: activeCopq[c.key], color: c.color }))}
+                margin={{ top: 5, right: 10, left: 10, bottom: 30 }}>
+                <CartesianGrid strokeDasharray="2 4" stroke={T.border} vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: T.textDim, fontSize: 8, fontFamily: T.mono }} axisLine={false} tickLine={false} angle={-30} textAnchor="end" />
+                <YAxis tickFormatter={v => `${(v/1000).toFixed(0)}K`} tick={{ fill: T.textDim, fontSize: 9, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={v => [fmt(v), "Cost"]} contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: "0.72rem", color: T.text }} />
+                <Bar dataKey="val" radius={[3,3,0,0]}>
+                  {[...categories].sort((a,b) => activeCopq[b.key]-activeCopq[a.key]).map((c,i) => <Cell key={i} fill={c.color} />)}
+                </Bar>
+              </BarChart>
+            )}
+          </ResponsiveContainer>
         </div>
 
-        {/* Results */}
-        <div style={{ flex: "1 1 350px", display: "flex", flexDirection: "column", gap: "1rem" }}>
-          {/* Total COPQ */}
-          <div style={{ background: T.surface, border: `2px solid ${T.red}44`, borderRadius: 8, padding: "2rem", textAlign: "center", position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 0%, ${T.red}10 0%, transparent 70%)` }} />
-            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "0.75rem" }}>
-              Total Annual COPQ
+        {/* Radar comparison */}
+        {viewMode === "compare" && (
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>
+              Cost Structure Radar — % of Total
             </div>
-            <div style={{ color: T.red, fontFamily: T.display, fontSize: "2.8rem", fontWeight: 800, textShadow: `0 0 30px ${T.red}66` }}>
-              {fmt(totalCOPQ)}
-            </div>
-            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.72rem", marginTop: "0.5rem" }}>
-              ROI: <span style={{ color: T.green }}>{Math.round((PROJECT.savings / PROJECT.investment) * 100)}%</span> · Payback: <span style={{ color: T.cyan }}>&lt;1 year</span>
-            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <RadarChart data={radarData} margin={{ top: 10, right: 30, left: 30, bottom: 10 }}>
+                <PolarGrid stroke={T.border} />
+                <PolarAngleAxis dataKey="metric" tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} />
+                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: T.textDim, fontSize: 8 }} />
+                <Radar name={scenarioNames.A} dataKey="A" stroke={T.red} fill={T.red} fillOpacity={0.15} strokeWidth={2} />
+                <Radar name={scenarioNames.B} dataKey="B" stroke={T.green} fill={T.green} fillOpacity={0.15} strokeWidth={2} />
+                <Legend formatter={v => <span style={{ color: v === scenarioNames.A ? T.red : T.green, fontFamily: T.mono, fontSize: "0.62rem" }}>{v}</span>} />
+                <Tooltip contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: "0.72rem", color: T.text }} formatter={v => [`${v}% of total`, ""]} />
+              </RadarChart>
+            </ResponsiveContainer>
           </div>
+        )}
 
-          {/* Breakdown */}
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", flex: 1 }}>
-            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>Breakdown by Category</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-              {categories.map(c => (
-                <div key={c.name}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
-                    <span style={{ color: T.textMid, fontSize: "0.72rem", fontFamily: T.mono }}>{c.name}</span>
-                    <span style={{ color: c.color, fontFamily: T.mono, fontSize: "0.78rem", fontWeight: 700 }}>{fmt(c.val)}</span>
-                  </div>
-                  <div style={{ height: 4, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
-                    <motion.div
-                      animate={{ width: `${Math.min((c.val / totalCOPQ) * 100, 100)}%` }}
-                      transition={{ duration: 0.5 }}
-                      style={{ height: "100%", background: c.color, borderRadius: 2 }}
-                    />
-                  </div>
-                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textAlign: "right" }}>
-                    {((c.val / totalCOPQ) * 100).toFixed(1)}% · {c.type}
-                  </div>
+        {/* What-If payback */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>
+            Payback Analysis
+          </div>
+          {[10, 25, 33, 50, 75].map(pct => {
+            const s = Math.round(copqA.total * pct / 100);
+            const months = s > 0 ? Math.max(Math.round((180000 / s) * 12), 1) : "∞";
+            const barPct = Math.min(pct * 1.5, 100);
+            return (
+              <div key={pct} style={{ marginBottom: "0.65rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", width: 35, textAlign: "right", flexShrink: 0 }}>{pct}%</div>
+                <div style={{ flex: 1, height: 8, background: T.panel, borderRadius: 4, overflow: "hidden" }}>
+                  <motion.div animate={{ width: `${barPct}%` }} transition={{ duration: 0.6, delay: pct * 0.01 }}
+                    style={{ height: "100%", background: pct >= 30 ? T.green : T.yellow, borderRadius: 4 }} />
                 </div>
-              ))}
-            </div>
+                <div style={{ display: "flex", gap: "0.5rem", minWidth: 120, flexShrink: 0 }}>
+                  <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.68rem" }}>{fmt(s)}</span>
+                  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>· {months}mo payback</span>
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: `1px solid ${T.border}`, color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>
+            Based on $180K investment · Annual COPQ: {fmt(copqA.total)}
           </div>
         </div>
-      </div>
-
-      {/* COPQ bar chart */}
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginTop: "1.5rem" }}>
-        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>Visual Breakdown</div>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={categories} margin={{ top: 5, right: 10, left: 20, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="2 4" stroke={T.border} vertical={false} />
-            <XAxis dataKey="name" tick={{ fill: T.textDim, fontSize: 9, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-            <YAxis tickFormatter={v => `$${(v/1000).toFixed(0)}K`} tick={{ fill: T.textDim, fontSize: 9, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-            <Tooltip formatter={v => [fmt(v), "Cost"]} contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: "0.75rem", color: T.text }} />
-            <Bar dataKey="val" radius={[3, 3, 0, 0]}>
-              {categories.map((c, i) => <Cell key={i} fill={c.color} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
       </div>
     </motion.div>
   );
@@ -1981,153 +3585,453 @@ function ParetoBuilder() {
 }
 
 // ─── 08: ROOT CAUSE ANALYZER ─────────────────────────────────────────────────
+
+
+const RC_DEFAULTS = [
+  {
+    id: 1, title: "Technician Experience Gap", category: "MAN", contribution: 84, validated: true,
+    pValue: "< 0.001", rSquared: 0.58, effect: "Each 1yr experience = −8.4h resolution time",
+    whys: [
+      { q: "Why does experience significantly affect resolution time?", a: "Experienced technicians use tacit knowledge and shortcuts; novices rely on trial-and-error." },
+      { q: "Why do less experienced technicians lack product knowledge?", a: "Onboarding only covers basics — not updated since March 2021, missing 4 of top 10 current issues." },
+      { q: "Why is the training program inadequate?", a: "Training curriculum was last updated 3 years ago and misses recent product features (V1→V4.2, 315% more features)." },
+      { q: "Why hasn't training been updated?", a: "No dedicated training owner — responsibility split among supervisors averaging only 2 hrs/month vs 15 hrs needed." },
+      { q: "Why is there no dedicated training owner?", a: "Training viewed as a one-time onboarding expense, not a continuous operational necessity." },
+    ],
+    rootCause: "Lack of organizational commitment and resource allocation to continuous technical learning.",
+    solution: "Extended 6-week onboarding + mentor pairing (90 days) + quarterly competency assessments.",
+    status: "SOLVED", impact: 20.2,
+  },
+  {
+    id: 2, title: "Poor Case Categorization", category: "METHOD", contribution: 20, validated: true,
+    pValue: "< 0.001", effect: "Miscategorization adds +21.5 hrs per affected case",
+    whys: [
+      { q: "Why are 22% of cases miscategorized at intake?", a: "Tier 1 agents lack technical depth to assess complex symptoms using a rigid 12-question script." },
+      { q: "Why don't scripts handle complexity?", a: "Scripts designed 5 years ago for V1.0 — current product V4.2 has 315% more features (45 → 187)." },
+      { q: "Why weren't scripts updated with product evolution?", a: "No process to update support materials when engineering releases new features." },
+      { q: "Why do engineering and support operate in silos?", a: "Engineering reports to CTO, Support to COO — no shared governance, 0 support touchpoints in launch checklist." },
+      { q: "Why no cross-functional product launch process?", a: "Organizational structure separates functions with no shared governance or feedback loop." },
+    ],
+    rootCause: "Lack of cross-functional product development process that integrates support readiness.",
+    solution: "AI-assisted categorization + dynamic intake + mandatory product launch checklist.",
+    status: "SOLVED", impact: 4.7,
+  },
+  {
+    id: 3, title: "Scattered Knowledge Sources", category: "MATERIAL", contribution: 21, validated: true,
+    pValue: "< 0.001", rCorr: 0.67, effect: "Technicians spend avg 18 mins/case searching across 5+ systems",
+    whys: [
+      { q: "Why do technicians spend 18 mins avg searching?", a: "Must search across 5+ disconnected systems: Wiki, SharePoint, Email, Slack, PDF library." },
+      { q: "Why is knowledge scattered across multiple systems?", a: "Systems implemented organically (Wiki 2018, SharePoint 2019) with no integration strategy." },
+      { q: "Why was there no knowledge management strategy?", a: "KM budget proposals rejected in 2020 and 2022 — viewed as 'nice to have' not critical." },
+      { q: "Why wasn't KM prioritized?", a: "Business cases failed to quantify financial impact of search time — only focused on software licensing costs." },
+      { q: "Why wasn't the impact quantified?", a: "No operational metrics exist to track information retrieval time or knowledge reuse efficiency." },
+    ],
+    rootCause: "Lack of operational metrics to quantify knowledge management value.",
+    solution: "Unified knowledge platform + AI-powered search + structured decision trees.",
+    status: "SOLVED", impact: 5.1,
+  },
+];
+
 function RootCauseAnalyzer() {
-  const [activeRC, setActiveRC] = useState(0);
-  const [answers, setAnswers] = useState({});
+  const [rootCauses, setRootCauses] = useLocalState("rc_items", RC_DEFAULTS);
+  const [activeRC, setActiveRC] = useLocalState("rc_active", 0);
+  const [activeWhy, setActiveWhy] = useState(null);
+  const [viewMode, setViewMode] = useLocalState("rc_view", "whys"); // whys | fishbone | matrix | custom
+  const [showAddRC, setShowAddRC] = useState(false);
+  const [newRC, setNewRC] = useState({ title: "", category: "MAN", contribution: 10, effect: "", whys: [{ q: "", a: "" }, { q: "", a: "" }, { q: "", a: "" }, { q: "", a: "" }, { q: "", a: "" }], rootCause: "", solution: "", status: "OPEN", impact: 0 });
 
-  const rootCauses = [
-    {
-      title: "Technician Experience Gap",
-      category: "MAN", contribution: 84, validated: true,
-      pValue: "< 0.001", rSquared: 0.58,
-      whys: [
-        { q: "Why does experience significantly affect resolution time?", a: "Experienced technicians use tacit knowledge and shortcuts; novices rely on trial-and-error." },
-        { q: "Why do less experienced technicians lack product knowledge?", a: "Onboarding only covers basics — not updated since March 2021, missing 4 of the top 10 current issues." },
-        { q: "Why is the training program inadequate?", a: "Training curriculum was last updated 3 years ago and misses recent product features." },
-        { q: "Why hasn't training been updated?", a: "No dedicated training owner — responsibility split among supervisors averaging only 2 hrs/month vs 15 needed." },
-        { q: "Why is there no dedicated training owner?", a: "Training viewed as a one-time onboarding expense, not a continuous operational necessity." },
-      ],
-      rootCause: "Lack of organizational commitment and resource allocation to continuous technical learning.",
-      solution: "Extended 6-week onboarding + mentor pairing + quarterly competency assessments.",
-    },
-    {
-      title: "Poor Case Categorization",
-      category: "METHOD", contribution: 20, validated: true,
-      pValue: "< 0.001", effect: "+21.5 hrs per miscategorized case",
-      whys: [
-        { q: "Why are 22% of cases miscategorized at intake?", a: "Tier 1 agents lack technical depth to assess complex symptoms using a rigid 12-question script." },
-        { q: "Why do scripts not handle complexity?", a: "Scripts designed 5 years ago for V1.0 — current product V4.2 has 315% more features (45 → 187)." },
-        { q: "Why weren't scripts updated with product evolution?", a: "No process to update support materials when engineering releases new features." },
-        { q: "Why do engineering and support operate in silos?", a: "Engineering reports to CTO, Support to COO — no shared governance. Product launch checklist: 0 support touchpoints." },
-        { q: "Why no cross-functional product launch process?", a: "Organizational structure separates functions with no shared governance or feedback loop established." },
-      ],
-      rootCause: "Lack of cross-functional product development process that integrates support readiness.",
-      solution: "AI-assisted categorization + dynamic intake + mandatory product launch checklist.",
-    },
-    {
-      title: "Scattered Knowledge Sources",
-      category: "MATERIAL", contribution: 21, validated: true,
-      pValue: "< 0.001", rCorr: 0.67,
-      whys: [
-        { q: "Why do technicians spend 18 mins avg searching?", a: "Must search across 5+ disconnected systems: Wiki, SharePoint, Email, Slack, PDF library." },
-        { q: "Why is knowledge scattered across multiple systems?", a: "Systems implemented organically over time (Wiki 2018, SharePoint 2019) with no integration strategy." },
-        { q: "Why was there no knowledge management strategy?", a: "KM budget proposals rejected in 2020 and 2022 — viewed as 'nice to have' rather than critical." },
-        { q: "Why wasn't KM prioritized?", a: "Business cases failed to quantify financial impact of search time — only focused on software licensing costs." },
-        { q: "Why wasn't the impact quantified?", a: "No operational metrics exist to track information retrieval time or knowledge reuse efficiency." },
-      ],
-      rootCause: "Lack of operational metrics to quantify knowledge management value.",
-      solution: "Unified knowledge platform + AI-powered search + structured decision trees.",
-    },
-  ];
+  const rc = rootCauses[activeRC] || rootCauses[0];
+  const statusColor = (s) => s === "SOLVED" ? T.green : s === "IN PROGRESS" ? T.yellow : T.red;
 
-  const rc = rootCauses[activeRC];
+  const CATEGORIES = ["MAN", "METHOD", "MACHINE", "MATERIAL", "MEASUREMENT", "ENVIRONMENT"];
+  const catColor = (c) => ({ MAN: T.red, METHOD: T.orange, MACHINE: T.yellow, MATERIAL: T.cyan, MEASUREMENT: "#9B8EC4", ENVIRONMENT: T.green }[c] || T.textDim);
+
+  const totalGap = 24.1;
+  const totalContrib = rootCauses.reduce((acc, r) => acc + r.impact, 0);
+
+  const copyReport = `ROOT CAUSE ANALYSIS REPORT
+${rootCauses.length} validated root causes — Total gap explained: ${totalContrib.toFixed(1)}h of ${totalGap}h
+
+${rootCauses.map((r, i) => `${i+1}. ${r.title} [${r.category}]
+   Contribution: ${r.contribution}% | Impact: −${r.impact}h | Status: ${r.status}
+   Effect: ${r.effect}
+   Root Cause: ${r.rootCause}
+   Solution: ${r.solution}
+   5 Whys:
+   ${r.whys.map((w, j) => `   W${j+1}: ${w.q}\n        → ${w.a}`).join('\n')}`).join('\n\n')}`;
+
+  // Fishbone data — map whys to fishbone bones
+  const fishboneCategories = CATEGORIES.map(cat => ({
+    name: cat, color: catColor(cat),
+    causes: rootCauses.filter(r => r.category === cat).map(r => r.title),
+  })).filter(c => c.causes.length > 0);
+
+  const FishboneView = () => (
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1.25rem" }}>
+        Ishikawa Fishbone Diagram — Cause Categories
+      </div>
+      {/* Central spine */}
+      <div style={{ display: "flex", alignItems: "center", marginBottom: "1.5rem" }}>
+        <div style={{ flex: 1, height: 3, background: `linear-gradient(90deg,${T.border},${T.red})`, borderRadius: 2 }} />
+        <div style={{ background: `${T.red}22`, border: `2px solid ${T.red}`, borderRadius: 8, padding: "0.65rem 1.25rem", flexShrink: 0, marginLeft: "0.5rem" }}>
+          <div style={{ color: T.red, fontFamily: T.display, fontSize: "0.9rem", fontWeight: 800, lineHeight: 1 }}>EFFECT</div>
+          <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.65rem", marginTop: "0.2rem" }}>Resolution Time = 72.1h</div>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>Target: 48h</div>
+        </div>
+      </div>
+
+      {/* Bones grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: "1rem" }}>
+        {CATEGORIES.map(cat => {
+          const catRCs = rootCauses.filter(r => r.category === cat);
+          const c = catColor(cat);
+          return (
+            <div key={cat} style={{ background: `${c}08`, border: `1px solid ${c}33`, borderRadius: 8, padding: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem", borderBottom: `1px solid ${c}22`, paddingBottom: "0.5rem" }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: c, boxShadow: `0 0 6px ${c}` }} />
+                <span style={{ color: c, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em" }}>{cat}</span>
+              </div>
+              {catRCs.length > 0 ? catRCs.map(r => (
+                <div key={r.id} onClick={() => { setActiveRC(rootCauses.indexOf(r)); setViewMode("whys"); }}
+                  style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", cursor: "pointer", padding: "0.35rem 0.4rem", borderRadius: 4, background: `${c}08`, transition: "background 0.2s" }}>
+                  <span style={{ color: c, fontFamily: T.mono, fontSize: "0.65rem", flexShrink: 0 }}>→</span>
+                  <div>
+                    <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.72rem" }}>{r.title}</div>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>{r.contribution}% · −{r.impact}h</div>
+                  </div>
+                </div>
+              )) : (
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", fontStyle: "italic" }}>No causes in this category</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const MatrixView = () => (
+    <div>
+      {/* Impact vs Controllability matrix */}
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1.25rem" }}>
+          Impact vs Contribution Matrix — bubble size = % of gap
+        </div>
+        <div style={{ position: "relative", height: 280, background: T.panel, borderRadius: 8, overflow: "hidden" }}>
+          {/* Quadrant labels */}
+          {[
+            { x: "5%", y: "8%", label: "Quick Wins", sub: "Low effort, High impact", color: T.green },
+            { x: "60%", y: "8%", label: "Major Projects", sub: "High effort, High impact", color: T.cyan },
+            { x: "5%", y: "70%", label: "Fill-ins", sub: "Low effort, Low impact", color: T.yellow },
+            { x: "60%", y: "70%", label: "Thankless Tasks", sub: "High effort, Low impact", color: T.red },
+          ].map(q => (
+            <div key={q.label} style={{ position: "absolute", left: q.x, top: q.y }}>
+              <div style={{ color: q.color, fontFamily: T.mono, fontSize: "0.58rem", fontWeight: 700, opacity: 0.6 }}>{q.label}</div>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.5rem", opacity: 0.4 }}>{q.sub}</div>
+            </div>
+          ))}
+          {/* Dividers */}
+          <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: T.border, opacity: 0.5 }} />
+          <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: T.border, opacity: 0.5 }} />
+          {/* Bubbles */}
+          {rootCauses.map((r, i) => {
+            const x = 10 + (r.contribution / 100) * 75;
+            const y = 80 - (r.impact / 10) * 65;
+            const size = Math.max(30, r.contribution * 0.8);
+            const c = catColor(r.category);
+            return (
+              <motion.div key={r.id} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", delay: i * 0.1 }}
+                onClick={() => { setActiveRC(i); setViewMode("whys"); }}
+                title={`${r.title}\nContribution: ${r.contribution}% | Impact: −${r.impact}h`}
+                style={{
+                  position: "absolute", left: `${x}%`, top: `${y}%`,
+                  width: size, height: size, borderRadius: "50%",
+                  background: `${c}28`, border: `2px solid ${c}`,
+                  transform: "translate(-50%,-50%)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  cursor: "pointer", flexDirection: "column",
+                  boxShadow: `0 0 15px ${c}33`, transition: "opacity 0.2s",
+                }}
+              >
+                <span style={{ color: c, fontFamily: T.mono, fontSize: `${Math.max(8, size * 0.22)}px`, fontWeight: 700, lineHeight: 1 }}>{r.contribution}%</span>
+                <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.5rem", lineHeight: 1 }}>{r.category}</span>
+              </motion.div>
+            );
+          })}
+          <div style={{ position: "absolute", bottom: 4, left: "50%", transform: "translateX(-50%)", color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>← Contribution to Gap →</div>
+          <div style={{ position: "absolute", left: 4, top: "50%", transform: "translateY(-50%) rotate(-90deg)", color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>← Impact (hrs) →</div>
+        </div>
+      </div>
+
+      {/* Summary table */}
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.mono, fontSize: "0.72rem" }}>
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+              {["Root Cause", "Category", "Contribution", "Impact (hrs)", "Status", "Solution"].map(h => (
+                <th key={h} style={{ color: T.textDim, textAlign: "left", padding: "0.65rem 0.85rem", fontSize: "0.58rem", textTransform: "uppercase" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {[...rootCauses].sort((a,b) => b.contribution - a.contribution).map((r, i) => {
+              const c = catColor(r.category);
+              const sc = statusColor(r.status);
+              return (
+                <tr key={r.id} onClick={() => { setActiveRC(rootCauses.indexOf(r)); setViewMode("whys"); }}
+                  style={{ borderBottom: `1px solid ${T.border}`, cursor: "pointer", background: i === activeRC ? `${c}08` : "transparent" }}>
+                  <td style={{ padding: "0.65rem 0.85rem", color: T.text }}>{r.title}</td>
+                  <td style={{ padding: "0.65rem 0.85rem" }}><Badge label={r.category} color={c} /></td>
+                  <td style={{ padding: "0.65rem 0.85rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <div style={{ height: 6, width: 60, background: T.panel, borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ width: `${r.contribution}%`, height: "100%", background: c, borderRadius: 3 }} />
+                      </div>
+                      <span style={{ color: c, fontWeight: 700 }}>{r.contribution}%</span>
+                    </div>
+                  </td>
+                  <td style={{ padding: "0.65rem 0.85rem", color: T.yellow, fontWeight: 700 }}>−{r.impact}h</td>
+                  <td style={{ padding: "0.65rem 0.85rem" }}><Badge label={r.status} color={sc} /></td>
+                  <td style={{ padding: "0.65rem 0.85rem", color: T.textDim, fontSize: "0.65rem", maxWidth: 180 }}>{r.solution}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1100, margin: "0 auto" }}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1200, margin: "0 auto" }}>
       <SectionHeader
         module="Module 08 — Causal Intelligence"
-        title="5 Whys Root Cause Analyzer"
-        sub="Interactive drill-down into the 3 primary validated root causes. All causes confirmed at p < 0.001 statistical confidence."
+        title="Root Cause Analyzer"
+        sub="5 Whys drill-down, Fishbone diagram, Impact matrix. Add your own root causes. All statistically validated."
       />
 
-      {/* RC Selector */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: "1rem", marginBottom: "2rem" }}>
-        {rootCauses.map((rc, i) => (
-          <button key={i} onClick={() => setActiveRC(i)} style={{
-            background: activeRC === i ? `${T.cyan}10` : T.surface,
-            border: `2px solid ${activeRC === i ? T.cyan : T.border}`,
-            borderRadius: 8, padding: "1.25rem", cursor: "pointer", textAlign: "left",
-            transition: "all 0.2s",
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-              <Badge label={rc.category} color={T.cyan} />
-              <span style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700 }}>{rc.contribution}% of gap</span>
-            </div>
-            <div style={{ color: activeRC === i ? T.text : T.textMid, fontFamily: T.display, fontSize: "0.95rem", fontWeight: 700 }}>{rc.title}</div>
-            <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.62rem", marginTop: "0.4rem" }}>✓ Statistically Validated · p {rc.pValue}</div>
-          </button>
+      {/* Summary KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
+        {[
+          { label: "Root Causes", val: rootCauses.length, color: T.cyan },
+          { label: "Gap Explained", val: `${totalContrib.toFixed(1)}h / ${totalGap}h`, color: T.yellow },
+          { label: "% Solved", val: `${Math.round((rootCauses.filter(r=>r.status==="SOLVED").length/rootCauses.length)*100)}%`, color: T.green },
+          { label: "Validated (p<0.001)", val: rootCauses.filter(r=>r.validated).length, color: T.cyan },
+          { label: "Total Impact", val: `−${totalContrib.toFixed(1)}h`, color: T.green },
+        ].map(k => (
+          <div key={k.label} style={{ background: T.surface, border: `1px solid ${k.color}22`, borderRadius: 8, padding: "0.9rem", textAlign: "center" }}>
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{k.label}</div>
+            <div style={{ color: k.color, fontFamily: T.display, fontSize: "1.4rem", fontWeight: 800 }}>{k.val}</div>
+          </div>
         ))}
       </div>
 
-      {/* 5 Whys Chain */}
-      <AnimatePresence mode="wait">
-        <motion.div key={activeRC} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
-            <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "1.5rem" }}>
-              [ 5 WHYS DRILL-DOWN — {rc.title.toUpperCase()} ]
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
-              {rc.whys.map((w, i) => (
-                <div key={i} style={{ display: "flex", gap: "1rem", paddingBottom: "1rem", position: "relative" }}>
-                  {i < rc.whys.length - 1 && (
-                    <div style={{ position: "absolute", left: 17, top: 36, bottom: 0, width: 2, background: `${T.cyan}33` }} />
-                  )}
-                  <div style={{ flexShrink: 0, width: 36, height: 36, borderRadius: "50%", background: `${T.cyan}18`, border: `2px solid ${T.cyan}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.cyan, fontFamily: T.mono, fontSize: "0.8rem", fontWeight: 700, zIndex: 1 }}>
-                    {i + 1}
+      {/* Toolbar */}
+      <ModuleToolbar onReset={() => setRootCauses(RC_DEFAULTS)} copyData={copyReport} saved={true}>
+        {[
+          { id: "whys", label: "? 5 Whys" },
+          { id: "fishbone", label: "⟶ Fishbone" },
+          { id: "matrix", label: "◫ Matrix" },
+        ].map(v => (
+          <button key={v.id} onClick={() => setViewMode(v.id)} style={{
+            background: viewMode === v.id ? `${T.cyan}15` : "transparent",
+            border: `1px solid ${viewMode === v.id ? T.cyan : T.border}`,
+            color: viewMode === v.id ? T.cyan : T.textDim,
+            padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+          }}>{v.label}</button>
+        ))}
+        <button onClick={() => setShowAddRC(p => !p)} style={{
+          background: `${T.green}15`, border: `1px solid ${T.green}44`, color: T.green,
+          padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+        }}>+ Add Root Cause</button>
+      </ModuleToolbar>
+
+      {viewMode === "fishbone" && <FishboneView />}
+      {viewMode === "matrix" && <MatrixView />}
+
+      {viewMode === "whys" && (
+        <>
+          {/* RC selector cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
+            {rootCauses.map((r, i) => {
+              const c = catColor(r.category);
+              const sc2 = statusColor(r.status);
+              return (
+                <motion.button key={r.id} onClick={() => setActiveRC(i)} whileHover={{ scale: 1.02 }} style={{
+                  background: activeRC === i ? `${c}12` : T.surface,
+                  border: `2px solid ${activeRC === i ? c : T.border}`,
+                  borderRadius: 8, padding: "1rem", cursor: "pointer", textAlign: "left",
+                  transition: "all 0.2s",
+                  boxShadow: activeRC === i ? `0 0 20px ${c}22` : "none",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem", alignItems: "flex-start" }}>
+                    <Badge label={r.category} color={c} />
+                    <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+                      <Badge label={r.status} color={sc2} />
+                      <span style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.68rem", fontWeight: 700 }}>{r.contribution}%</span>
+                    </div>
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.72rem", marginBottom: "0.25rem", fontStyle: "italic" }}>Why {i + 1}: {w.q}</div>
-                    <div style={{ background: T.panel, border: `1px solid ${T.border}`, borderRadius: 6, padding: "0.75rem 1rem", color: T.text, fontSize: "0.83rem", lineHeight: 1.6 }}>{w.a}</div>
+                  <div style={{ color: activeRC === i ? T.text : T.textMid, fontFamily: T.display, fontSize: "0.88rem", fontWeight: 700, marginBottom: "0.35rem" }}>{r.title}</div>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", lineHeight: 1.4 }}>{r.effect}</div>
+                  <div style={{ marginTop: "0.5rem", height: 4, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
+                    <motion.div animate={{ width: `${r.contribution}%` }} transition={{ duration: 0.6 }}
+                      style={{ height: "100%", background: c, borderRadius: 2 }} />
                   </div>
+                  {r.rSquared && <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.58rem", marginTop: "0.3rem" }}>✓ R² = {r.rSquared} · p {r.pValue}</div>}
+                </motion.button>
+              );
+            })}
+          </div>
+
+          {/* 5 Whys drill-down */}
+          <AnimatePresence mode="wait">
+            <motion.div key={activeRC} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }}>
+              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+                <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "1.5rem" }}>
+                  [ 5 WHYS DRILL-DOWN — {rc.title.toUpperCase()} ]
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                  {rc.whys.map((w, i) => {
+                    const isActive = activeWhy === i;
+                    return (
+                      <div key={i} style={{ display: "flex", gap: "1rem", paddingBottom: "1rem", position: "relative" }}>
+                        {i < rc.whys.length - 1 && (
+                          <div style={{ position: "absolute", left: 17, top: 38, bottom: 0, width: 2, background: `${T.cyan}33` }} />
+                        )}
+                        <motion.div
+                          whileHover={{ scale: 1.1 }}
+                          onClick={() => setActiveWhy(isActive ? null : i)}
+                          style={{
+                            flexShrink: 0, width: 36, height: 36, borderRadius: "50%",
+                            background: isActive ? T.cyan : `${T.cyan}18`,
+                            border: `2px solid ${T.cyan}`,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            color: isActive ? T.bg : T.cyan, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 800,
+                            cursor: "pointer", zIndex: 1,
+                            boxShadow: isActive ? `0 0 15px ${T.cyan}66` : "none",
+                            transition: "all 0.2s",
+                          }}>
+                          {i + 1}
+                        </motion.div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.7rem", marginBottom: "0.25rem", fontStyle: "italic" }}>
+                            Why {i + 1}: {w.q}
+                          </div>
+                          <motion.div
+                            animate={{ opacity: 1, height: "auto" }}
+                            style={{ background: isActive ? `${T.cyan}10` : T.panel, border: `1px solid ${isActive ? T.cyan + "44" : T.border}`, borderRadius: 6, padding: "0.75rem 1rem", color: T.text, fontSize: "0.83rem", lineHeight: 1.6, cursor: "pointer", transition: "all 0.2s" }}
+                            onClick={() => setActiveWhy(isActive ? null : i)}>
+                            {w.a}
+                          </motion.div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Root Cause + Solution side by side */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
+                <div style={{ background: `${T.red}0A`, border: `1px solid ${T.red}33`, borderRadius: 8, padding: "1.5rem" }}>
+                  <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.75rem" }}>[ FUNDAMENTAL ROOT CAUSE ]</div>
+                  <p style={{ color: T.text, fontSize: "0.88rem", lineHeight: 1.6, margin: 0 }}>{rc.rootCause}</p>
+                </div>
+                <div style={{ background: `${T.green}0A`, border: `1px solid ${T.green}33`, borderRadius: 8, padding: "1.5rem" }}>
+                  <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.75rem" }}>[ IMPLEMENTED SOLUTION ]</div>
+                  <p style={{ color: T.text, fontSize: "0.88rem", lineHeight: 1.6, margin: 0 }}>{rc.solution}</p>
+                  <div style={{ marginTop: "0.75rem" }}><Badge label={rc.status} color={statusColor(rc.status)} /></div>
+                </div>
+              </div>
+
+              {/* Contribution bar chart */}
+              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>
+                  Root Cause Contribution to {totalGap}h Gap
+                </div>
+                {[...rootCauses].sort((a,b) => b.impact - a.impact).map((r, i) => {
+                  const c = catColor(r.category);
+                  return (
+                    <div key={r.id} style={{ marginBottom: "0.75rem" }} onClick={() => setActiveRC(rootCauses.indexOf(r))}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem", cursor: "pointer" }}>
+                        <span style={{ color: rootCauses.indexOf(r) === activeRC ? T.text : T.textMid, fontFamily: T.mono, fontSize: "0.7rem", fontWeight: rootCauses.indexOf(r) === activeRC ? 700 : 400 }}>{r.title}</span>
+                        <span style={{ color: c, fontFamily: T.mono, fontSize: "0.72rem", fontWeight: 700 }}>−{r.impact}h ({r.contribution}%)</span>
+                      </div>
+                      <div style={{ height: 7, background: T.panel, borderRadius: 3, overflow: "hidden" }}>
+                        <motion.div animate={{ width: `${(r.impact / totalGap) * 100}%` }} transition={{ duration: 0.7, delay: i * 0.1 }}
+                          style={{ height: "100%", background: c, borderRadius: 3, opacity: rootCauses.indexOf(r) === activeRC ? 1 : 0.5 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{ marginTop: "0.85rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>
+                  * Contributions sum to &gt;100% due to overlapping multivariate effects
+                </div>
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </>
+      )}
+
+      {/* Add RC form */}
+      <AnimatePresence>
+        {showAddRC && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
+            <div style={{ background: T.surface, border: `1px solid ${T.green}33`, borderRadius: 8, padding: "1.5rem", marginTop: "1.5rem" }}>
+              <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", textTransform: "uppercase", marginBottom: "1rem" }}>[ ADD NEW ROOT CAUSE ]</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
+                {[
+                  { label: "Root Cause Title", key: "title", ph: "e.g. Training Gap" },
+                  { label: "Effect / Symptom", key: "effect", ph: "e.g. Adds 15h per case" },
+                  { label: "Root Cause Statement", key: "rootCause", ph: "Fundamental cause..." },
+                  { label: "Proposed Solution", key: "solution", ph: "Corrective action..." },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>{f.label}</label>
+                    <input value={newRC[f.key]} onChange={e => setNewRC(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.ph}
+                      style={{ width: "100%", background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.5rem 0.65rem", fontFamily: T.mono, fontSize: "0.78rem", boxSizing: "border-box" }} />
+                  </div>
+                ))}
+                <div>
+                  <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>Category</label>
+                  <select value={newRC.category} onChange={e => setNewRC(p => ({ ...p, category: e.target.value }))}
+                    style={{ width: "100%", background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.5rem 0.65rem", fontFamily: T.mono, fontSize: "0.78rem", cursor: "pointer", boxSizing: "border-box" }}>
+                    {CATEGORIES.map(c => <option key={c} value={c} style={{ background: T.surface }}>{c}</option>)}
+                  </select>
+                </div>
+                {[
+                  { label: "Contribution (%)", key: "contribution", min: 0, max: 100 },
+                  { label: "Impact (hrs saved)", key: "impact", min: 0, max: 30 },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>{f.label}</label>
+                    <input type="number" value={newRC[f.key]} min={f.min} max={f.max} onChange={e => setNewRC(p => ({ ...p, [f.key]: +e.target.value }))}
+                      style={{ width: "100%", background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.cyan, padding: "0.5rem 0.65rem", fontFamily: T.mono, fontSize: "0.8rem", boxSizing: "border-box" }} />
+                  </div>
+                ))}
+              </div>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.65rem" }}>5 Whys (fill each level)</div>
+              {newRC.whys.map((w, i) => (
+                <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: `${T.cyan}18`, border: `1px solid ${T.cyan}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.cyan, fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700, flexShrink: 0 }}>{i+1}</div>
+                  <input value={w.q} onChange={e => setNewRC(p => ({ ...p, whys: p.whys.map((x, j) => j === i ? { ...x, q: e.target.value } : x) }))} placeholder={`Why ${i+1} question...`}
+                    style={{ flex: 1, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.text, padding: "0.4rem 0.6rem", fontFamily: T.mono, fontSize: "0.72rem", boxSizing: "border-box" }} />
+                  <input value={w.a} onChange={e => setNewRC(p => ({ ...p, whys: p.whys.map((x, j) => j === i ? { ...x, a: e.target.value } : x) }))} placeholder="Answer..."
+                    style={{ flex: 1, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.textMid, padding: "0.4rem 0.6rem", fontFamily: T.mono, fontSize: "0.72rem", boxSizing: "border-box" }} />
                 </div>
               ))}
+              <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
+                <button onClick={() => { setRootCauses(p => [...p, { ...newRC, id: Date.now(), validated: false, pValue: "—" }]); setShowAddRC(false); }} style={{ background: T.green, border: "none", color: T.bg, padding: "0.65rem 1.5rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.75rem", fontWeight: 700 }}>
+                  ✓ Add Root Cause
+                </button>
+                <button onClick={() => setShowAddRC(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.65rem 1rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem" }}>
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
-
-          {/* Root Cause + Solution */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "1rem" }}>
-            <div style={{ background: `${T.red}0A`, border: `1px solid ${T.red}33`, borderRadius: 8, padding: "1.5rem" }}>
-              <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "0.75rem" }}>[ ROOT CAUSE ]</div>
-              <p style={{ color: T.text, fontSize: "0.88rem", lineHeight: 1.6, margin: 0 }}>{rc.rootCause}</p>
-            </div>
-            <div style={{ background: `${T.green}0A`, border: `1px solid ${T.green}33`, borderRadius: 8, padding: "1.5rem" }}>
-              <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "0.75rem" }}>[ IMPLEMENTED SOLUTION ]</div>
-              <p style={{ color: T.text, fontSize: "0.88rem", lineHeight: 1.6, margin: 0 }}>{rc.solution}</p>
-            </div>
-          </div>
-        </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
-
-      {/* Contribution Chart */}
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginTop: "1.5rem" }}>
-        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>
-          Root Cause Contribution to 24-Hour Gap
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          {[
-            { label: "Technician Experience Gap", hrs: 20.2, pct: 84, color: T.red },
-            { label: "Day/Week Timing Effect", hrs: 6.0, pct: 25, color: T.orange },
-            { label: "Skills Mismatch", hrs: 5.6, pct: 23, color: T.yellow },
-            { label: "Scattered Knowledge", hrs: 5.1, pct: 21, color: T.cyan },
-            { label: "Case Miscategorization", hrs: 4.7, pct: 20, color: "#9B8EC4" },
-            { label: "Workload Imbalance", hrs: 3.1, pct: 13, color: T.green },
-          ].map(c => (
-            <div key={c.label}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
-                <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.72rem" }}>{c.label}</span>
-                <span style={{ color: c.color, fontFamily: T.mono, fontSize: "0.75rem", fontWeight: 700 }}>−{c.hrs}h ({c.pct}%)</span>
-              </div>
-              <div style={{ height: 6, background: T.panel, borderRadius: 3, overflow: "hidden" }}>
-                <motion.div initial={{ width: 0 }} animate={{ width: `${c.pct}%` }} transition={{ duration: 0.8, delay: 0.1 }}
-                  style={{ height: "100%", background: c.color, borderRadius: 3 }} />
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{ marginTop: "1rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem" }}>
-          * Percentages sum to &gt;100% due to overlapping effects between root causes
-        </div>
-      </div>
     </motion.div>
   );
 }
