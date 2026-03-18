@@ -3481,104 +3481,764 @@ function SPCCharts() {
 
 
 // ─── 07: PARETO BUILDER ──────────────────────────────────────────────────────
-function ParetoBuilder() {
-  const [items, setItems] = useState(PARETO_DATA.map(d => ({ ...d, active: true })));
-  const [sortBy, setSortBy] = useState("cases");
 
-  const active = items.filter(i => i.active).sort((a, b) => b[sortBy] - a[sortBy]);
-  const total = active.reduce((acc, i) => acc + i[sortBy === "cases" ? "cases" : "avgHrs"], 0);
-  let cumulative = 0;
-  const withCum = active.map(i => {
-    const val = sortBy === "cases" ? i.cases : i.avgHrs;
-    cumulative += val;
-    return { ...i, val, cumPct: +((cumulative / total) * 100).toFixed(1) };
+const PARETO_DEFAULTS = [
+  { id: 1, category: "Software Configuration", cases: 153, avgHrs: 89.2, color: T.red,    active: true, group: "Cognitive" },
+  { id: 2, category: "Network Connectivity",   cases: 120, avgHrs: 78.5, color: T.orange, active: true, group: "Cognitive" },
+  { id: 3, category: "Hardware",               cases: 98,  avgHrs: 52.3, color: T.yellow, active: true, group: "Transactional" },
+  { id: 4, category: "Account Access",         cases: 76,  avgHrs: 64.8, color: T.cyan,   active: true, group: "Transactional" },
+  { id: 5, category: "Integration",            cases: 54,  avgHrs: 83.6, color: T.green,  active: true, group: "Cognitive" },
+  { id: 6, category: "Perf. Degradation",      cases: 28,  avgHrs: 71.2, color: "#9B8EC4",active: true, group: "Cognitive" },
+  { id: 7, category: "Data Sync",              cases: 18,  avgHrs: 68.4, color: "#7EB5A6",active: true, group: "Transactional" },
+];
+
+const COLORS_POOL = [T.red, T.orange, T.yellow, T.cyan, T.green, "#9B8EC4", "#7EB5A6", "#FF6B9D", "#00B4D8", "#E9C46A"];
+
+function ParetoBuilder() {
+  const [items, setItems] = useLocalState("pareto_items", PARETO_DEFAULTS);
+  const [sortBy, setSortBy] = useLocalState("pareto_sort", "cases");
+  const [viewMode, setViewMode] = useLocalState("pareto_view", "chart"); // chart | treemap | scatter | heatstrip
+  const [threshold, setThreshold] = useLocalState("pareto_threshold", 80);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [newItem, setNewItem] = useState({ category: "", cases: 0, avgHrs: 0, group: "Cognitive" });
+  const [showWhatIf, setShowWhatIf] = useLocalState("pareto_whatif", false);
+  const [reductions, setReductions] = useLocalState("pareto_reductions", {});
+  const [csvText, setCsvText] = useState("");
+  const [showImport, setShowImport] = useState(false);
+  const [activeItem, setActiveItem] = useState(null);
+  const [metricWeights, setMetricWeights] = useLocalState("pareto_weights", { cases: 0.5, avgHrs: 0.5 });
+  const [showWeighted, setShowWeighted] = useState(false);
+
+  // ── Core calculations ──────────────────────────────────────────────────
+  const active = items.filter(i => i.active);
+
+  const getVal = (item) => {
+    if (sortBy === "cases") return item.cases;
+    if (sortBy === "avgHrs") return item.avgHrs;
+    if (sortBy === "totalHrs") return item.cases * item.avgHrs;
+    if (sortBy === "weighted") return (item.cases * metricWeights.cases + item.avgHrs * metricWeights.avgHrs);
+    return item.cases;
+  };
+
+  const sorted = [...active].sort((a, b) => getVal(b) - getVal(a));
+  const total = sorted.reduce((acc, i) => acc + getVal(i), 0);
+  let cum = 0;
+  const withCum = sorted.map(i => {
+    const val = getVal(i);
+    cum += val;
+    const cumPct = total > 0 ? +((cum / total) * 100).toFixed(1) : 0;
+    const totalHrs = i.cases * i.avgHrs;
+    const reduction = reductions[i.id] || 0;
+    const whatIfCases = Math.round(i.cases * (1 - reduction / 100));
+    const whatIfHrs = i.avgHrs * (1 - reduction * 0.3 / 100);
+    return { ...i, val, cumPct, totalHrs, whatIfCases, whatIfHrs, reduction };
   });
 
-  const vital = withCum.filter(i => i.cumPct <= 80).length;
+  const vitalFew = withCum.filter(i => i.cumPct <= threshold);
+  const trivialMany = withCum.filter(i => i.cumPct > threshold);
+  const totalCases = active.reduce((a, i) => a + i.cases, 0);
+  const totalHrsAll = active.reduce((a, i) => a + i.cases * i.avgHrs, 0);
+  const avgResolution = totalCases > 0 ? (totalHrsAll / totalCases).toFixed(1) : 0;
+
+  // What-if totals
+  const whatIfCasesTotal = withCum.reduce((a, i) => a + i.whatIfCases, 0);
+  const whatIfHrsTotal = withCum.reduce((a, i) => a + i.whatIfCases * i.whatIfHrs, 0);
+  const whatIfAvg = whatIfCasesTotal > 0 ? (whatIfHrsTotal / whatIfCasesTotal).toFixed(1) : avgResolution;
+
+  // ── Handlers ──────────────────────────────────────────────────────────
+  const toggleItem = (id) => setItems(p => p.map(i => i.id === id ? { ...i, active: !i.active } : i));
+  const toggleAll = () => {
+    const allActive = items.every(i => i.active);
+    setItems(p => p.map(i => ({ ...i, active: !allActive })));
+  };
+  const updateItem = (id, field, val) => setItems(p => p.map(i => i.id === id ? { ...i, [field]: field === "cases" || field === "avgHrs" ? parseFloat(val) || 0 : val } : i));
+  const deleteItem = (id) => { setItems(p => p.filter(i => i.id !== id)); setEditingId(null); };
+  const addItem = () => {
+    if (!newItem.category) return;
+    const colorIdx = items.length % COLORS_POOL.length;
+    setItems(p => [...p, { ...newItem, id: Date.now(), color: COLORS_POOL[colorIdx], active: true }]);
+    setNewItem({ category: "", cases: 0, avgHrs: 0, group: "Cognitive" });
+    setShowAdd(false);
+  };
+
+  const importCSV = () => {
+    const lines = csvText.trim().split("\n").filter(l => l.trim());
+    const parsed = lines.map((line, i) => {
+      const parts = line.split(",").map(p => p.trim());
+      const colorIdx = (items.length + i) % COLORS_POOL.length;
+      return { id: Date.now() + i, category: parts[0] || `Item ${i+1}`, cases: parseInt(parts[1]) || 0, avgHrs: parseFloat(parts[2]) || 0, color: COLORS_POOL[colorIdx], active: true, group: parts[3] || "Other" };
+    }).filter(p => p.category);
+    if (parsed.length > 0) { setItems(p => [...p, ...parsed]); setCsvText(""); setShowImport(false); }
+  };
+
+  const exportCSV = () => {
+    const header = "Category,Cases,Avg Hrs,Group,Total Hrs,% of Total,Priority\n";
+    const rows = withCum.map(i => `${i.category},${i.cases},${i.avgHrs},${i.group || ""},${i.totalHrs.toFixed(0)},${i.val > 0 ? ((i.val/total)*100).toFixed(1) : 0}%,${i.cumPct <= threshold ? "Vital Few" : "Trivial Many"}`).join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "pareto_analysis.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const copyReport = `PARETO ANALYSIS REPORT
+Total Cases: ${totalCases} | Avg Resolution: ${avgResolution}h | Threshold: ${threshold}%
+
+VITAL FEW (${vitalFew.length} categories = ${threshold}% of impact):
+${vitalFew.map(i => `  ${i.category}: ${i.cases} cases, ${i.avgHrs}h avg, ${((i.val/total)*100).toFixed(1)}% of total`).join('\n')}
+
+TRIVIAL MANY (${trivialMany.length} categories):
+${trivialMany.map(i => `  ${i.category}: ${i.cases} cases, ${i.avgHrs}h avg`).join('\n')}
+
+${showWhatIf ? `WHAT-IF SCENARIO:
+  Current avg: ${avgResolution}h → Projected: ${whatIfAvg}h
+  Reduction: ${(((parseFloat(avgResolution) - parseFloat(whatIfAvg)) / parseFloat(avgResolution)) * 100).toFixed(1)}%` : ""}`;
+
+  const fmt = (n) => n >= 1000 ? `${(n/1000).toFixed(1)}K` : n.toString();
+
+  // ── Chart data ──────────────────────────────────────────────────────────
+  const chartData = withCum.map(i => ({
+    ...i,
+    name: i.category.split(" ").slice(0, 2).join(" "),
+    pctOfTotal: total > 0 ? +((i.val / total) * 100).toFixed(1) : 0,
+  }));
+
+  // ── TREEMAP via custom SVG ─────────────────────────────────────────────
+  const TreemapView = () => {
+    const W = 600, H = 280;
+    let remaining = [...withCum].map(i => ({ ...i, area: i.val / total }));
+    const rects = [];
+    let x = 0, y = 0, rowW = W;
+
+    // Simple squarified approximation
+    const placed = remaining.map((item, idx) => {
+      const w = Math.max(40, (item.val / total) * W);
+      const h = H;
+      return { ...item, w, h };
+    });
+
+    // Two-row layout
+    const row1 = placed.slice(0, Math.ceil(placed.length / 2));
+    const row2 = placed.slice(Math.ceil(placed.length / 2));
+    const row1Total = row1.reduce((a, i) => a + i.val, 0);
+    const row2Total = row2.reduce((a, i) => a + i.val, 0);
+
+    let cx = 0;
+    const cells = [
+      ...row1.map(item => {
+        const w = total > 0 ? (item.val / total) * W : 0;
+        const r = { ...item, x: cx, y: 0, w, h: H * 0.55 };
+        cx += w; return r;
+      }),
+      ...(() => { cx = 0; return row2; })().map(item => {
+        const w = total > 0 ? (item.val / total) * W : 0;
+        const r = { ...item, x: cx, y: H * 0.57, w, h: H * 0.43 };
+        cx += w; return r;
+      }),
+    ];
+
+    return (
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>
+          Treemap — Area proportional to {sortBy === "cases" ? "Case Volume" : sortBy === "avgHrs" ? "Avg Hrs" : "Total Hours"}
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block", minWidth: 320 }}>
+            {cells.map((cell, i) => (
+              <g key={cell.id} onClick={() => setActiveItem(activeItem === cell.id ? null : cell.id)} style={{ cursor: "pointer" }}>
+                <rect x={cell.x + 1} y={cell.y + 1} width={Math.max(0, cell.w - 2)} height={Math.max(0, cell.h - 2)}
+                  fill={`${cell.color}${cell.cumPct <= threshold ? "55" : "22"}`}
+                  stroke={cell.color} strokeWidth={activeItem === cell.id ? 2 : 0.5}
+                  style={{ filter: activeItem === cell.id ? `drop-shadow(0 0 8px ${cell.color})` : "none" }} />
+                {cell.w > 50 && cell.h > 30 && (
+                  <>
+                    <text x={cell.x + cell.w / 2} y={cell.y + cell.h / 2 - 8} textAnchor="middle"
+                      fill={cell.color} fontSize={Math.min(12, cell.w / 8)} fontFamily={T.mono} fontWeight="700">
+                      {cell.w > 80 ? cell.category.split(" ")[0] : "•"}
+                    </text>
+                    <text x={cell.x + cell.w / 2} y={cell.y + cell.h / 2 + 8} textAnchor="middle"
+                      fill={T.textMid} fontSize={Math.min(10, cell.w / 10)} fontFamily={T.mono}>
+                      {cell.val > 0 ? `${((cell.val / total) * 100).toFixed(0)}%` : ""}
+                    </text>
+                    {cell.cumPct <= threshold && cell.h > 45 && (
+                      <text x={cell.x + cell.w / 2} y={cell.y + cell.h / 2 + 22} textAnchor="middle"
+                        fill={T.yellow} fontSize="8" fontFamily={T.mono}>VITAL</text>
+                    )}
+                  </>
+                )}
+              </g>
+            ))}
+          </svg>
+        </div>
+        <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem", flexWrap: "wrap" }}>
+          {withCum.map(i => (
+            <div key={i.id} style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+              <div style={{ width: 8, height: 8, borderRadius: 1, background: i.color }} />
+              <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>{i.category.split(" ")[0]}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // ── SCATTER VIEW ──────────────────────────────────────────────────────
+  const ScatterView = () => (
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>
+        Volume vs Complexity — bubble size = Total Hours (Cases × Avg Hrs)
+      </div>
+      <div style={{ position: "relative", height: 300, background: T.panel, borderRadius: 8, overflow: "hidden" }}>
+        {/* Grid */}
+        {[25,50,75].map(v => (
+          <div key={v} style={{ position: "absolute", left: `${v}%`, top: 0, bottom: 0, width: 1, background: T.border, opacity: 0.3 }} />
+        ))}
+        {[25,50,75].map(v => (
+          <div key={v} style={{ position: "absolute", top: `${v}%`, left: 0, right: 0, height: 1, background: T.border, opacity: 0.3 }} />
+        ))}
+
+        {/* Quadrant labels */}
+        {[
+          { x: "3%", y: "5%", label: "Low Volume", sub: "Low Complexity", color: T.green },
+          { x: "55%", y: "5%", label: "High Volume", sub: "Low Complexity", color: T.cyan },
+          { x: "3%", y: "60%", label: "Low Volume", sub: "High Complexity", color: T.yellow },
+          { x: "55%", y: "60%", label: "CRITICAL ZONE", sub: "High V × High C", color: T.red },
+        ].map(q => (
+          <div key={q.label} style={{ position: "absolute", left: q.x, top: q.y, pointerEvents: "none" }}>
+            <div style={{ color: q.color, fontFamily: T.mono, fontSize: "0.55rem", fontWeight: 700, opacity: 0.5 }}>{q.label}</div>
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.48rem", opacity: 0.35 }}>{q.sub}</div>
+          </div>
+        ))}
+        {/* Dividers */}
+        <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1.5, background: T.border }} />
+        <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1.5, background: T.border }} />
+
+        {/* Bubbles */}
+        {withCum.map((item, i) => {
+          const maxCases = Math.max(...withCum.map(x => x.cases));
+          const maxHrs = Math.max(...withCum.map(x => x.avgHrs));
+          const maxTotal = Math.max(...withCum.map(x => x.totalHrs));
+          const xPct = 5 + (item.cases / maxCases) * 85;
+          const yPct = 90 - (item.avgHrs / maxHrs) * 80;
+          const size = Math.max(24, Math.min(64, (item.totalHrs / maxTotal) * 70));
+          const isActive = activeItem === item.id;
+          return (
+            <motion.div key={item.id}
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", delay: i * 0.08 }}
+              onClick={() => setActiveItem(isActive ? null : item.id)}
+              title={`${item.category}\nCases: ${item.cases} | Avg: ${item.avgHrs}h | Total: ${item.totalHrs.toFixed(0)}h`}
+              style={{
+                position: "absolute", left: `${xPct}%`, top: `${yPct}%`,
+                width: size, height: size, borderRadius: "50%",
+                background: `${item.color}${isActive ? "55" : "33"}`,
+                border: `${isActive ? 3 : 1.5}px solid ${item.color}`,
+                transform: "translate(-50%,-50%)",
+                display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column",
+                cursor: "pointer",
+                boxShadow: isActive ? `0 0 20px ${item.color}66` : `0 0 8px ${item.color}22`,
+                transition: "all 0.2s", zIndex: isActive ? 10 : 1,
+              }}>
+              <span style={{ color: item.color, fontFamily: T.mono, fontSize: `${Math.max(7, size * 0.18)}px`, fontWeight: 800, lineHeight: 1 }}>
+                {item.cases}
+              </span>
+              {size > 36 && <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.5rem", lineHeight: 1 }}>{item.avgHrs}h</span>}
+              {isActive && (
+                <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
+                  style={{ position: "absolute", top: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: T.panel, border: `1px solid ${item.color}55`, borderRadius: 6, padding: "0.5rem 0.75rem", whiteSpace: "nowrap", zIndex: 20 }}>
+                  <div style={{ color: item.color, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700 }}>{item.category}</div>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>{item.cases} cases · {item.avgHrs}h · {item.totalHrs.toFixed(0)}h total</div>
+                </motion.div>
+              )}
+            </motion.div>
+          );
+        })}
+        {/* Axis labels */}
+        <div style={{ position: "absolute", bottom: 4, left: "50%", transform: "translateX(-50%)", color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>← Case Volume →</div>
+        <div style={{ position: "absolute", left: 4, top: "40%", transform: "rotate(-90deg)", color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>← Avg Hours →</div>
+      </div>
+      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", marginTop: "0.5rem" }}>
+        Click any bubble to see details. Bubble size = Total Hours (Cases × Avg Hrs).
+      </div>
+    </div>
+  );
+
+  // ── HEAT STRIP VIEW ────────────────────────────────────────────────────
+  const HeatStripView = () => {
+    const maxTotal = Math.max(...withCum.map(i => i.totalHrs));
+    return (
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1.25rem" }}>
+          Heat Strip — Total Hours Intensity per Category
+        </div>
+        {withCum.map((item, i) => {
+          const intensity = maxTotal > 0 ? item.totalHrs / maxTotal : 0;
+          const isVital = item.cumPct <= threshold;
+          return (
+            <motion.div key={item.id}
+              initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
+              onClick={() => setActiveItem(activeItem === item.id ? null : item.id)}
+              style={{ marginBottom: "0.6rem", cursor: "pointer" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.25rem" }}>
+                <div style={{ width: 120, flexShrink: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  {isVital && <span style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.55rem", fontWeight: 700 }}>★</span>}
+                  <span style={{ color: item.color, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: isVital ? 700 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.category.split(" ")[0]}</span>
+                </div>
+                <div style={{ flex: 1, height: 22, background: T.panel, borderRadius: 4, overflow: "hidden", position: "relative" }}>
+                  <motion.div animate={{ width: `${intensity * 100}%` }} transition={{ duration: 0.8, delay: i * 0.05 }}
+                    style={{
+                      height: "100%",
+                      background: `linear-gradient(90deg,${item.color}88,${item.color})`,
+                      borderRadius: 4,
+                      boxShadow: activeItem === item.id ? `0 0 12px ${item.color}66` : "none",
+                    }} />
+                  <div style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", color: T.text, fontFamily: T.mono, fontSize: "0.6rem", fontWeight: 700 }}>
+                    {item.totalHrs.toFixed(0)}h
+                  </div>
+                </div>
+                <div style={{ minWidth: 80, textAlign: "right", flexShrink: 0 }}>
+                  <span style={{ color: isVital ? T.yellow : T.textDim, fontFamily: T.mono, fontSize: "0.65rem" }}>{item.cases} cases</span>
+                </div>
+                <div style={{ minWidth: 55, textAlign: "right", flexShrink: 0 }}>
+                  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>{item.avgHrs}h avg</span>
+                </div>
+              </div>
+              <AnimatePresence>
+                {activeItem === item.id && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                    style={{ background: `${item.color}0A`, border: `1px solid ${item.color}33`, borderRadius: 6, padding: "0.65rem 1rem", marginLeft: "120px" }}>
+                    <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+                      {[
+                        { label: "Total Hours", val: `${item.totalHrs.toFixed(0)}h` },
+                        { label: "% of Volume", val: `${((item.cases / totalCases) * 100).toFixed(1)}%` },
+                        { label: "% of Impact", val: `${((item.val / total) * 100).toFixed(1)}%` },
+                        { label: "Cumulative", val: `${item.cumPct}%` },
+                        { label: "Priority", val: isVital ? "VITAL FEW" : "Trivial Many" },
+                      ].map(k => (
+                        <div key={k.label}>
+                          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase" }}>{k.label}</div>
+                          <div style={{ color: item.color, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}>{k.val}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1100, margin: "0 auto" }}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1200, margin: "0 auto" }}>
       <SectionHeader
         module="Module 07 — Pareto Intelligence"
         title="Pareto Builder"
-        sub="80/20 rule visualization. Toggle categories on/off, sort by case volume or average resolution time. From 547 real cases."
+        sub="80/20 analysis with full custom data. Add, edit, delete categories. 4 view modes. What-If simulator. Import/Export CSV."
       />
 
-      {/* Controls */}
-      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", flexWrap: "wrap", alignItems: "center" }}>
-        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", textTransform: "uppercase" }}>Sort By:</div>
-        {[{ id: "cases", label: "Case Volume" }, { id: "avgHrs", label: "Avg Resolution Time" }].map(s => (
+      {/* KPI Strip */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: "0.65rem", marginBottom: "1.25rem" }}>
+        {[
+          { label: "Active Categories", val: active.length, color: T.cyan },
+          { label: "Total Cases", val: totalCases.toLocaleString(), color: T.text },
+          { label: "Vital Few", val: `${vitalFew.length} cats`, color: T.yellow },
+          { label: "Avg Resolution", val: `${avgResolution}h`, color: T.orange },
+          { label: "Total Hours", val: `${(totalHrsAll/1000).toFixed(1)}K`, color: T.red },
+          ...(showWhatIf ? [{ label: "What-If Avg", val: `${whatIfAvg}h`, color: T.green }] : []),
+        ].map(k => (
+          <div key={k.label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "0.7rem 0.85rem", textAlign: "center" }}>
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.2rem" }}>{k.label}</div>
+            <motion.div key={k.val} initial={{ scale: 0.85 }} animate={{ scale: 1 }}
+              style={{ color: k.color, fontFamily: T.mono, fontSize: "0.95rem", fontWeight: 700 }}>{k.val}</motion.div>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <ModuleToolbar
+        onReset={() => { setItems(PARETO_DEFAULTS); setReductions({}); }}
+        copyData={copyReport}
+        saved={true}
+      >
+        {[
+          { id: "chart", label: "∥ Pareto Chart" },
+          { id: "treemap", label: "⬛ Treemap" },
+          { id: "scatter", label: "◉ Scatter" },
+          { id: "heatstrip", label: "⬤ Heat Strip" },
+        ].map(v => (
+          <button key={v.id} onClick={() => setViewMode(v.id)} style={{
+            background: viewMode === v.id ? `${T.cyan}15` : "transparent",
+            border: `1px solid ${viewMode === v.id ? T.cyan : T.border}`,
+            color: viewMode === v.id ? T.cyan : T.textDim,
+            padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+          }}>{v.label}</button>
+        ))}
+        <button onClick={() => setShowWhatIf(p => !p)} style={{
+          background: showWhatIf ? `${T.green}15` : "transparent",
+          border: `1px solid ${showWhatIf ? T.green : T.border}`,
+          color: showWhatIf ? T.green : T.textDim,
+          padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+        }}>🎮 What-If</button>
+        <button onClick={() => setShowImport(p => !p)} style={{
+          background: "transparent", border: `1px solid ${T.border}`,
+          color: T.textDim, padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+        }}>↑ Import CSV</button>
+        <button onClick={exportCSV} style={{
+          background: "transparent", border: `1px solid ${T.border}`,
+          color: T.textDim, padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+        }}>↓ Export CSV</button>
+      </ModuleToolbar>
+
+      {/* Sort + Threshold Controls */}
+      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase" }}>Sort:</span>
+        {[
+          { id: "cases", label: "Case Volume" },
+          { id: "avgHrs", label: "Avg Hours" },
+          { id: "totalHrs", label: "Total Hours" },
+          { id: "weighted", label: "Weighted" },
+        ].map(s => (
           <button key={s.id} onClick={() => setSortBy(s.id)} style={{
             background: sortBy === s.id ? `${T.cyan}18` : T.surface,
             border: `1px solid ${sortBy === s.id ? T.cyan : T.border}`,
             color: sortBy === s.id ? T.cyan : T.textDim,
-            padding: "0.5rem 1rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.7rem",
+            padding: "0.35rem 0.75rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
           }}>{s.label}</button>
         ))}
-        <div style={{ marginLeft: "auto", color: T.cyan, fontFamily: T.mono, fontSize: "0.75rem" }}>
-          Vital Few: <strong>{vital} categories</strong> → 80% of impact
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "auto" }}>
+          <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>Threshold:</span>
+          <input type="range" min={50} max={95} step={5} value={threshold} onChange={e => setThreshold(+e.target.value)}
+            style={{ width: 80, accentColor: T.yellow, cursor: "pointer" }} />
+          <span style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.78rem", fontWeight: 700, minWidth: 35 }}>{threshold}%</span>
+          <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem" }}>
+            → {vitalFew.length} vital, {trivialMany.length} trivial
+          </span>
         </div>
       </div>
 
-      {/* Category toggles */}
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        {items.map((item, i) => (
-          <button key={item.category} onClick={() => setItems(prev => prev.map((it, j) => j === i ? { ...it, active: !it.active } : it))} style={{
-            background: item.active ? `${item.color}22` : T.panel,
-            border: `1px solid ${item.active ? item.color : T.border}`,
-            color: item.active ? item.color : T.textDim,
-            padding: "0.35rem 0.75rem", borderRadius: 20, cursor: "pointer",
-            fontFamily: T.mono, fontSize: "0.65rem", transition: "all 0.2s",
-            opacity: item.active ? 1 : 0.5,
-          }}>{item.category}</button>
+      {/* Category chips — editable */}
+      <div style={{ display: "flex", gap: "0.4rem", marginBottom: "1.25rem", flexWrap: "wrap", alignItems: "center" }}>
+        <button onClick={toggleAll} style={{ background: T.panel, border: `1px solid ${T.border}`, color: T.textDim, padding: "0.3rem 0.65rem", borderRadius: 20, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>
+          {items.every(i => i.active) ? "□ Deselect All" : "■ Select All"}
+        </button>
+        {items.map(item => (
+          <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 0 }}>
+            <motion.button whileHover={{ scale: 1.05 }} onClick={() => toggleItem(item.id)} style={{
+              background: item.active ? `${item.color}22` : T.panel,
+              border: `1px solid ${item.active ? item.color : T.border}`,
+              borderRight: "none",
+              color: item.active ? item.color : T.textDim,
+              padding: "0.3rem 0.65rem", borderRadius: "20px 0 0 20px", cursor: "pointer",
+              fontFamily: T.mono, fontSize: "0.63rem", transition: "all 0.2s",
+              opacity: item.active ? 1 : 0.5,
+            }}>
+              {item.active ? "●" : "○"} {item.category.split(" ").slice(0,2).join(" ")}
+            </motion.button>
+            <button onClick={() => setEditingId(editingId === item.id ? null : item.id)} style={{
+              background: editingId === item.id ? `${item.color}33` : item.active ? `${item.color}11` : T.panel,
+              border: `1px solid ${item.active ? item.color : T.border}`,
+              color: item.active ? item.color : T.textDim,
+              padding: "0.3rem 0.4rem", borderRadius: "0 20px 20px 0", cursor: "pointer",
+              fontFamily: T.mono, fontSize: "0.6rem", opacity: item.active ? 1 : 0.5,
+            }}>✎</button>
+          </div>
         ))}
+        <button onClick={() => setShowAdd(!showAdd)} style={{
+          background: `${T.green}18`, border: `1px solid ${T.green}44`, color: T.green,
+          padding: "0.3rem 0.75rem", borderRadius: 20, cursor: "pointer", fontFamily: T.mono, fontSize: "0.63rem",
+        }}>+ Add</button>
       </div>
 
-      {/* Pareto Chart */}
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
-        <ResponsiveContainer width="100%" height={320}>
-          <BarChart data={withCum} margin={{ top: 20, right: 60, left: 20, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="2 4" stroke={T.border} vertical={false} />
-            <XAxis dataKey="category" tick={{ fill: T.textDim, fontSize: 9, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-            <YAxis yAxisId="left" tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-            <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: "0.72rem", color: T.text }} />
-            <ReferenceLine yAxisId="right" y={80} stroke={T.yellow} strokeDasharray="4 4" label={{ value: "80%", fill: T.yellow, fontSize: 10, fontFamily: T.mono, position: "right" }} />
-            <Bar yAxisId="left" dataKey="val" radius={[3, 3, 0, 0]}>
-              {withCum.map((entry, i) => <Cell key={i} fill={entry.cumPct <= 80 ? entry.color : `${entry.color}66`} />)}
-            </Bar>
-            <Line yAxisId="right" type="monotone" dataKey="cumPct" stroke={T.yellow} strokeWidth={2} dot={{ fill: T.yellow, r: 4 }} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Data Table */}
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.mono, fontSize: "0.75rem" }}>
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-              {["Category", "Cases", "% of Total", "Avg Hrs", "Cumulative %", "Priority"].map(h => (
-                <th key={h} style={{ color: T.textDim, textAlign: "left", padding: "0.75rem 1rem", fontSize: "0.6rem", letterSpacing: "0.08em", textTransform: "uppercase" }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {withCum.map(row => (
-              <tr key={row.category} style={{ borderBottom: `1px solid ${T.border}`, background: row.cumPct <= 80 ? `${row.color}08` : "transparent" }}>
-                <td style={{ padding: "0.75rem 1rem", color: row.color }}>{row.category}</td>
-                <td style={{ padding: "0.75rem 1rem", color: T.text }}>{row.cases}</td>
-                <td style={{ padding: "0.75rem 1rem", color: T.textMid }}>{row.pct}%</td>
-                <td style={{ padding: "0.75rem 1rem", color: T.text }}>{row.avgHrs}h</td>
-                <td style={{ padding: "0.75rem 1rem" }}>
-                  <span style={{ color: row.cumPct <= 80 ? T.yellow : T.textDim }}>{row.cumPct}%</span>
-                </td>
-                <td style={{ padding: "0.75rem 1rem" }}>
-                  <Badge label={row.cumPct <= 80 ? "VITAL FEW" : "Trivial Many"} color={row.cumPct <= 80 ? T.yellow : T.textDim} />
-                </td>
-              </tr>
+      {/* Inline edit panel */}
+      <AnimatePresence>
+        {editingId !== null && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
+            {items.filter(i => i.id === editingId).map(item => (
+              <div key={item.id} style={{ background: `${item.color}0A`, border: `1px solid ${item.color}33`, borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
+                <div style={{ color: item.color, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.85rem" }}>
+                  [ EDITING: {item.category} ]
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "0.75rem" }}>
+                  {[
+                    { label: "Category Name", key: "category", type: "text" },
+                    { label: "Case Count", key: "cases", type: "number" },
+                    { label: "Avg Resolution (hrs)", key: "avgHrs", type: "number" },
+                  ].map(f => (
+                    <div key={f.key}>
+                      <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>{f.label}</label>
+                      <input type={f.type} value={item[f.key]}
+                        onChange={e => updateItem(item.id, f.key, e.target.value)}
+                        style={{ width: "100%", background: T.panel, border: `1px solid ${item.color}44`, borderRadius: 4, color: T.text, padding: "0.5rem 0.65rem", fontFamily: T.mono, fontSize: "0.82rem", boxSizing: "border-box" }} />
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
+                  <button onClick={() => setEditingId(null)} style={{ background: T.cyan, border: "none", color: T.bg, padding: "0.5rem 1.25rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem", fontWeight: 700 }}>✓ Done</button>
+                  <button onClick={() => deleteItem(item.id)} style={{ background: `${T.red}18`, border: `1px solid ${T.red}44`, color: T.red, padding: "0.5rem 1rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem" }}>✕ Delete</button>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Add item form */}
+      <AnimatePresence>
+        {showAdd && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
+            <div style={{ background: T.surface, border: `1px solid ${T.green}33`, borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
+              <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.85rem" }}>[ ADD NEW CATEGORY ]</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "0.75rem" }}>
+                {[
+                  { label: "Category Name", key: "category", type: "text", ph: "e.g. Login Issues" },
+                  { label: "Case Count", key: "cases", type: "number", ph: "e.g. 45" },
+                  { label: "Avg Hours", key: "avgHrs", type: "number", ph: "e.g. 67.5" },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>{f.label}</label>
+                    <input type={f.type} value={newItem[f.key]} placeholder={f.ph}
+                      onChange={e => setNewItem(p => ({ ...p, [f.key]: f.type === "number" ? parseFloat(e.target.value)||0 : e.target.value }))}
+                      style={{ width: "100%", background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.5rem 0.65rem", fontFamily: T.mono, fontSize: "0.82rem", boxSizing: "border-box" }} />
+                  </div>
+                ))}
+                <div>
+                  <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>Group</label>
+                  <select value={newItem.group} onChange={e => setNewItem(p => ({ ...p, group: e.target.value }))}
+                    style={{ width: "100%", background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.5rem 0.65rem", fontFamily: T.mono, fontSize: "0.78rem", cursor: "pointer", boxSizing: "border-box" }}>
+                    {["Cognitive", "Transactional", "Technical", "Other"].map(g => <option key={g} style={{ background: T.surface }}>{g}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginTop: "0.85rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <button onClick={addItem} style={{ background: T.green, border: "none", color: T.bg, padding: "0.55rem 1.5rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.75rem", fontWeight: 700 }}>
+                  ✓ Add Category {newItem.cases > 0 ? `(${newItem.cases} cases · ${newItem.avgHrs}h)` : ""}
+                </button>
+                <button onClick={() => setShowAdd(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.55rem 0.85rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem" }}>Cancel</button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* CSV Import */}
+      <AnimatePresence>
+        {showImport && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
+              <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.65rem" }}>[ IMPORT CSV — Format: Category, Cases, Avg Hrs, Group ]</div>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", marginBottom: "0.65rem" }}>Example: Software Bug, 120, 85.5, Cognitive</div>
+              <textarea value={csvText} onChange={e => setCsvText(e.target.value)}
+                placeholder={"Login Error, 45, 67.2, Transactional\nPayment Fail, 38, 92.1, Cognitive"}
+                style={{ width: "100%", minHeight: 80, background: T.panel, border: `1px solid ${T.borderHi}`, borderRadius: 4, color: T.text, padding: "0.65rem", fontFamily: T.mono, fontSize: "0.75rem", resize: "vertical", boxSizing: "border-box" }} />
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.65rem" }}>
+                <button onClick={importCSV} style={{ background: T.cyan, border: "none", color: T.bg, padding: "0.5rem 1.25rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem", fontWeight: 700 }}>Import</button>
+                <button onClick={() => setShowImport(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.5rem 0.85rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem" }}>Cancel</button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── VIEW RENDERING ── */}
+      {viewMode === "chart" && (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
+            <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase" }}>
+              Pareto Chart — {sortBy === "cases" ? "Case Volume" : sortBy === "avgHrs" ? "Avg Resolution Time" : sortBy === "totalHrs" ? "Total Hours" : "Weighted Score"}
+            </div>
+            <div style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.7rem" }}>
+              <strong>{vitalFew.length}</strong> categories = {threshold}% of total impact
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={chartData} margin={{ top: 20, right: 65, left: 10, bottom: 30 }}>
+              <CartesianGrid strokeDasharray="2 4" stroke={T.border} vertical={false} />
+              <XAxis dataKey="name" tick={{ fill: T.textDim, fontSize: 9, fontFamily: T.mono }} axisLine={false} tickLine={false} angle={-25} textAnchor="end" interval={0} />
+              <YAxis yAxisId="left" tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} axisLine={false} tickLine={false} tickFormatter={v => fmt(v)} />
+              <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+              <Tooltip
+                contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: "0.72rem", color: T.text }}
+                formatter={(val, name, props) => {
+                  const d = props.payload;
+                  if (name === "cumPct") return [`${val}% cumulative`, "Cumulative %"];
+                  return [`${val} ${sortBy === "cases" ? "cases" : "hrs"} (${d.pctOfTotal}% of total)`, d.category];
+                }}
+              />
+              <ReferenceLine yAxisId="right" y={threshold} stroke={T.yellow} strokeDasharray="5 3" strokeWidth={1.5}
+                label={{ value: `${threshold}%`, fill: T.yellow, fontSize: 11, fontFamily: T.mono, position: "right" }} />
+              <Bar yAxisId="left" dataKey="val" radius={[4, 4, 0, 0]} maxBarSize={70}>
+                {chartData.map((entry, i) => (
+                  <Cell key={i}
+                    fill={entry.cumPct <= threshold ? entry.color : `${entry.color}44`}
+                    stroke={activeItem === entry.id ? entry.color : "none"}
+                    strokeWidth={2}
+                    style={{ filter: entry.cumPct <= threshold ? `drop-shadow(0 0 6px ${entry.color}55)` : "none", cursor: "pointer" }}
+                    onClick={() => setActiveItem(activeItem === entry.id ? null : entry.id)}
+                  />
+                ))}
+              </Bar>
+              <Line yAxisId="right" type="monotone" dataKey="cumPct" stroke={T.yellow} strokeWidth={2.5}
+                dot={(props) => {
+                  const { cx, cy, payload } = props;
+                  return <circle key={cx} cx={cx} cy={cy} r={payload.cumPct <= threshold ? 6 : 4} fill={payload.cumPct <= threshold ? T.yellow : T.textDim} stroke="none" style={{ filter: `drop-shadow(0 0 4px ${T.yellow}88)` }} />;
+                }}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {viewMode === "treemap" && <TreemapView />}
+      {viewMode === "scatter" && <ScatterView />}
+      {viewMode === "heatstrip" && <HeatStripView />}
+
+      {/* What-If Simulator */}
+      <AnimatePresence>
+        {showWhatIf && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <div style={{ background: `${T.green}0A`, border: `2px solid ${T.green}33`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                <div>
+                  <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "0.2rem" }}>
+                    🎮 WHAT-IF IMPROVEMENT SIMULATOR
+                  </div>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>
+                    Drag sliders to simulate case volume reduction per category
+                  </div>
+                </div>
+                <div style={{ background: `${T.green}18`, border: `1px solid ${T.green}44`, borderRadius: 8, padding: "0.75rem 1.25rem", textAlign: "center" }}>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase" }}>Projected Avg Resolution</div>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "center" }}>
+                    <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "1rem", textDecoration: "line-through" }}>{avgResolution}h</span>
+                    <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.9rem" }}>→</span>
+                    <motion.span key={whatIfAvg} initial={{ scale: 0.8 }} animate={{ scale: 1 }}
+                      style={{ color: parseFloat(whatIfAvg) < parseFloat(avgResolution) ? T.green : T.red, fontFamily: T.display, fontSize: "1.8rem", fontWeight: 800, textShadow: `0 0 15px ${T.green}66` }}>
+                      {whatIfAvg}h
+                    </motion.span>
+                  </div>
+                  {parseFloat(avgResolution) > 0 && (
+                    <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", marginTop: "0.2rem" }}>
+                      ↓ {(((parseFloat(avgResolution) - parseFloat(whatIfAvg)) / parseFloat(avgResolution)) * 100).toFixed(1)}% reduction
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {withCum.map(item => {
+                const red = reductions[item.id] || 0;
+                return (
+                  <div key={item.id} style={{ marginBottom: "0.85rem", display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                    <div style={{ width: 130, flexShrink: 0, display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: item.color, flexShrink: 0 }} />
+                      <span style={{ color: item.color, fontFamily: T.mono, fontSize: "0.63rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {item.category.split(" ").slice(0,2).join(" ")}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1, minWidth: 200 }}>
+                      <input type="range" min={0} max={80} step={5} value={red}
+                        onChange={e => setReductions(p => ({ ...p, [item.id]: +e.target.value }))}
+                        style={{ flex: 1, accentColor: item.color, cursor: "pointer" }} />
+                      <span style={{ color: red > 0 ? T.green : T.textDim, fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700, minWidth: 35 }}>
+                        {red > 0 ? `-${red}%` : "—"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.75rem", minWidth: 180, flexShrink: 0 }}>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.52rem", textTransform: "uppercase" }}>Before</div>
+                        <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.72rem" }}>{item.cases} cases</div>
+                      </div>
+                      <span style={{ color: T.textDim, alignSelf: "center", fontFamily: T.mono, fontSize: "0.8rem" }}>→</span>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.52rem", textTransform: "uppercase" }}>After</div>
+                        <div style={{ color: red > 0 ? T.green : T.textMid, fontFamily: T.mono, fontSize: "0.72rem", fontWeight: red > 0 ? 700 : 400 }}>{item.whatIfCases} cases</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <button onClick={() => setReductions({})} style={{ marginTop: "0.5rem", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.4rem 0.85rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem" }}>
+                ↺ Reset All
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Data Table — enhanced */}
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+        <div style={{ padding: "0.85rem 1.25rem", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase" }}>[ DATA TABLE — {withCum.length} categories ]</span>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <Badge label={`${vitalFew.length} Vital Few`} color={T.yellow} />
+            <Badge label={`${trivialMany.length} Trivial Many`} color={T.textDim} />
+          </div>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.mono, fontSize: "0.72rem" }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                {["Category", "Cases", "% Vol", "Avg Hrs", "Total Hrs", "% Impact", "Cumul.", "Priority", ""].map(h => (
+                  <th key={h} style={{ color: T.textDim, textAlign: "left", padding: "0.65rem 0.85rem", fontSize: "0.58rem", letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {withCum.map((row, i) => {
+                const isVital = row.cumPct <= threshold;
+                const pctImpact = total > 0 ? ((row.val / total) * 100).toFixed(1) : 0;
+                const volPct = totalCases > 0 ? ((row.cases / totalCases) * 100).toFixed(1) : 0;
+                return (
+                  <motion.tr key={row.id} layout
+                    style={{ borderBottom: `1px solid ${T.border}`, background: isVital ? `${row.color}08` : "transparent", cursor: "pointer" }}
+                    onClick={() => setActiveItem(activeItem === row.id ? null : row.id)}>
+                    <td style={{ padding: "0.65rem 0.85rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: row.color, flexShrink: 0, boxShadow: isVital ? `0 0 6px ${row.color}` : "none" }} />
+                        <span style={{ color: row.color, fontWeight: isVital ? 700 : 400 }}>{row.category}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: "0.65rem 0.85rem", color: T.text, fontWeight: 700 }}>{row.cases}</td>
+                    <td style={{ padding: "0.65rem 0.85rem", color: T.textMid }}>{volPct}%</td>
+                    <td style={{ padding: "0.65rem 0.85rem", color: T.text }}>{row.avgHrs}h</td>
+                    <td style={{ padding: "0.65rem 0.85rem", color: T.orange, fontWeight: 700 }}>{row.totalHrs.toFixed(0)}h</td>
+                    <td style={{ padding: "0.65rem 0.85rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <div style={{ height: 5, width: 50, background: T.panel, borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{ width: `${pctImpact}%`, height: "100%", background: row.color, borderRadius: 3 }} />
+                        </div>
+                        <span style={{ color: row.color }}>{pctImpact}%</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: "0.65rem 0.85rem" }}>
+                      <span style={{ color: isVital ? T.yellow : T.textDim, fontWeight: isVital ? 700 : 400 }}>{row.cumPct}%</span>
+                    </td>
+                    <td style={{ padding: "0.65rem 0.85rem" }}>
+                      <Badge label={isVital ? "VITAL FEW" : "Trivial Many"} color={isVital ? T.yellow : T.textDim} />
+                    </td>
+                    <td style={{ padding: "0.65rem 0.5rem" }}>
+                      <button onClick={e => { e.stopPropagation(); setEditingId(editingId === row.id ? null : row.id); }} style={{ background: "transparent", border: "none", color: T.textDim, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem" }}>✎</button>
+                    </td>
+                  </motion.tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{ borderTop: `2px solid ${T.border}`, background: `${T.cyan}08` }}>
+                <td style={{ padding: "0.65rem 0.85rem", color: T.cyan, fontFamily: T.mono, fontSize: "0.72rem", fontWeight: 700 }}>TOTAL</td>
+                <td style={{ padding: "0.65rem 0.85rem", color: T.text, fontWeight: 700 }}>{totalCases}</td>
+                <td style={{ padding: "0.65rem 0.85rem", color: T.textMid }}>100%</td>
+                <td style={{ padding: "0.65rem 0.85rem", color: T.cyan, fontWeight: 700 }}>{avgResolution}h avg</td>
+                <td style={{ padding: "0.65rem 0.85rem", color: T.orange, fontWeight: 700 }}>{(totalHrsAll/1000).toFixed(1)}K h</td>
+                <td style={{ padding: "0.65rem 0.85rem", color: T.textMid }}>100%</td>
+                <td colSpan={3} />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
     </motion.div>
   );
