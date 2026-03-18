@@ -1000,129 +1000,572 @@ function COPQEngine() {
   );
 }
 
-// ─── 06: SPC CHARTS ──────────────────────────────────────────────────────────
+// ─── 06: SPC CHARTS (LIVE INPUT) ─────────────────────────────────
 function SPCCharts() {
-  const [dataPoints, setDataPoints] = useState(SPC_DATA.map(d => d.avg));
+  const DEMO_DATASETS = {
+    resolution: {
+      label: "Avg Resolution Time (hrs)",
+      unit: "hrs",
+      target: 48,
+      targetLabel: "48h SLA Target",
+      color: T.cyan,
+      points: [72.1, 68.4, 71.2, 70.8, 69.5, 65.2, 61.8, 58.4, 55.1, 53.2, 51.4, 50.1, 49.8, 48.7, 49.2],
+    },
+    miscat: {
+      label: "Miscategorization Rate (%)",
+      unit: "%",
+      target: 8,
+      targetLabel: "8% Target",
+      color: T.orange,
+      points: [22, 20.5, 19.8, 18.2, 16.5, 14.1, 12.3, 11.0, 9.8, 8.9, 7.1, 6.8, 6.4, 6.2, 6.2],
+    },
+    csat: {
+      label: "Customer Satisfaction (/ 10)",
+      unit: "/10",
+      target: 8.5,
+      targetLabel: "8.5 CSAT Target",
+      color: T.green,
+      points: [6.8, 6.9, 7.0, 7.0, 7.1, 7.3, 7.5, 7.6, 7.8, 7.9, 7.9, 8.0, 8.1, 8.2, 8.1],
+    },
+    escalation: {
+      label: "Escalation Rate (%)",
+      unit: "%",
+      target: 30,
+      targetLabel: "30% Target",
+      color: T.yellow,
+      points: [58, 55, 53, 51, 49, 46, 43, 40, 37, 35, 33, 31, 30, 29, 28],
+    },
+  };
+
+  const BLANK_DATASET = { label: "Your Metric", unit: "", target: null, targetLabel: "", color: T.cyan, points: [] };
+
+  const [mode, setMode] = useState("demo"); // "demo" | "custom"
+  const [selectedDemo, setSelectedDemo] = useState("resolution");
+  const [customLabel, setCustomLabel] = useState("My Process Metric");
+  const [customUnit, setCustomUnit] = useState("");
+  const [customTarget, setCustomTarget] = useState("");
+  const [customPoints, setCustomPoints] = useState([]);
   const [newPoint, setNewPoint] = useState("");
-  const [metric, setMetric] = useState("resolution");
+  const [bulkInput, setBulkInput] = useState("");
+  const [showBulk, setShowBulk] = useState(false);
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [weRulesEnabled, setWeRulesEnabled] = useState(true);
+  const [showTable, setShowTable] = useState(false);
+  const [startWeek, setStartWeek] = useState(1);
 
-  const mean = dataPoints.reduce((a, b) => a + b, 0) / dataPoints.length;
-  const movingRanges = dataPoints.slice(1).map((v, i) => Math.abs(v - dataPoints[i]));
-  const avgMR = movingRanges.reduce((a, b) => a + b, 0) / movingRanges.length || 0;
-  const ucl = +(mean + 2.66 * avgMR).toFixed(2);
-  const lcl = +(mean - 2.66 * avgMR).toFixed(2);
-  const mrUcl = +(3.267 * avgMR).toFixed(2);
+  const activeDataset = mode === "demo"
+    ? DEMO_DATASETS[selectedDemo]
+    : { ...BLANK_DATASET, label: customLabel, unit: customUnit, target: customTarget !== "" ? parseFloat(customTarget) : null, targetLabel: customTarget !== "" ? `${customTarget}${customUnit} Target` : "", points: customPoints };
 
-  const violations = dataPoints.filter(v => v > ucl || v < lcl).length;
-  const inControl = violations === 0;
+  const pts = activeDataset.points;
+  const n = pts.length;
 
-  const chartData = dataPoints.map((v, i) => ({
-    point: `W${i + 25}`,
+  // ── SPC calculations ──
+  const mean = n > 0 ? pts.reduce((a, b) => a + b, 0) / n : 0;
+  const movingRanges = pts.slice(1).map((v, i) => Math.abs(v - pts[i]));
+  const avgMR = movingRanges.length > 0 ? movingRanges.reduce((a, b) => a + b, 0) / movingRanges.length : 0;
+  const ucl = mean + 2.66 * avgMR;
+  const lcl = mean - 2.66 * avgMR;
+  const mrUcl = 3.267 * avgMR;
+  const stdDev = n > 1 ? Math.sqrt(pts.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / (n - 1)) : 0;
+
+  // ── Western Electric Rules ──
+  const checkWE = (points, mean, ucl, lcl, enabled) => {
+    if (!enabled || points.length < 2) return points.map(() => ({ signal: false, rules: [] }));
+    const sigma = (ucl - mean) / 3;
+    return points.map((v, i) => {
+      const rules = [];
+      // Rule 1: Point beyond 3σ
+      if (v > ucl || v < lcl) rules.push("R1: Beyond 3σ");
+      // Rule 2: 2 of 3 beyond 2σ (same side)
+      if (i >= 2) {
+        const window = [points[i-2], points[i-1], v];
+        const aboveTwoSig = window.filter(p => p > mean + 2 * sigma).length;
+        const belowTwoSig = window.filter(p => p < mean - 2 * sigma).length;
+        if (aboveTwoSig >= 2 || belowTwoSig >= 2) rules.push("R2: 2/3 beyond 2σ");
+      }
+      // Rule 3: 4 of 5 beyond 1σ (same side)
+      if (i >= 4) {
+        const window = points.slice(i-4, i+1);
+        const aboveOneSig = window.filter(p => p > mean + sigma).length;
+        const belowOneSig = window.filter(p => p < mean - sigma).length;
+        if (aboveOneSig >= 4 || belowOneSig >= 4) rules.push("R3: 4/5 beyond 1σ");
+      }
+      // Rule 4: 8 consecutive same side
+      if (i >= 7) {
+        const window = points.slice(i-7, i+1);
+        if (window.every(p => p > mean) || window.every(p => p < mean)) rules.push("R4: 8pts same side");
+      }
+      // Rule 5: 6 consecutive trending
+      if (i >= 5) {
+        const window = points.slice(i-5, i+1);
+        const trending = window.every((v, j) => j === 0 || v > window[j-1]) ||
+                         window.every((v, j) => j === 0 || v < window[j-1]);
+        if (trending) rules.push("R5: 6pts trending");
+      }
+      return { signal: rules.length > 0, rules };
+    });
+  };
+
+  const weResults = checkWE(pts, mean, ucl, lcl, weRulesEnabled);
+  const totalViolations = weResults.filter(r => r.signal).length;
+  const allRulesViolated = [...new Set(weResults.flatMap(r => r.rules))];
+
+  const chartData = pts.map((v, i) => ({
+    point: `W${startWeek + i}`,
     value: v,
-    ucl, lcl, mean,
-    mr: i > 0 ? +Math.abs(v - dataPoints[i - 1]).toFixed(2) : null,
-    mrUcl,
-    signal: v > ucl || v < lcl,
+    ucl: +ucl.toFixed(3),
+    lcl: +lcl.toFixed(3),
+    mean: +mean.toFixed(3),
+    mr: i > 0 ? +Math.abs(v - pts[i-1]).toFixed(3) : null,
+    mrUcl: +mrUcl.toFixed(3),
+    signal: weResults[i]?.signal,
+    ruleNames: weResults[i]?.rules?.join(", ") || "",
   }));
 
+  const inControl = totalViolations === 0;
+
+  // ── Handlers ──
   const addPoint = () => {
     const v = parseFloat(newPoint);
-    if (!isNaN(v) && v > 0) {
-      setDataPoints(prev => [...prev, v]);
+    if (!isNaN(v)) {
+      if (mode === "custom") setCustomPoints(p => [...p, v]);
       setNewPoint("");
     }
   };
 
-  const reset = () => setDataPoints(SPC_DATA.map(d => d.avg));
+  const removePoint = (idx) => {
+    if (mode === "custom") setCustomPoints(p => p.filter((_, i) => i !== idx));
+  };
+
+  const loadBulk = () => {
+    const vals = bulkInput.split(/[\n,\s]+/).map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+    if (vals.length > 0) {
+      if (mode === "custom") setCustomPoints(vals);
+      setBulkInput("");
+      setShowBulk(false);
+    }
+  };
+
+  const resetCustom = () => { setCustomPoints([]); setNewPoint(""); setBulkInput(""); };
+
+  const loadDemoAsCustom = () => {
+    const ds = DEMO_DATASETS[selectedDemo];
+    setCustomLabel(ds.label);
+    setCustomUnit(ds.unit);
+    setCustomTarget(ds.target?.toString() || "");
+    setCustomPoints([...ds.points]);
+    setMode("custom");
+  };
+
+  const exportCSV = () => {
+    const header = `Point,Value,Mean,UCL,LCL,MR,Signal\n`;
+    const rows = chartData.map(d => `${d.point},${d.value},${d.mean},${d.ucl},${d.lcl},${d.mr ?? ""},${d.signal ? "YES" : "no"}`).join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `SPC_${(activeDataset.label).replace(/\s+/g, "_")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const statusColor = inControl ? T.green : T.red;
+  const ds = activeDataset;
+  const fmt2 = v => isNaN(v) ? "—" : v.toFixed(2);
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1100, margin: "0 auto" }}>
       <SectionHeader
         module="Module 06 — Statistical Process Control"
-        title="I-MR Control Charts"
-        sub="Individual and Moving Range charts for process monitoring. Add data points to simulate real-time SPC. Western Electric rules applied."
+        title="Live I-MR Control Charts"
+        sub="Input your own weekly data or explore Pulse Digital demo datasets. Western Electric rules auto-applied. Export as CSV when ready."
       />
 
-      {/* Status */}
-      <div style={{ display: "flex", gap: "1rem", marginBottom: "2rem", flexWrap: "wrap" }}>
+      {/* ── Mode Toggle ── */}
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
         {[
-          { label: "Process Status", val: inControl ? "IN CONTROL" : "OUT OF CONTROL", color: inControl ? T.green : T.red },
-          { label: "Center Line (X̄)", val: `${mean.toFixed(2)}h`, color: T.cyan },
-          { label: "UCL", val: `${ucl}h`, color: T.yellow },
-          { label: "LCL", val: `${lcl}h`, color: T.yellow },
-          { label: "Avg Moving Range", val: avgMR.toFixed(2), color: T.textMid },
-          { label: "Violations", val: violations, color: violations > 0 ? T.red : T.green },
-        ].map(k => (
-          <div key={k.label} style={{ background: T.surface, border: `1px solid ${k.color}33`, borderRadius: 6, padding: "0.75rem 1.25rem", flex: "1 1 130px", textAlign: "center" }}>
-            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{k.label}</div>
-            <div style={{ color: k.color, fontFamily: T.mono, fontSize: "0.95rem", fontWeight: 700 }}>{k.val}</div>
-          </div>
+          { id: "demo", label: "◈ Pulse Digital Demo Data", sub: "Pre-loaded from real project" },
+          { id: "custom", label: "⚡ Your Company Data", sub: "Input your own metrics" },
+        ].map(m => (
+          <button key={m.id} onClick={() => setMode(m.id)} style={{
+            flex: "1 1 200px",
+            background: mode === m.id ? `${m.id === "custom" ? T.green : T.cyan}15` : T.surface,
+            border: `2px solid ${mode === m.id ? (m.id === "custom" ? T.green : T.cyan) : T.border}`,
+            color: mode === m.id ? (m.id === "custom" ? T.green : T.cyan) : T.textDim,
+            padding: "0.85rem 1.25rem", borderRadius: 8, cursor: "pointer",
+            fontFamily: T.mono, fontSize: "0.72rem", textAlign: "left",
+            transition: "all 0.2s",
+          }}>
+            <div style={{ fontWeight: 700, letterSpacing: "0.05em", marginBottom: "0.2rem" }}>{m.label}</div>
+            <div style={{ fontSize: "0.6rem", opacity: 0.7 }}>{m.sub}</div>
+          </button>
         ))}
       </div>
 
-      {/* I Chart */}
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
-        <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "1rem" }}>
-          [ INDIVIDUALS CHART — Avg Resolution Time (hrs) ]
+      {/* ── Demo Dataset Selector ── */}
+      {mode === "demo" && (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", marginBottom: "1.5rem" }}>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.75rem" }}>
+            Select Metric (15 weeks of post-implementation data)
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            {Object.entries(DEMO_DATASETS).map(([key, ds]) => (
+              <button key={key} onClick={() => setSelectedDemo(key)} style={{
+                background: selectedDemo === key ? `${ds.color}18` : T.panel,
+                border: `1px solid ${selectedDemo === key ? ds.color : T.border}`,
+                color: selectedDemo === key ? ds.color : T.textDim,
+                padding: "0.5rem 1rem", borderRadius: 20, cursor: "pointer",
+                fontFamily: T.mono, fontSize: "0.67rem", transition: "all 0.2s",
+              }}>{ds.label}</button>
+            ))}
+          </div>
+          <button onClick={loadDemoAsCustom} style={{
+            marginTop: "0.75rem", background: "transparent", border: `1px solid ${T.border}`,
+            color: T.textDim, padding: "0.4rem 0.9rem", borderRadius: 4,
+            cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+          }}>
+            → Edit this data in Custom Mode
+          </button>
         </div>
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="2 4" stroke={T.border} vertical={false} />
-            <XAxis dataKey="point" tick={{ fill: T.textDim, fontSize: 11, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: "0.75rem", color: T.text }} />
-            <ReferenceLine y={ucl} stroke={T.red} strokeDasharray="4 4" label={{ value: `UCL=${ucl}`, fill: T.red, fontSize: 10, fontFamily: T.mono }} />
-            <ReferenceLine y={mean} stroke={T.cyan} strokeDasharray="4 4" label={{ value: `X̄=${mean.toFixed(1)}`, fill: T.cyan, fontSize: 10, fontFamily: T.mono }} />
-            <ReferenceLine y={lcl} stroke={T.yellow} strokeDasharray="4 4" label={{ value: `LCL=${lcl}`, fill: T.yellow, fontSize: 10, fontFamily: T.mono }} />
-            <ReferenceLine y={48} stroke={T.green} strokeWidth={1} label={{ value: "Target 48h", fill: T.green, fontSize: 10, fontFamily: T.mono }} />
-            <Line type="monotone" dataKey="value" stroke={T.cyan} strokeWidth={2}
-              dot={(props) => {
-                const { cx, cy, payload } = props;
-                return <circle key={cx} cx={cx} cy={cy} r={5} fill={payload.signal ? T.red : T.cyan} stroke="none" style={{ filter: `drop-shadow(0 0 5px ${payload.signal ? T.red : T.cyan})` }} />;
-              }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      )}
 
-      {/* MR Chart */}
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
-        <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "1rem" }}>
-          [ MOVING RANGE CHART ]
-        </div>
-        <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={chartData.slice(1).map((d, i) => ({ point: d.point, mr: d.mr, mrUcl }))} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="2 4" stroke={T.border} vertical={false} />
-            <XAxis dataKey="point" tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-            <ReferenceLine y={mrUcl} stroke={T.red} strokeDasharray="4 4" label={{ value: `MR UCL=${mrUcl}`, fill: T.red, fontSize: 10, fontFamily: T.mono }} />
-            <Bar dataKey="mr" fill={T.green} radius={[3, 3, 0, 0]} fillOpacity={0.8} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {/* ── Custom Input Panel ── */}
+      {mode === "custom" && (
+        <div style={{ background: T.surface, border: `1px solid ${T.green}33`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+          <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "1.25rem" }}>
+            [ YOUR COMPANY DATA — CONFIGURE ]
+          </div>
 
-      {/* Add data point */}
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", textTransform: "uppercase" }}>Add Data Point:</div>
-        <input
-          type="number" value={newPoint} onChange={e => setNewPoint(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && addPoint()}
-          placeholder="e.g. 51.3"
-          style={{ background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.cyan, padding: "0.6rem 0.8rem", fontFamily: T.mono, fontSize: "0.85rem", width: 120 }}
-        />
-        <button onClick={addPoint} style={{ background: `${T.cyan}18`, border: `1px solid ${T.cyan}`, color: T.cyan, padding: "0.6rem 1rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem" }}>
-          Plot Point
-        </button>
-        <button onClick={reset} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.6rem 1rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem" }}>
-          Reset
-        </button>
-        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem" }}>
-          n = {dataPoints.length} points · {inControl ? <span style={{ color: T.green }}>All points in control</span> : <span style={{ color: T.red }}>{violations} violation(s) detected</span>}
+          {/* Metric config */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "0.75rem", marginBottom: "1.25rem" }}>
+            {[
+              { label: "Metric Name", val: customLabel, set: setCustomLabel, ph: "e.g. Resolution Time" },
+              { label: "Unit", val: customUnit, set: setCustomUnit, ph: "e.g. hrs, %, /10" },
+              { label: "Target Value", val: customTarget, set: setCustomTarget, ph: "e.g. 48" },
+              { label: "Starting Week #", val: startWeek, set: v => setStartWeek(parseInt(v)||1), ph: "e.g. 1", type: "number" },
+            ].map(f => (
+              <div key={f.label}>
+                <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{f.label}</label>
+                <input type={f.type || "text"} value={f.val} onChange={e => f.set(e.target.value)} placeholder={f.ph}
+                  style={{ width: "100%", background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.55rem 0.75rem", fontFamily: T.mono, fontSize: "0.8rem", boxSizing: "border-box" }} />
+              </div>
+            ))}
+          </div>
+
+          {/* Add single point */}
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap" }}>
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", textTransform: "uppercase", whiteSpace: "nowrap" }}>Add Point:</div>
+            <input type="number" value={newPoint} onChange={e => setNewPoint(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addPoint()}
+              placeholder={`Value ${customUnit ? `(${customUnit})` : ""}`}
+              style={{ background: T.panel, border: `1px solid ${T.borderHi}`, borderRadius: 4, color: T.cyan, padding: "0.55rem 0.8rem", fontFamily: T.mono, fontSize: "0.85rem", width: 130 }} />
+            <button onClick={addPoint} style={{ background: `${T.cyan}18`, border: `1px solid ${T.cyan}`, color: T.cyan, padding: "0.55rem 1rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem" }}>
+              + Plot
+            </button>
+            <button onClick={() => setShowBulk(p => !p)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.55rem 1rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem" }}>
+              {showBulk ? "▲ Hide Bulk" : "▼ Paste Bulk"}
+            </button>
+            <button onClick={resetCustom} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.55rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem" }}>
+              ✕ Clear
+            </button>
+          </div>
+
+          {/* Bulk paste */}
+          <AnimatePresence>
+            {showBulk && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} style={{ marginBottom: "0.75rem" }}>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", marginBottom: "0.4rem" }}>
+                  Paste numbers separated by commas, spaces, or new lines:
+                </div>
+                <textarea value={bulkInput} onChange={e => setBulkInput(e.target.value)}
+                  placeholder={"51.4, 50.1, 49.8, 48.7, 49.2\nor one per line"}
+                  style={{ width: "100%", minHeight: 80, background: T.panel, border: `1px solid ${T.borderHi}`, borderRadius: 4, color: T.text, padding: "0.7rem", fontFamily: T.mono, fontSize: "0.8rem", resize: "vertical", boxSizing: "border-box" }} />
+                <button onClick={loadBulk} style={{ marginTop: "0.5rem", background: `${T.green}18`, border: `1px solid ${T.green}`, color: T.green, padding: "0.5rem 1rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.72rem" }}>
+                  Load {bulkInput.split(/[\n,\s]+/).filter(v => !isNaN(parseFloat(v)) && v.trim() !== "").length} Values →
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Plotted points chips */}
+          {customPoints.length > 0 && (
+            <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+              {customPoints.map((v, i) => (
+                <span key={i} onClick={() => removePoint(i)} style={{
+                  background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3,
+                  padding: "0.2rem 0.5rem", color: T.textMid, fontFamily: T.mono,
+                  fontSize: "0.68rem", cursor: "pointer",
+                  transition: "all 0.15s",
+                }} title="Click to remove">
+                  W{startWeek + i}: {v}{customUnit}
+                </span>
+              ))}
+            </div>
+          )}
+          {customPoints.length === 0 && (
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.72rem", padding: "0.75rem 0" }}>
+              No data yet. Add points above or paste bulk values. Minimum 5 recommended for stable control limits.
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* ── Status Bar ── */}
+      {n >= 2 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
+          {[
+            { label: "Process Status", val: inControl ? "IN CONTROL" : "OUT OF CONTROL", color: statusColor },
+            { label: "Center Line (X̄)", val: `${fmt2(mean)}${ds.unit}`, color: T.cyan },
+            { label: "UCL (+3σ)", val: `${fmt2(ucl)}${ds.unit}`, color: T.red },
+            { label: "LCL (−3σ)", val: `${fmt2(lcl)}${ds.unit}`, color: T.yellow },
+            { label: "Avg Moving Range", val: fmt2(avgMR), color: T.textMid },
+            { label: "Std Dev (σ)", val: fmt2(stdDev), color: T.textMid },
+            { label: "n (data points)", val: n, color: T.textMid },
+            { label: "WE Violations", val: `${totalViolations}`, color: totalViolations > 0 ? T.red : T.green },
+          ].map(k => (
+            <div key={k.label} style={{ background: T.surface, border: `1px solid ${k.color}22`, borderRadius: 6, padding: "0.65rem 0.9rem", textAlign: "center" }}>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.3rem", lineHeight: 1.3 }}>{k.label}</div>
+              <div style={{ color: k.color, fontFamily: T.mono, fontSize: "0.88rem", fontWeight: 700 }}>{k.val}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {n < 2 && mode === "custom" && (
+        <div style={{ background: `${T.yellow}08`, border: `1px solid ${T.yellow}33`, borderRadius: 8, padding: "1.25rem", marginBottom: "1.5rem", textAlign: "center" }}>
+          <div style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.75rem" }}>
+            ⚠ Add at least 2 data points to generate control limits. 5+ recommended for reliable limits.
+          </div>
+        </div>
+      )}
+
+      {/* ── I Chart ── */}
+      {n >= 2 && (
+        <>
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
+              <div style={{ color: activeDataset.color, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+                [ INDIVIDUALS CHART — {ds.label.toUpperCase()} ]
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button onClick={() => setWeRulesEnabled(p => !p)} style={{
+                  background: weRulesEnabled ? `${T.cyan}15` : "transparent",
+                  border: `1px solid ${weRulesEnabled ? T.cyan : T.border}`,
+                  color: weRulesEnabled ? T.cyan : T.textDim,
+                  padding: "0.3rem 0.7rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem",
+                }}>
+                  {weRulesEnabled ? "✓" : "○"} WE Rules
+                </button>
+                <button onClick={exportCSV} style={{
+                  background: "transparent", border: `1px solid ${T.border}`, color: T.textDim,
+                  padding: "0.3rem 0.7rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem",
+                }}>
+                  ↓ CSV
+                </button>
+                <button onClick={() => setShowTable(p => !p)} style={{
+                  background: "transparent", border: `1px solid ${T.border}`, color: T.textDim,
+                  padding: "0.3rem 0.7rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem",
+                }}>
+                  {showTable ? "▲ Hide" : "▼ Table"}
+                </button>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={chartData} margin={{ top: 15, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="2 4" stroke={T.border} vertical={false} />
+                <XAxis dataKey="point" tick={{ fill: T.textDim, fontSize: 11, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} axisLine={false} tickLine={false} domain={["auto", "auto"]} />
+                <Tooltip
+                  contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: "0.72rem", color: T.text }}
+                  formatter={(val, name, props) => {
+                    const r = props.payload?.ruleNames;
+                    return [
+                      <span style={{ color: props.payload?.signal ? T.red : T.cyan }}>
+                        {val}{ds.unit}{r ? ` ⚠ ${r}` : ""}
+                      </span>,
+                      "Value"
+                    ];
+                  }}
+                />
+                <ReferenceLine y={ucl} stroke={T.red} strokeDasharray="5 3" strokeWidth={1.5}
+                  label={{ value: `UCL ${fmt2(ucl)}`, fill: T.red, fontSize: 10, fontFamily: T.mono, position: "insideTopRight" }} />
+                <ReferenceLine y={mean} stroke={T.cyan} strokeDasharray="4 4" strokeWidth={1.5}
+                  label={{ value: `X̄ ${fmt2(mean)}`, fill: T.cyan, fontSize: 10, fontFamily: T.mono, position: "insideTopRight" }} />
+                <ReferenceLine y={lcl} stroke={T.yellow} strokeDasharray="5 3" strokeWidth={1.5}
+                  label={{ value: `LCL ${fmt2(lcl)}`, fill: T.yellow, fontSize: 10, fontFamily: T.mono, position: "insideBottomRight" }} />
+                {ds.target !== null && ds.target !== undefined && (
+                  <ReferenceLine y={ds.target} stroke={T.green} strokeWidth={1}
+                    label={{ value: ds.targetLabel, fill: T.green, fontSize: 10, fontFamily: T.mono, position: "insideTopLeft" }} />
+                )}
+                <Line type="monotone" dataKey="value" stroke={activeDataset.color} strokeWidth={2.5}
+                  dot={(props) => {
+                    const { cx, cy, payload } = props;
+                    const c = payload.signal ? T.red : activeDataset.color;
+                    return (
+                      <g key={`dot-${cx}-${cy}`}>
+                        <circle cx={cx} cy={cy} r={payload.signal ? 7 : 5} fill={c} stroke="none"
+                          style={{ filter: `drop-shadow(0 0 6px ${c})` }} />
+                        {payload.signal && <circle cx={cx} cy={cy} r={11} fill="none" stroke={T.red} strokeWidth={1.5} strokeOpacity={0.5} />}
+                      </g>
+                    );
+                  }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* ── MR Chart ── */}
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+            <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "1rem" }}>
+              [ MOVING RANGE CHART — Process Variability ]
+            </div>
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={chartData.slice(1).map(d => ({ point: d.point, mr: d.mr, mrUcl: d.mrUcl }))} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="2 4" stroke={T.border} vertical={false} />
+                <XAxis dataKey="point" tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                <ReferenceLine y={mrUcl} stroke={T.red} strokeDasharray="4 4"
+                  label={{ value: `MR UCL ${fmt2(mrUcl)}`, fill: T.red, fontSize: 10, fontFamily: T.mono, position: "insideTopRight" }} />
+                <Tooltip contentStyle={{ background: T.panel, border: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: "0.72rem", color: T.text }}
+                  formatter={v => [`${v}${ds.unit}`, "Moving Range"]} />
+                <Bar dataKey="mr" radius={[3, 3, 0, 0]}>
+                  {chartData.slice(1).map((d, i) => (
+                    <Cell key={i} fill={d.mr > mrUcl ? T.red : T.green} fillOpacity={0.85} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* ── WE Rules Status ── */}
+          {weRulesEnabled && (
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", marginBottom: "1.5rem" }}>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.85rem" }}>
+                [ WESTERN ELECTRIC RULES — Auto-Check ]
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: "0.6rem" }}>
+                {[
+                  { id: "R1", label: "Rule 1: Point beyond ±3σ (UCL/LCL)", desc: "Immediate special cause — investigate now" },
+                  { id: "R2", label: "Rule 2: 2 of 3 points beyond ±2σ (same side)", desc: "Process shift suspected" },
+                  { id: "R3", label: "Rule 3: 4 of 5 points beyond ±1σ (same side)", desc: "Process drift — gradual shift" },
+                  { id: "R4", label: "Rule 4: 8+ consecutive points same side of mean", desc: "Sustained bias — check setup" },
+                  { id: "R5", label: "Rule 5: 6 consecutive points trending", desc: "Process trending — check for wear or degradation" },
+                ].map(rule => {
+                  const violated = allRulesViolated.some(r => r.startsWith(rule.id));
+                  return (
+                    <div key={rule.id} style={{
+                      background: violated ? `${T.red}0A` : `${T.green}08`,
+                      border: `1px solid ${violated ? T.red + "44" : T.green + "33"}`,
+                      borderRadius: 6, padding: "0.75rem 1rem",
+                      display: "flex", gap: "0.6rem", alignItems: "flex-start",
+                    }}>
+                      <span style={{ color: violated ? T.red : T.green, fontFamily: T.mono, fontSize: "0.9rem", lineHeight: 1.2, flexShrink: 0 }}>
+                        {violated ? "⚠" : "✓"}
+                      </span>
+                      <div>
+                        <div style={{ color: violated ? T.red : T.green, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700, marginBottom: "0.2rem" }}>{rule.label}</div>
+                        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>{rule.desc}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {totalViolations > 0 && (
+                <div style={{ marginTop: "0.85rem", background: `${T.red}0A`, border: `1px solid ${T.red}33`, borderRadius: 6, padding: "0.75rem 1rem" }}>
+                  <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700, marginBottom: "0.3rem" }}>
+                    ⚠ {totalViolations} out-of-control signal(s) detected at {weResults.map((r, i) => r.signal ? chartData[i]?.point : null).filter(Boolean).join(", ")}
+                  </div>
+                  <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.62rem" }}>
+                    Trigger 5 Whys investigation within 24 hrs. Check for special causes: staffing change, system update, new process step, or external event.
+                  </div>
+                </div>
+              )}
+              {totalViolations === 0 && n >= 5 && (
+                <div style={{ marginTop: "0.85rem", background: `${T.green}08`, border: `1px solid ${T.green}33`, borderRadius: 6, padding: "0.75rem 1rem" }}>
+                  <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700 }}>
+                    ✓ Process is in statistical control — all {n} points within limits, no WE rule violations detected.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Data Table ── */}
+          <AnimatePresence>
+            {showTable && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
+                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", marginBottom: "1.5rem" }}>
+                  <div style={{ padding: "0.85rem 1.25rem", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase" }}>[ RAW DATA TABLE ]</span>
+                    <button onClick={exportCSV} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.3rem 0.7rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>
+                      ↓ Export CSV
+                    </button>
+                  </div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.mono, fontSize: "0.72rem" }}>
+                      <thead>
+                        <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                          {["Period", "Value", "UCL", "Mean", "LCL", "Mov. Range", "Status"].map(h => (
+                            <th key={h} style={{ color: T.textDim, padding: "0.6rem 1rem", textAlign: "left", fontSize: "0.58rem", textTransform: "uppercase", letterSpacing: "0.08em" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {chartData.map((row, i) => (
+                          <tr key={i} style={{ borderBottom: `1px solid ${T.border}`, background: row.signal ? `${T.red}08` : "transparent" }}>
+                            <td style={{ padding: "0.55rem 1rem", color: T.textMid }}>{row.point}</td>
+                            <td style={{ padding: "0.55rem 1rem", color: row.signal ? T.red : T.text, fontWeight: row.signal ? 700 : 400 }}>{row.value}{ds.unit}</td>
+                            <td style={{ padding: "0.55rem 1rem", color: T.textDim }}>{row.ucl}{ds.unit}</td>
+                            <td style={{ padding: "0.55rem 1rem", color: T.cyan }}>{row.mean}{ds.unit}</td>
+                            <td style={{ padding: "0.55rem 1rem", color: T.textDim }}>{row.lcl}{ds.unit}</td>
+                            <td style={{ padding: "0.55rem 1rem", color: T.textMid }}>{row.mr !== null ? `${row.mr}${ds.unit}` : "—"}</td>
+                            <td style={{ padding: "0.55rem 1rem" }}>
+                              {row.signal
+                                ? <Badge label={`⚠ ${row.ruleNames}`} color={T.red} />
+                                : <Badge label="In Control" color={T.green} />}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ── Capability Summary ── */}
+          {n >= 5 && stdDev > 0 && (
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.85rem" }}>
+                [ PROCESS CAPABILITY SNAPSHOT ]
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "0.85rem" }}>
+                {[
+                  { label: "Mean", val: `${fmt2(mean)}${ds.unit}`, note: "Center of process" },
+                  { label: "Std Dev (σ)", val: fmt2(stdDev), note: "Variation magnitude" },
+                  { label: "Natural Width (±3σ)", val: `${fmt2(mean - 3*stdDev)} – ${fmt2(mean + 3*stdDev)}${ds.unit}`, note: "99.73% of data" },
+                  ...(ds.target !== null && ds.target !== undefined ? [
+                    { label: "vs Target", val: `${mean > ds.target ? "+" : ""}${fmt2(mean - ds.target)}${ds.unit}`, note: mean <= ds.target ? "✓ At or below target" : "↑ Above target", valColor: mean <= ds.target ? T.green : T.yellow },
+                    { label: "% At/Below Target", val: `${Math.round(pts.filter(v => v <= ds.target).length / n * 100)}%`, note: `of ${n} data points` },
+                  ] : []),
+                ].map(k => (
+                  <div key={k.label} style={{ background: T.panel, borderRadius: 6, padding: "0.85rem 1rem" }}>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{k.label}</div>
+                    <div style={{ color: k.valColor || T.cyan, fontFamily: T.mono, fontSize: "1rem", fontWeight: 700 }}>{k.val}</div>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", marginTop: "0.2rem" }}>{k.note}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </motion.div>
   );
 }
+
 
 // ─── 07: PARETO BUILDER ──────────────────────────────────────────────────────
 function ParetoBuilder() {
