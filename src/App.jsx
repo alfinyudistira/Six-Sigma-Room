@@ -5726,250 +5726,816 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
 }
 
 // ─── LIVE OPS CENTER ─────────────────────────────────────────────────────────
+
 function LiveOpsCenter() {
   const company = useCompany();
-  const [history] = useLocalState("triage_history", []);
-  const [technicians] = useLocalState(
+  const { fmt: fmtCur, s: currSym } = useCurrencyFmt();
+
+  // ── Pull data from every module via shared localStorage ──────────────────
+  const [overviewData]    = useLocalState("overview_data",    OVERVIEW_DEFAULTS);
+  const [dmaicPhases]     = useLocalState("dmaic_phases",     DMAIC_DEFAULTS);
+  const [fmeaItems]       = useLocalState("fmea_items",       FMEA_DEFAULTS);
+  const [copqScenarios]   = useLocalState("copq_scenarios",   COPQ_DEFAULTS);
+  const [paretoItems]     = useLocalState("pareto_items",     PARETO_DEFAULTS);
+  const [rcItems]         = useLocalState("rc_items",         RC_DEFAULTS);
+  const [triageHistory]   = useLocalState("triage_history",   []);
+  const [technicians]     = useLocalState(
     company?.isPulseDigital !== false ? "triage_team_pd" : `triage_team_${company?.name || "custom"}`,
     DEFAULT_TECHNICIANS
   );
-  const [now, setNow] = useState(Date.now());
-  const [activeTab, setActiveTab] = useState("queue");
 
+  // ── Real-time tick (SLA countdowns + "live" pulse) ───────────────────────
+  const [now, setNow] = useState(Date.now());
+  const [tick, setTick] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
+    const t = setInterval(() => { setNow(Date.now()); setTick(p => p + 1); }, 1000);
     return () => clearInterval(t);
   }, []);
 
-  const slaColor = (s) => s === "ON TRACK" ? T.green : s === "AT RISK" ? T.yellow : T.red;
-  const urgencyOrder = { Critical: 0, High: 1, Medium: 2, Low: 3 };
-  const urgencyColor = (u) => u === "Critical" ? T.red : u === "High" ? T.orange : u === "Medium" ? T.yellow : T.green;
+  // ── Listen for localStorage changes from other modules ───────────────────
+  const [lsRevision, setLsRevision] = useState(0);
+  const [opsTab, setOpsTab] = useState("queue");
+  useEffect(() => {
+    const handler = () => setLsRevision(r => r + 1);
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
 
-  // Priority queue — sort by urgency then SLA
-  const priorityQueue = [...history]
-    .sort((a, b) => (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2) || (a.estimatedHrs - b.estimatedHrs))
-    .slice(0, 15);
+  // ── Derived: OVERVIEW ────────────────────────────────────────────────────
+  const metrics     = overviewData.metrics || [];
+  const financials  = overviewData.financials || {};
+  const sigmaMetric = metrics.find(m => m.id === "sigma") || {};
+  const resMetric   = metrics.find(m => m.id === "resolution") || {};
+  const ppkMetric   = metrics.find(m => m.id === "ppk") || {};
+  const csatMetric  = metrics.find(m => m.id === "csat") || {};
 
-  // Technician scorecard
-  const scorecards = technicians.map(t => {
-    const assigned = history.filter(h => h.technician?.name === t.name);
-    const resolved = assigned.filter(h => h.sla === "ON TRACK").length;
-    const breached = assigned.filter(h => h.sla === "BREACH").length;
-    const avgConf = assigned.length > 0 ? Math.round(assigned.reduce((a, h) => a + (h.confidence || 0), 0) / assigned.length) : 0;
-    const avgHrs = assigned.length > 0 ? Math.round(assigned.reduce((a, h) => a + (h.estimatedHrs || 0), 0) / assigned.length) : 0;
-    return { ...t, assigned: assigned.length, resolved, breached, avgConf, avgHrs };
+  // ── Derived: DMAIC ───────────────────────────────────────────────────────
+  const phaseKeys = ["D", "M", "A", "I", "C"];
+  const dmaicOverall = Math.round(phaseKeys.reduce((a, k) => a + (dmaicPhases[k]?.progress || 0), 0) / 5);
+  const completedPhases = phaseKeys.filter(k => dmaicPhases[k]?.status === "COMPLETE").length;
+  const activePhaseKey = phaseKeys.find(k => dmaicPhases[k]?.status === "ACTIVE") || null;
+
+  // ── Derived: FMEA ────────────────────────────────────────────────────────
+  const rpn = i => i.S * i.O * i.D;
+  const openItems    = fmeaItems.filter(i => !i.fixed);
+  const totalRPN     = openItems.reduce((a, i) => a + rpn(i), 0);
+  const criticalItems = openItems.filter(i => rpn(i) > 400);
+  const controlledPct = fmeaItems.length > 0
+    ? Math.round((fmeaItems.filter(i => i.fixed).length / fmeaItems.length) * 100)
+    : 0;
+  const topFMEA = [...openItems].sort((a, b) => rpn(b) - rpn(a)).slice(0, 3);
+
+  // ── Derived: COPQ ────────────────────────────────────────────────────────
+  const copqA = calcCOPQ(copqScenarios.A);
+  const copqB = calcCOPQ(copqScenarios.B);
+  const copqSavings = copqA.total - copqB.total;
+  const copqDailyBurn = Math.round(copqA.total / 365);
+  const copqDailyBurnB = Math.round(copqB.total / 365);
+
+  // ── Derived: PARETO ──────────────────────────────────────────────────────
+  const activePareto = (paretoItems || []).filter(i => !i.hidden);
+  const totalCases = activePareto.reduce((a, i) => a + i.cases, 0);
+  const totalHrs = activePareto.reduce((a, i) => a + i.cases * i.avgHrs, 0);
+  const sortedPareto = [...activePareto].sort((a, b) => b.cases * b.avgHrs - a.cases * a.avgHrs);
+  const top3Pareto = sortedPareto.slice(0, 3);
+  let cumPct = 0;
+  const paretoWithCum = sortedPareto.map(i => {
+    cumPct += totalHrs > 0 ? (i.cases * i.avgHrs / totalHrs) * 100 : 0;
+    return { ...i, cumPct: Math.round(cumPct), totalHrs: i.cases * i.avgHrs };
   });
+  const vitalFew = paretoWithCum.filter(i => i.cumPct <= 80);
 
-  // Category breakdown
-  const catCounts = {};
-  history.forEach(h => { catCounts[h.category] = (catCounts[h.category] || 0) + 1; });
-  const catSorted = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
-  const maxCat = catSorted[0]?.[1] || 1;
+  // ── Derived: ROOT CAUSE ──────────────────────────────────────────────────
+  const solvedRC = rcItems.filter(r => r.status === "SOLVED").length;
+  const rcSolvePct = rcItems.length > 0 ? Math.round((solvedRC / rcItems.length) * 100) : 0;
+  const totalRCImpact = rcItems.reduce((a, r) => a + (r.impact || 0), 0);
 
-  // SLA stats
-  const onTrack = history.filter(h => h.sla === "ON TRACK").length;
-  const atRisk = history.filter(h => h.sla === "AT RISK").length;
-  const breach = history.filter(h => h.sla === "BREACH").length;
-  const slaRate = history.length > 0 ? Math.round((onTrack / history.length) * 100) : 0;
+  // ── Derived: TRIAGE / OPS FLOOR ─────────────────────────────────────────
+  const onTrack = triageHistory.filter(h => h.sla === "ON TRACK").length;
+  const atRisk  = triageHistory.filter(h => h.sla === "AT RISK").length;
+  const breach  = triageHistory.filter(h => h.sla === "BREACH").length;
+  const slaRate = triageHistory.length > 0 ? Math.round((onTrack / triageHistory.length) * 100) : 0;
+  const criticalTickets = triageHistory.filter(h => h.urgency === "Critical");
+  const urgencyOrder = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+  const priorityQueue = [...triageHistory]
+    .sort((a, b) => (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2))
+    .slice(0, 5);
 
-  // Similar case finder
-  const findSimilar = (target) => {
-    if (!target) return [];
-    return history
-      .filter(h => h.id !== target.id && h.category === target.category)
-      .slice(0, 3);
+  // ── Cross-module AI insight generator ────────────────────────────────────
+  const generateInsights = () => {
+    const insights = [];
+    // FMEA ↔ Pareto correlation
+    if (top3Pareto[0] && criticalItems.length > 0) {
+      const topCat = top3Pareto[0].category;
+      const fmeaMatch = criticalItems.find(i =>
+        i.process?.toLowerCase().includes(topCat?.toLowerCase().split(" ")[0]) ||
+        i.failure?.toLowerCase().includes(topCat?.toLowerCase().split(" ")[0])
+      );
+      if (fmeaMatch) {
+        insights.push({
+          icon: "🔗",
+          color: T.red,
+          text: `FMEA critical item "${fmeaMatch.failure}" likely linked to Pareto #1 "${topCat}" — converging risk signals.`,
+        });
+      }
+    }
+    // DMAIC stall detection
+    if (activePhaseKey && dmaicPhases[activePhaseKey]?.progress < 50) {
+      insights.push({
+        icon: "⚠",
+        color: T.yellow,
+        text: `DMAIC ${activePhaseKey}-phase is active but below 50% — risk of schedule slip. Check tool completion checklist.`,
+      });
+    }
+    // Triage + COPQ connection
+    if (breach > 0 && copqA.total > 0) {
+      const estimatedImpact = fmtCur(breach * copqScenarios.A.ltv * (copqScenarios.A.churnRate / 100));
+      insights.push({
+        icon: "💸",
+        color: T.orange,
+        text: `${breach} SLA breach(es) in triage queue — estimated churn exposure: ~${estimatedImpact} based on current COPQ parameters.`,
+      });
+    }
+    // RC solve rate + sigma trend
+    if (rcSolvePct === 100 && sigmaMetric.after > sigmaMetric.before) {
+      insights.push({
+        icon: "✓",
+        color: T.green,
+        text: `All root causes solved & sigma improved ${sigmaMetric.before}→${sigmaMetric.after}σ. System is in sustained improvement mode.`,
+      });
+    }
+    // Triage load warning
+    const overloadedTechs = technicians.filter(t => t.load >= t.maxLoad * 0.9);
+    if (overloadedTechs.length > 0) {
+      insights.push({
+        icon: "🔴",
+        color: T.red,
+        text: `${overloadedTechs.map(t => t.name).join(", ")} approaching max load — rerouting risk for incoming tickets.`,
+      });
+    }
+    // Pareto vital few concentration
+    if (vitalFew.length > 0 && top3Pareto.length > 0) {
+      const topPct = totalHrs > 0 ? Math.round((top3Pareto[0].totalHrs / totalHrs) * 100) : 0;
+      if (topPct > 30) {
+        insights.push({
+          icon: "◎",
+          color: T.cyan,
+          text: `"${top3Pareto[0].category}" alone drives ${topPct}% of total hours — highest leverage target for next improvement cycle.`,
+        });
+      }
+    }
+    if (insights.length === 0) {
+      insights.push({
+        icon: "◈",
+        color: T.green,
+        text: "All systems operating normally. No anomalies detected across modules. Add data to other modules to see cross-module intelligence.",
+      });
+    }
+    return insights.slice(0, 3);
   };
 
-  const tabs = [
-    { key: "queue", label: "📊 Priority Queue" },
-    { key: "scorecard", label: "👥 Scorecard" },
-    { key: "insights", label: "🔍 Insights" },
-  ];
+  const insights = generateInsights();
+
+  // ── Status helpers ────────────────────────────────────────────────────────
+  const urgencyColor = u => u === "Critical" ? T.red : u === "High" ? T.orange : u === "Medium" ? T.yellow : T.green;
+  const slaColor     = s => s === "ON TRACK" ? T.green : s === "AT RISK" ? T.yellow : T.red;
+  const rpnColor     = r => r > 400 ? T.red : r > 200 ? T.orange : r > 100 ? T.yellow : T.green;
+
+  // ── Sub-components ────────────────────────────────────────────────────────
+
+  // Reusable panel wrapper
+  const Panel = ({ title, accent = T.cyan, children, style = {} }) => (
+    <div style={{
+      background: T.surface,
+      border: `1px solid ${T.border}`,
+      borderTop: `2px solid ${accent}`,
+      borderRadius: 8,
+      padding: "1rem 1.25rem",
+      ...style,
+    }}>
+      <div style={{ color: accent, fontFamily: T.mono, fontSize: "0.58rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "0.85rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+        <span style={{ width: 5, height: 5, borderRadius: "50%", background: accent, display: "inline-block", boxShadow: `0 0 6px ${accent}` }} />
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+
+  // KPI atom
+  const KPIAtom = ({ label, value, color, sub }) => (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ color, fontFamily: T.display, fontSize: "1.5rem", fontWeight: 800, lineHeight: 1, textShadow: `0 0 16px ${color}55` }}>{value}</div>
+      {sub && <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.5rem", textTransform: "uppercase", marginTop: "0.1rem" }}>{sub}</div>}
+      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.52rem", textTransform: "uppercase", marginTop: "0.15rem" }}>{label}</div>
+    </div>
+  );
+
+  // Mini progress bar
+  const MiniBar = ({ pct, color, height = 4 }) => (
+    <div style={{ height, background: T.panel, borderRadius: 3, overflow: "hidden", flex: 1 }}>
+      <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: color, borderRadius: 3, transition: "width 0.5s ease" }} />
+    </div>
+  );
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <SectionHeader
-        module="Module 11 — Live Operations Center"
-        title="Team Operations Dashboard"
-        sub={`Real-time visibility into ticket queue, technician performance, and SLA health for ${company?.name || "your team"}.`}
-      />
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1300, margin: "0 auto" }}>
 
-      {/* KPI Bar */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
-        {[
-          { label: "Total Tickets", val: history.length, color: T.cyan },
-          { label: "SLA Rate", val: `${slaRate}%`, color: slaRate >= 80 ? T.green : slaRate >= 60 ? T.yellow : T.red },
-          { label: "On Track", val: onTrack, color: T.green },
-          { label: "At Risk", val: atRisk, color: T.yellow },
-          { label: "Breached", val: breach, color: T.red },
-          { label: "Team Size", val: technicians.length, color: T.textMid },
-        ].map(k => (
-          <div key={k.label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "0.85rem 1rem" }}>
-            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{k.label}</div>
-            <div style={{ color: k.color, fontFamily: T.display, fontSize: "1.4rem", fontWeight: 800 }}>{k.val}</div>
-          </div>
-        ))}
+      {/* ── HEADER ── */}
+      <div style={{ marginBottom: "1.75rem" }}>
+        <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "0.4rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: T.green, boxShadow: `0 0 10px ${T.green}`, animation: "pulse 1.5s infinite" }} />
+          Module 11 — Team Operations Center
+        </div>
+        <h2 style={{ fontFamily: T.display, fontSize: "clamp(1.5rem,3.5vw,2.2rem)", color: T.text, fontWeight: 800, margin: "0 0 0.4rem", lineHeight: 1.1 }}>
+          Mission Control Room
+        </h2>
+        <p style={{ color: T.textMid, fontSize: "0.82rem", maxWidth: 650, margin: 0, lineHeight: 1.6 }}>
+          Live aggregation of all 10 modules. Every change you make anywhere on this platform reflects here in real-time.
+        </p>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem", borderBottom: `1px solid ${T.border}`, paddingBottom: "0.75rem", flexWrap: "wrap" }}>
-        {tabs.map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
-            background: activeTab === t.key ? `${T.cyan}18` : "transparent",
-            border: `1px solid ${activeTab === t.key ? T.cyan : T.border}`,
-            color: activeTab === t.key ? T.cyan : T.textDim,
-            padding: "0.45rem 1rem", borderRadius: 6, cursor: "pointer",
-            fontFamily: T.mono, fontSize: "0.68rem", fontWeight: activeTab === t.key ? 700 : 400,
-          }}>{t.label}</button>
-        ))}
+      {/* ══ ROW 1: PROJECT HEALTH BANNER ══════════════════════════════════════ */}
+      <div style={{
+        background: T.panel,
+        border: `1px solid ${T.borderHi}`,
+        borderRadius: 10,
+        padding: "1.25rem 1.75rem",
+        marginBottom: "1.25rem",
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+        gap: "1.5rem",
+        alignItems: "center",
+        position: "relative",
+        overflow: "hidden",
+      }}>
+        {/* Ambient glow */}
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${T.cyan}66, transparent)` }} />
+
+        <KPIAtom
+          label="Sigma Level"
+          value={`${sigmaMetric.after ?? "—"}σ`}
+          color={sigmaMetric.after >= 3 ? T.green : sigmaMetric.after >= 2 ? T.yellow : T.red}
+          sub={sigmaMetric.before ? `from ${sigmaMetric.before}σ ↑` : undefined}
+        />
+        <KPIAtom
+          label="Ppk Index"
+          value={ppkMetric.after ?? "—"}
+          color={ppkMetric.after >= 1.33 ? T.green : ppkMetric.after >= 1 ? T.yellow : T.red}
+          sub="process capable ≥1.33"
+        />
+        <KPIAtom
+          label="DMAIC Progress"
+          value={`${dmaicOverall}%`}
+          color={dmaicOverall === 100 ? T.green : dmaicOverall >= 60 ? T.cyan : T.yellow}
+          sub={`${completedPhases}/5 phases complete`}
+        />
+        <KPIAtom
+          label="COPQ Savings"
+          value={fmtCur(copqSavings)}
+          color={copqSavings > 0 ? T.green : T.red}
+          sub={`from ${fmtCur(copqA.total)} total`}
+        />
+        <KPIAtom
+          label="SLA Rate"
+          value={`${slaRate}%`}
+          color={slaRate >= 80 ? T.green : slaRate >= 60 ? T.yellow : T.red}
+          sub={`${triageHistory.length} total tickets`}
+        />
+        <KPIAtom
+          label="Resolution Time"
+          value={resMetric.after ? `${resMetric.after}h` : "—"}
+          color={resMetric.after <= (resMetric.target || 48) ? T.green : T.yellow}
+          sub={resMetric.before ? `was ${resMetric.before}h` : undefined}
+        />
+        <KPIAtom
+          label="CSAT Score"
+          value={csatMetric.after ? `${csatMetric.after}/10` : "—"}
+          color={csatMetric.after >= 8 ? T.green : csatMetric.after >= 7 ? T.yellow : T.red}
+          sub={`target ${csatMetric.target || "—"}/10`}
+        />
+        <KPIAtom
+          label="Daily Burn Rate"
+          value={fmtCur(copqDailyBurn)}
+          color={T.red}
+          sub="cost of quality / day"
+        />
       </div>
 
-      {/* Priority Queue */}
-      {activeTab === "queue" && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          {history.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "3rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.75rem" }}>
-              No tickets yet — submit complaints in the Smart Triage module to populate the queue.
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              {priorityQueue.map((h, i) => {
-                const elapsed = Math.floor((now - (h.timestamp || now)) / 1000 / 60);
-                const slaRemainMins = (h.estimatedHrs * 60) - elapsed;
-                const slaRemainHrs = Math.max(0, Math.floor(slaRemainMins / 60));
-                const slaRemainMinsRem = Math.max(0, Math.floor(slaRemainMins % 60));
-                const isExpired = slaRemainMins <= 0;
-                const similar = findSimilar(h);
-                return (
-                  <div key={h.id || i} style={{ background: T.surface, border: `1px solid ${h.urgency === "Critical" ? T.red + "66" : T.border}`, borderRadius: 8, padding: "0.85rem 1rem", borderLeft: `4px solid ${urgencyColor(h.urgency || "Low")}` }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", marginBottom: "0.3rem" }}>
-                          <span style={{ background: `${urgencyColor(h.urgency || "Low")}18`, border: `1px solid ${urgencyColor(h.urgency || "Low")}44`, color: urgencyColor(h.urgency || "Low"), fontFamily: T.mono, fontSize: "0.6rem", padding: "0.1rem 0.5rem", borderRadius: 20, fontWeight: 700 }}>{h.urgency || "Low"}</span>
-                          <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem" }}>{h.category}</span>
-                          <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>{h.method === "gemini-ai" ? "✦ AI" : "⚡ Rule"}</span>
-                        </div>
-                        <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.72rem", lineHeight: 1.4 }}>{h.input?.length > 100 ? h.input.slice(0, 100) + "…" : h.input}</div>
-                      </div>
-                      <div style={{ textAlign: "right", flexShrink: 0 }}>
-                        <div style={{ color: isExpired ? T.red : slaRemainMins < 120 ? T.yellow : T.green, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}>
-                          {isExpired ? "⏰ EXPIRED" : `${slaRemainHrs}h ${slaRemainMinsRem}m`}
-                        </div>
-                        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>SLA remaining</div>
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>→ {h.technician?.name}</span>
-                      <span style={{ color: slaColor(h.sla), fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700 }}>{h.sla}</span>
-                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>{h.confidence}% conf</span>
-                      {h.needsManualReview && <span style={{ color: T.red, fontFamily: T.mono, fontSize: "0.58rem" }}>⚠ Review</span>}
-                    </div>
-                    {similar.length > 0 && (
-                      <div style={{ marginTop: "0.5rem", padding: "0.4rem 0.65rem", background: `${T.cyan}08`, borderRadius: 4, borderLeft: `2px solid ${T.cyan}44` }}>
-                        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.2rem" }}>🔍 Similar past cases</div>
-                        {similar.map((s, j) => (
-                          <div key={j} style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.62rem" }}>· {s.input?.slice(0, 60)}… → {s.technician?.name} ({s.sla})</div>
-                        ))}
-                      </div>
-                    )}
+      {/* ══ ROW 2: 4 INTEL PANELS ═════════════════════════════════════════════ */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", marginBottom: "1.25rem" }}>
+
+        {/* ── PANEL A: DMAIC Phase Tracker ── */}
+        <Panel title="DMAIC Status" accent={T.cyan}>
+          {/* Phase flow */}
+          <div style={{ display: "flex", gap: "0.3rem", marginBottom: "1rem" }}>
+            {phaseKeys.map(k => {
+              const ph = dmaicPhases[k];
+              const c = ph.status === "COMPLETE" ? T.green : ph.status === "ACTIVE" ? T.cyan : T.textDim;
+              return (
+                <div key={k} style={{ flex: 1, textAlign: "center" }}>
+                  <div style={{
+                    background: ph.status === "COMPLETE" ? `${T.green}22` : ph.status === "ACTIVE" ? `${T.cyan}18` : T.panel,
+                    border: `1px solid ${c}44`,
+                    borderRadius: 4,
+                    padding: "0.4rem 0.2rem",
+                    marginBottom: "0.3rem",
+                  }}>
+                    <div style={{ color: c, fontFamily: T.mono, fontSize: "0.75rem", fontWeight: 700 }}>{k}</div>
+                    <div style={{ color: c, fontFamily: T.mono, fontSize: "0.55rem" }}>{ph.progress}%</div>
                   </div>
-                );
-              })}
+                  <MiniBar pct={ph.progress} color={c} height={3} />
+                </div>
+              );
+            })}
+          </div>
+          {/* Overall */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+            <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>Overall Completion</span>
+            <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.72rem", fontWeight: 700 }}>{dmaicOverall}%</span>
+          </div>
+          <MiniBar pct={dmaicOverall} color={dmaicOverall === 100 ? T.green : T.cyan} height={6} />
+          {activePhaseKey && (
+            <div style={{ marginTop: "0.75rem", background: `${T.cyan}0A`, border: `1px solid ${T.cyan}22`, borderRadius: 5, padding: "0.5rem 0.75rem" }}>
+              <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>Active: </span>
+              <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.68rem", fontWeight: 700 }}>
+                {activePhaseKey} — {dmaicPhases[activePhaseKey]?.name}
+              </span>
+              <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>
+                {" "}· {dmaicPhases[activePhaseKey]?.tools?.filter(t => t.done).length}/{dmaicPhases[activePhaseKey]?.tools?.length} tools
+              </span>
             </div>
           )}
-        </motion.div>
-      )}
+        </Panel>
 
-      {/* Technician Scorecard */}
-      {activeTab === "scorecard" && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {scorecards.map((t, i) => (
-              <div key={i} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1rem 1.25rem" }}>
-                <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
-                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${TECH_COLORS[i % TECH_COLORS.length]}22`, border: `2px solid ${TECH_COLORS[i % TECH_COLORS.length]}`, display: "flex", alignItems: "center", justifyContent: "center", color: TECH_COLORS[i % TECH_COLORS.length], fontFamily: T.display, fontSize: "1.1rem", fontWeight: 800, flexShrink: 0 }}>{t.name.charAt(0)}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: T.text, fontFamily: T.display, fontSize: "0.95rem", fontWeight: 700 }}>{t.name}</div>
-                    <div style={{ color: TECH_COLORS[i % TECH_COLORS.length], fontFamily: T.mono, fontSize: "0.65rem" }}>{t.level}</div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "0.75rem", textAlign: "center" }}>
-                    {[
-                      { label: "Assigned", val: t.assigned, color: T.cyan },
-                      { label: "On Track", val: t.resolved, color: T.green },
-                      { label: "Breached", val: t.breached, color: T.red },
-                      { label: "Avg Conf", val: t.avgConf ? `${t.avgConf}%` : "—", color: T.yellow },
-                    ].map(k => (
-                      <div key={k.label}>
-                        <div style={{ color: k.color, fontFamily: T.mono, fontSize: "1rem", fontWeight: 700 }}>{k.val}</div>
-                        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase" }}>{k.label}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ marginTop: "0.75rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
-                    <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>Current Load</span>
-                    <span style={{ color: t.load > 25 ? T.red : T.green, fontFamily: T.mono, fontSize: "0.6rem", fontWeight: 700 }}>{t.load}/{t.maxLoad}</span>
-                  </div>
-                  <div style={{ height: 4, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
-                    <div style={{ width: `${(t.load / t.maxLoad) * 100}%`, height: "100%", background: t.load > 25 ? T.red : t.load > 15 ? T.yellow : T.green, borderRadius: 2, transition: "width 0.3s" }} />
-                  </div>
-                </div>
-                <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.3rem", flexWrap: "wrap" }}>
-                  {t.skills.map(s => <Badge key={s} label={s} color={T.textDim} />)}
-                </div>
+        {/* ── PANEL B: FMEA Risk Intelligence ── */}
+        <Panel title="FMEA Risk Intel" accent={criticalItems.length > 0 ? T.red : T.yellow}>
+          {/* Summary row */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.5rem", marginBottom: "1rem" }}>
+            {[
+              { label: "Open RPN", val: totalRPN, color: totalRPN > 1000 ? T.red : T.yellow },
+              { label: "Critical", val: criticalItems.length, color: criticalItems.length > 0 ? T.red : T.green },
+              { label: "Controlled", val: `${controlledPct}%`, color: controlledPct >= 70 ? T.green : T.yellow },
+            ].map(k => (
+              <div key={k.label} style={{ background: T.panel, borderRadius: 5, padding: "0.5rem", textAlign: "center" }}>
+                <div style={{ color: k.color, fontFamily: T.display, fontSize: "1.1rem", fontWeight: 800 }}>{k.val}</div>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.5rem", textTransform: "uppercase" }}>{k.label}</div>
               </div>
             ))}
           </div>
-        </motion.div>
-      )}
+          {/* Top 3 open risks */}
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.4rem" }}>Top Open Risks</div>
+          {topFMEA.length === 0 ? (
+            <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.68rem" }}>✓ No open risks</div>
+          ) : topFMEA.map((item, i) => {
+            const r = rpn(item);
+            const rc = rpnColor(r);
+            return (
+              <div key={item.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
+                <div style={{ width: 36, height: 20, background: `${rc}22`, border: `1px solid ${rc}44`, borderRadius: 3, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <span style={{ color: rc, fontFamily: T.mono, fontSize: "0.58rem", fontWeight: 700 }}>{r}</span>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.62rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.process}: {item.failure}</div>
+                </div>
+                <MiniBar pct={(r / 1000) * 100} color={rc} height={3} />
+              </div>
+            );
+          })}
+        </Panel>
 
-      {/* Insights */}
-      {activeTab === "insights" && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "1rem" }}>
-            {/* Category breakdown */}
-            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem" }}>
-              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "1rem" }}>Top Issue Categories</div>
-              {catSorted.length === 0 ? (
-                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.7rem" }}>No data yet.</div>
-              ) : catSorted.slice(0, 7).map(([cat, count], i) => (
-                <div key={cat} style={{ marginBottom: "0.6rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
-                    <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.68rem" }}>{cat}</span>
-                    <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.68rem", fontWeight: 700 }}>{count}</span>
-                  </div>
-                  <div style={{ height: 3, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
-                    <div style={{ width: `${(count / maxCat) * 100}%`, height: "100%", background: i === 0 ? T.cyan : T.textDim, borderRadius: 2 }} />
-                  </div>
+        {/* ── PANEL C: Pareto Vital Few ── */}
+        <Panel title="Pareto Intelligence" accent={T.yellow}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "1rem" }}>
+            {[
+              { label: "Total Cases", val: totalCases.toLocaleString(), color: T.cyan },
+              { label: "Vital Few", val: `${vitalFew.length} cats`, color: T.yellow },
+            ].map(k => (
+              <div key={k.label} style={{ background: T.panel, borderRadius: 5, padding: "0.5rem", textAlign: "center" }}>
+                <div style={{ color: k.color, fontFamily: T.display, fontSize: "1.1rem", fontWeight: 800 }}>{k.val}</div>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.5rem", textTransform: "uppercase" }}>{k.label}</div>
+              </div>
+            ))}
+          </div>
+          {/* Top 3 categories */}
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.4rem" }}>Impact Distribution</div>
+          {paretoWithCum.slice(0, 5).map((item, i) => {
+            const pct = totalHrs > 0 ? ((item.cases * item.avgHrs) / totalHrs) * 100 : 0;
+            const isVital = item.cumPct <= 80;
+            return (
+              <div key={item.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: isVital ? T.yellow : T.textDim, flexShrink: 0 }} />
+                <div style={{ width: 90, color: isVital ? T.text : T.textDim, fontFamily: T.mono, fontSize: "0.6rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0 }}>
+                  {item.category}
+                </div>
+                <MiniBar pct={pct} color={isVital ? T.yellow : T.textDim} height={4} />
+                <span style={{ color: isVital ? T.yellow : T.textDim, fontFamily: T.mono, fontSize: "0.58rem", flexShrink: 0, minWidth: 32, textAlign: "right" }}>{pct.toFixed(0)}%</span>
+              </div>
+            );
+          })}
+        </Panel>
+
+        {/* ── PANEL D: COPQ Hemorrhage Meter ── */}
+        <Panel title="COPQ Hemorrhage Meter" accent={T.orange}>
+          {/* Animated daily burn */}
+          <div style={{ textAlign: "center", marginBottom: "1rem", padding: "0.75rem", background: `${T.red}08`, border: `1px solid ${T.red}22`, borderRadius: 6 }}>
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.2rem" }}>Daily Cost of Poor Quality</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+              <div style={{ color: T.red, fontFamily: T.display, fontSize: "1.6rem", fontWeight: 800, textShadow: `0 0 20px ${T.red}55` }}>
+                {fmtCur(copqDailyBurn)}
+              </div>
+              {copqSavings > 0 && (
+                <>
+                  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.8rem" }}>→</span>
+                  <div style={{ color: T.green, fontFamily: T.display, fontSize: "1.2rem", fontWeight: 700 }}>{fmtCur(copqDailyBurnB)}</div>
+                </>
+              )}
+            </div>
+            {copqSavings > 0 && (
+              <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.6rem", marginTop: "0.2rem" }}>
+                ↓ saving {fmtCur(copqDailyBurn - copqDailyBurnB)}/day after DMAIC
+              </div>
+            )}
+          </div>
+          {/* Breakdown bars */}
+          {[
+            { key: "wastedCap",  label: "Wasted Labor",    color: T.red },
+            { key: "churn",      label: "Customer Churn",  color: T.orange },
+            { key: "escalation", label: "Escalation",      color: T.yellow },
+            { key: "rework",     label: "Rework",          color: T.cyan },
+          ].map(c => {
+            const pct = copqA.total > 0 ? (copqA[c.key] / copqA.total) * 100 : 0;
+            const pctB = copqB.total > 0 ? (copqB[c.key] / copqB.total) * 100 : 0;
+            return (
+              <div key={c.key} style={{ marginBottom: "0.45rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
+                  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>{c.label}</span>
+                  <span style={{ color: c.color, fontFamily: T.mono, fontSize: "0.58rem", fontWeight: 700 }}>{pct.toFixed(0)}%</span>
+                </div>
+                <div style={{ height: 4, background: T.panel, borderRadius: 3, overflow: "hidden", position: "relative" }}>
+                  <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${pct}%`, background: `${c.color}44`, borderRadius: 3 }} />
+                  <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${pctB}%`, background: c.color, borderRadius: 3 }} />
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ marginTop: "0.5rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.52rem" }}>
+            ■ Scenario B (post-DMAIC)  ░ Scenario A (baseline)
+          </div>
+        </Panel>
+
+      </div>{/* end row 2 */}
+
+      {/* ══ ROW 3: OPS FLOOR — TRIAGE + TEAM LOAD ════════════════════════════ */}
+
+      {/* ══ ROW 3: OPS FLOOR (FULL FEATURE — Queue / Scorecard / Insights) ══ */}
+      {(() => {
+        // Derived vars khusus Row 3 (sama persis logika lama)
+        const history = triageHistory;
+        const slaColor = (s) => s === "ON TRACK" ? T.green : s === "AT RISK" ? T.yellow : T.red;
+        const urgencyColor = (u) => u === "Critical" ? T.red : u === "High" ? T.orange : u === "Medium" ? T.yellow : T.green;
+        const urgencyOrder = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+
+        const priorityQueue = [...history]
+          .sort((a, b) => (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2) || (a.estimatedHrs - b.estimatedHrs))
+          .slice(0, 15);
+
+        const scorecards = technicians.map(t => {
+          const assigned = history.filter(h => h.technician?.name === t.name);
+          const resolved = assigned.filter(h => h.sla === "ON TRACK").length;
+          const breached = assigned.filter(h => h.sla === "BREACH").length;
+          const avgConf = assigned.length > 0 ? Math.round(assigned.reduce((a, h) => a + (h.confidence || 0), 0) / assigned.length) : 0;
+          const avgHrs = assigned.length > 0 ? Math.round(assigned.reduce((a, h) => a + (h.estimatedHrs || 0), 0) / assigned.length) : 0;
+          return { ...t, assigned: assigned.length, resolved, breached, avgConf, avgHrs };
+        });
+
+        const catCounts = {};
+        history.forEach(h => { catCounts[h.category] = (catCounts[h.category] || 0) + 1; });
+        const catSorted = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
+        const maxCat = catSorted[0]?.[1] || 1;
+
+        const findSimilar = (target) => {
+          if (!target) return [];
+          return history.filter(h => h.id !== target.id && h.category === target.category).slice(0, 3);
+        };
+
+        const ops3Tabs = [
+          { key: "queue",     label: "📊 Priority Queue" },
+          { key: "scorecard", label: "👥 Scorecard" },
+          { key: "insights",  label: "🔍 Insights" },
+        ];
+
+        return (
+          <div style={{ marginBottom: "1.25rem" }}>
+
+            {/* Section label */}
+            <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.58rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "0.85rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: T.cyan, display: "inline-block", boxShadow: `0 0 6px ${T.cyan}` }} />
+              Ops Floor · Live Ticket Operations
+            </div>
+
+            {/* KPI Bar */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
+              {[
+                { label: "Total Tickets", val: history.length, color: T.cyan },
+                { label: "SLA Rate", val: `${slaRate}%`, color: slaRate >= 80 ? T.green : slaRate >= 60 ? T.yellow : T.red },
+                { label: "On Track", val: onTrack, color: T.green },
+                { label: "At Risk", val: atRisk, color: T.yellow },
+                { label: "Breached", val: breach, color: T.red },
+                { label: "Team Size", val: technicians.length, color: T.textMid },
+              ].map(k => (
+                <div key={k.label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "0.85rem 1rem" }}>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{k.label}</div>
+                  <div style={{ color: k.color, fontFamily: T.display, fontSize: "1.4rem", fontWeight: 800 }}>{k.val}</div>
                 </div>
               ))}
             </div>
-            {/* Urgency distribution */}
-            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem" }}>
-              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "1rem" }}>Urgency Distribution</div>
-              {["Critical","High","Medium","Low"].map(u => {
-                const count = history.filter(h => h.urgency === u).length;
-                const pct = history.length > 0 ? Math.round((count / history.length) * 100) : 0;
-                return (
-                  <div key={u} style={{ marginBottom: "0.6rem" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
-                      <span style={{ color: urgencyColor(u), fontFamily: T.mono, fontSize: "0.68rem" }}>{u === "Critical" ? "🔴" : u === "High" ? "🟠" : u === "Medium" ? "🟡" : "🟢"} {u}</span>
-                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem" }}>{count} ({pct}%)</span>
-                    </div>
-                    <div style={{ height: 3, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: urgencyColor(u), borderRadius: 2 }} />
-                    </div>
-                  </div>
-                );
-              })}
+
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem", borderBottom: `1px solid ${T.border}`, paddingBottom: "0.75rem", flexWrap: "wrap" }}>
+              {ops3Tabs.map(t => (
+                <button key={t.key} onClick={() => setOpsTab(t.key)} style={{
+                  background: opsTab === t.key ? `${T.cyan}18` : "transparent",
+                  border: `1px solid ${opsTab === t.key ? T.cyan : T.border}`,
+                  color: opsTab === t.key ? T.cyan : T.textDim,
+                  padding: "0.45rem 1rem", borderRadius: 6, cursor: "pointer",
+                  fontFamily: T.mono, fontSize: "0.68rem", fontWeight: opsTab === t.key ? 700 : 400,
+                }}>{t.label}</button>
+              ))}
             </div>
+
+            {/* Priority Queue */}
+            {opsTab === "queue" && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                {history.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "3rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.75rem" }}>
+                    No tickets yet — submit complaints in the Smart Triage module to populate the queue.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    {priorityQueue.map((h, i) => {
+                      const elapsed = Math.floor((now - (h.timestamp || now)) / 1000 / 60);
+                      const slaRemainMins = (h.estimatedHrs * 60) - elapsed;
+                      const slaRemainHrs = Math.max(0, Math.floor(slaRemainMins / 60));
+                      const slaRemainMinsRem = Math.max(0, Math.floor(slaRemainMins % 60));
+                      const isExpired = slaRemainMins <= 0;
+                      const similar = findSimilar(h);
+                      return (
+                        <div key={h.id || i} style={{ background: T.surface, border: `1px solid ${h.urgency === "Critical" ? T.red + "66" : T.border}`, borderRadius: 8, padding: "0.85rem 1rem", borderLeft: `4px solid ${urgencyColor(h.urgency || "Low")}` }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", marginBottom: "0.3rem" }}>
+                                <span style={{ background: `${urgencyColor(h.urgency || "Low")}18`, border: `1px solid ${urgencyColor(h.urgency || "Low")}44`, color: urgencyColor(h.urgency || "Low"), fontFamily: T.mono, fontSize: "0.6rem", padding: "0.1rem 0.5rem", borderRadius: 20, fontWeight: 700 }}>{h.urgency || "Low"}</span>
+                                <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem" }}>{h.category}</span>
+                                <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>{h.method === "gemini-ai" ? "✦ AI" : "⚡ Rule"}</span>
+                              </div>
+                              <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.72rem", lineHeight: 1.4 }}>{h.input?.length > 100 ? h.input.slice(0, 100) + "…" : h.input}</div>
+                            </div>
+                            <div style={{ textAlign: "right", flexShrink: 0 }}>
+                              <div style={{ color: isExpired ? T.red : slaRemainMins < 120 ? T.yellow : T.green, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}>
+                                {isExpired ? "⏰ EXPIRED" : `${slaRemainHrs}h ${slaRemainMinsRem}m`}
+                              </div>
+                              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>SLA remaining</div>
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+                            <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>→ {h.technician?.name}</span>
+                            <span style={{ color: slaColor(h.sla), fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700 }}>{h.sla}</span>
+                            <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>{h.confidence}% conf</span>
+                            {h.needsManualReview && <span style={{ color: T.red, fontFamily: T.mono, fontSize: "0.58rem" }}>⚠ Review</span>}
+                          </div>
+                          {similar.length > 0 && (
+                            <div style={{ marginTop: "0.5rem", padding: "0.4rem 0.65rem", background: `${T.cyan}08`, borderRadius: 4, borderLeft: `2px solid ${T.cyan}44` }}>
+                              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.2rem" }}>🔍 Similar past cases</div>
+                              {similar.map((s, j) => (
+                                <div key={j} style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.62rem" }}>· {s.input?.slice(0, 60)}… → {s.technician?.name} ({s.sla})</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* Technician Scorecard */}
+            {opsTab === "scorecard" && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  {scorecards.map((t, i) => (
+                    <div key={i} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1rem 1.25rem" }}>
+                      <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+                        <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${TECH_COLORS[i % TECH_COLORS.length]}22`, border: `2px solid ${TECH_COLORS[i % TECH_COLORS.length]}`, display: "flex", alignItems: "center", justifyContent: "center", color: TECH_COLORS[i % TECH_COLORS.length], fontFamily: T.display, fontSize: "1.1rem", fontWeight: 800, flexShrink: 0 }}>{t.name.charAt(0)}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ color: T.text, fontFamily: T.display, fontSize: "0.95rem", fontWeight: 700 }}>{t.name}</div>
+                          <div style={{ color: TECH_COLORS[i % TECH_COLORS.length], fontFamily: T.mono, fontSize: "0.65rem" }}>{t.level}</div>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "0.75rem", textAlign: "center" }}>
+                          {[
+                            { label: "Assigned", val: t.assigned, color: T.cyan },
+                            { label: "On Track", val: t.resolved, color: T.green },
+                            { label: "Breached", val: t.breached, color: T.red },
+                            { label: "Avg Conf", val: t.avgConf ? `${t.avgConf}%` : "—", color: T.yellow },
+                          ].map(k => (
+                            <div key={k.label}>
+                              <div style={{ color: k.color, fontFamily: T.mono, fontSize: "1rem", fontWeight: 700 }}>{k.val}</div>
+                              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase" }}>{k.label}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ marginTop: "0.75rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
+                          <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>Current Load</span>
+                          <span style={{ color: t.load > 25 ? T.red : T.green, fontFamily: T.mono, fontSize: "0.6rem", fontWeight: 700 }}>{t.load}/{t.maxLoad}</span>
+                        </div>
+                        <div style={{ height: 4, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
+                          <div style={{ width: `${(t.load / t.maxLoad) * 100}%`, height: "100%", background: t.load > 25 ? T.red : t.load > 15 ? T.yellow : T.green, borderRadius: 2, transition: "width 0.3s" }} />
+                        </div>
+                      </div>
+                      <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.3rem", flexWrap: "wrap" }}>
+                        {t.skills.map(s => <Badge key={s} label={s} color={T.textDim} />)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* Insights */}
+            {opsTab === "insights" && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "1rem" }}>
+                  {/* Category breakdown */}
+                  <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem" }}>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "1rem" }}>Top Issue Categories</div>
+                    {catSorted.length === 0 ? (
+                      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.7rem" }}>No data yet.</div>
+                    ) : catSorted.slice(0, 7).map(([cat, count], i) => (
+                      <div key={cat} style={{ marginBottom: "0.6rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
+                          <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.68rem" }}>{cat}</span>
+                          <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.68rem", fontWeight: 700 }}>{count}</span>
+                        </div>
+                        <div style={{ height: 3, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
+                          <div style={{ width: `${(count / maxCat) * 100}%`, height: "100%", background: i === 0 ? T.cyan : T.textDim, borderRadius: 2 }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Urgency distribution */}
+                  <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem" }}>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "1rem" }}>Urgency Distribution</div>
+                    {["Critical","High","Medium","Low"].map(u => {
+                      const count = history.filter(h => h.urgency === u).length;
+                      const pct = history.length > 0 ? Math.round((count / history.length) * 100) : 0;
+                      return (
+                        <div key={u} style={{ marginBottom: "0.6rem" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
+                            <span style={{ color: urgencyColor(u), fontFamily: T.mono, fontSize: "0.68rem" }}>{u === "Critical" ? "🔴" : u === "High" ? "🟠" : u === "Medium" ? "🟡" : "🟢"} {u}</span>
+                            <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem" }}>{count} ({pct}%)</span>
+                          </div>
+                          <div style={{ height: 3, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
+                            <div style={{ width: `${pct}%`, height: "100%", background: urgencyColor(u), borderRadius: 2 }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
           </div>
-        </motion.div>
-      )}
+        );
+      })()}
+      {/* ══ END ROW 3 ══ */}
+
+      {/* ══ ROW 4: ROOT CAUSE STATUS + SIGMA JOURNEY ═════════════════════════ */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.25rem" }}>
+
+        {/* Root Cause Resolution */}
+        <Panel title="Root Cause Resolution" accent={T.cyan}>
+          <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+            {[
+              { label: "Total RCs", val: rcItems.length, color: T.cyan },
+              { label: "% Solved", val: `${rcSolvePct}%`, color: rcSolvePct === 100 ? T.green : T.yellow },
+              { label: "Hours Recovered", val: `−${totalRCImpact.toFixed(1)}h`, color: T.green },
+            ].map(k => (
+              <div key={k.label} style={{ textAlign: "center" }}>
+                <div style={{ color: k.color, fontFamily: T.display, fontSize: "1.3rem", fontWeight: 800 }}>{k.val}</div>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.52rem", textTransform: "uppercase" }}>{k.label}</div>
+              </div>
+            ))}
+          </div>
+          {rcItems.map((r, i) => {
+            const c = r.status === "SOLVED" ? T.green : r.status === "OPEN" ? T.yellow : T.cyan;
+            return (
+              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.45rem" }}>
+                <div style={{ width: 14, height: 14, borderRadius: 2, background: `${c}22`, border: `1.5px solid ${c}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {r.status === "SOLVED" && <span style={{ color: c, fontSize: "0.5rem" }}>✓</span>}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.62rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.title}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexShrink: 0 }}>
+                  <div style={{ width: 40, height: 4, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: `${r.contribution}%`, height: "100%", background: c }} />
+                  </div>
+                  <span style={{ color: c, fontFamily: T.mono, fontSize: "0.58rem" }}>{r.contribution}%</span>
+                </div>
+              </div>
+            );
+          })}
+        </Panel>
+
+        {/* Project Outcome Scorecard */}
+        <Panel title="Project Outcome Scorecard" accent={T.green}>
+          {metrics.slice(0, 6).map((m, i) => {
+            const improved = m.invert ? m.after < m.before : m.after > m.before;
+            const onTgt = m.invert ? m.after <= m.target : m.after >= m.target;
+            const pct = m.before > 0 ? Math.abs(((m.after - m.before) / m.before) * 100).toFixed(0) : "—";
+            const arrow = (m.invert ? m.after < m.before : m.after > m.before) ? "↑" : "↓";
+            const arrowColor = improved ? T.green : T.red;
+            return (
+              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem", padding: "0.4rem 0.6rem", background: onTgt ? `${T.green}06` : T.panel, borderRadius: 5, border: `1px solid ${onTgt ? T.green + "22" : T.border}` }}>
+                <div style={{ width: 5, height: 5, borderRadius: "50%", background: onTgt ? T.green : T.yellow, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase" }}>{m.label}</div>
+                  <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", marginTop: "0.1rem" }}>
+                    <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textDecoration: "line-through" }}>{m.before}{m.unit}</span>
+                    <span style={{ color: T.textDim, fontSize: "0.6rem" }}>→</span>
+                    <span style={{ color: T.text, fontFamily: T.mono, fontSize: "0.72rem", fontWeight: 700 }}>{m.after}{m.unit}</span>
+                    <span style={{ color: arrowColor, fontFamily: T.mono, fontSize: "0.6rem" }}>{arrow}{pct}%</span>
+                  </div>
+                </div>
+                <div style={{ color: onTgt ? T.green : T.yellow, fontFamily: T.mono, fontSize: "0.55rem", flexShrink: 0 }}>
+                  {onTgt ? "✓ MET" : "▲ TGT"}
+                </div>
+              </div>
+            );
+          })}
+        </Panel>
+
+      </div>{/* end row 4 */}
+
+      {/* ══ ROW 5: CROSS-MODULE INSIGHT STRIP ════════════════════════════════ */}
+      <div style={{
+        background: T.panel,
+        border: `1px solid ${T.borderHi}`,
+        borderRadius: 10,
+        padding: "1rem 1.5rem",
+      }}>
+        <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.58rem", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: "0.85rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: T.cyan, boxShadow: `0 0 8px ${T.cyan}`, animation: "pulse 2s infinite" }} />
+          Cross-Module Intelligence · Auto-generated from live data
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "0.75rem" }}>
+          {insights.map((ins, i) => (
+            <div key={i} style={{
+              display: "flex", gap: "0.65rem", alignItems: "flex-start",
+              background: `${ins.color}08`, border: `1px solid ${ins.color}22`,
+              borderRadius: 7, padding: "0.75rem 1rem",
+            }}>
+              <span style={{ fontSize: "1rem", flexShrink: 0, lineHeight: 1.4 }}>{ins.icon}</span>
+              <p style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.68rem", lineHeight: 1.55, margin: 0 }}>
+                {ins.text}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {/* Bottom status bar */}
+        <div style={{ marginTop: "1rem", paddingTop: "0.75rem", borderTop: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+          <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+            {[
+              { label: "M1 Mission Status", ok: metrics.length > 0 },
+              { label: "M3 DMAIC", ok: dmaicOverall > 0 },
+              { label: "M4 FMEA", ok: fmeaItems.length > 0 },
+              { label: "M5 COPQ", ok: copqA.total > 0 },
+              { label: "M7 Pareto", ok: activePareto.length > 0 },
+              { label: "M8 Root Cause", ok: rcItems.length > 0 },
+              { label: "M9 Triage", ok: triageHistory.length > 0 },
+            ].map(s => (
+              <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                <div style={{ width: 5, height: 5, borderRadius: "50%", background: s.ok ? T.green : T.textDim, boxShadow: s.ok ? `0 0 6px ${T.green}` : "none" }} />
+                <span style={{ color: s.ok ? T.textMid : T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>{s.label}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
+            Last sync: {new Date(now).toLocaleTimeString()}
+          </div>
+        </div>
+      </div>
+
     </motion.div>
   );
 }
+
 
 // ─── UNIVERSAL COPQ CALCULATOR ───────────────────────────────────────────────
 const INDUSTRY_PRESETS = {
