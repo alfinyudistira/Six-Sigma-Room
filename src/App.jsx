@@ -866,6 +866,7 @@ function MetricCard({ label, before, after, target, unit = "", decimals = 1, inv
 // ─── NAVBAR ──────────────────────────────────────────────────────────────────
 function NavBar({ active, setActive }) {
   const tabs = [
+    { id: "ops",        label: "Live Ops",        icon: "⚡", highlight: true },
     { id: "overview",   label: "Mission Status",  icon: "◈" },
     { id: "sigma",      label: "Σ Calculator",    icon: "σ" },
     { id: "dmaic",      label: "DMAIC Tracker",   icon: "◎" },
@@ -4854,13 +4855,105 @@ ${rootCauses.map((r, i) => `${i+1}. ${r.title} [${r.category}]
 
 // ─── AI TRIAGE SIMULATOR ────────────────────────────────────────────────────
 const COMPLAINT_KEYWORDS = {
-  "Software Configuration": ["software","config","configuration","install","setup","application","app","program","setting","database","db","sql","sync","api","integration","error","crash","bug","code","system"],
-  "Network Connectivity": ["network","wifi","internet","connection","connect","dns","ip","vpn","ping","bandwidth","slow","timeout","firewall","router","port","latency","offline"],
-  "Hardware Troubleshooting": ["hardware","printer","device","keyboard","mouse","screen","monitor","disk","drive","memory","ram","cpu","battery","power","cable","peripheral","physical"],
-  "Account Access Issues": ["login","password","account","access","locked","permission","auth","2fa","token","session","username","credentials","unauthorized","forbidden"],
-  "Performance Degradation": ["slow","performance","lagging","hang","freeze","loading","speed","response","delay","timeout","high cpu","memory leak"],
-  "Data Sync Errors": ["sync","synchronize","data","backup","export","import","upload","download","transfer","missing data","duplicate","corrupt"],
-  "Integration Problems": ["integration","third party","vendor","api","webhook","connector","middleware","sap","salesforce","erp","crm"],
+  "Software Configuration": ["software","config","configuration","install","setup","application","app","program","setting","database","db","sql","sync","api","integration","error","crash","bug","code","system","deployment","environment","dependency","library","module","plugin","update","upgrade","version","patch","rollback","build","compile","runtime","exception","stacktrace","log","debug","server","client","frontend","backend","microservice","container","docker","kubernetes","pipeline","ci/cd"],
+  "Network Connectivity": ["network","wifi","wireless","internet","connection","connect","disconnect","dns","ip address","vpn","ping","bandwidth","slow","timeout","firewall","router","switch","port","latency","offline","packet loss","proxy","gateway","subnet","nat","ssl","certificate","https","tls","socket","host","domain","unreachable","no signal","dropped"],
+  "Hardware Troubleshooting": ["hardware","printer","scanner","device","keyboard","mouse","screen","monitor","display","disk","drive","ssd","hdd","memory","ram","cpu","processor","battery","power supply","cable","peripheral","physical","broken","damaged","not working","not detected","overheating","fan","usb","hdmi","port","connector","cartridge","toner","paper jam","touchscreen"],
+  "Account Access Issues": ["login","password","account","access","locked","lock out","permission","auth","authentication","authorization","2fa","mfa","token","session","username","credentials","unauthorized","forbidden","reset password","forgot password","expired","inactive","disabled","role","privilege","admin","user management","sso","ldap","active directory","oauth","identity"],
+  "Performance Degradation": ["slow","performance","lagging","lag","hang","freeze","freezing","loading","speed","response time","delay","timeout","high cpu","memory leak","bottleneck","throughput","latency","spike","degraded","unresponsive","heavy","resource","capacity","overload","queue","backlog","inefficient","sluggish","takes too long","minutes to load"],
+  "Data Sync Errors": ["sync","synchronize","synchronization","data","backup","export","import","upload","download","transfer","missing data","duplicate","corrupt","corrupted","mismatch","inconsistent","out of sync","not updating","stale","wrong data","data loss","record","database","table","field","value","migration","etl","pipeline","replication","real-time","batch"],
+  "Integration Problems": ["integration","third party","vendor","api","webhook","connector","middleware","sap","salesforce","erp","crm","hubspot","zendesk","slack","teams","jira","confluence","stripe","payment gateway","external system","interface","endpoint","rest","graphql","soap","wsdl","handshake","authentication failed","rate limit","quota","response error","400","401","403","404","500","502","503"],
+  "HR & People Issues": ["hr","human resources","employee","staff","onboarding","offboarding","payroll","salary","leave","attendance","performance review","kpi","promotion","termination","resignation","contract","benefits","insurance","recruitment","hiring","interview","training","compliance","policy","grievance","misconduct","disciplinary","overtime","reimbursement","appraisal","headcount"],
+  "Finance & Billing": ["invoice","billing","payment","finance","accounting","budget","expense","reimbursement","tax","audit","reconciliation","purchase order","po","vendor payment","accounts payable","accounts receivable","cash flow","revenue","cost","overcharge","undercharge","refund","credit","debit","transaction","receipt","approval","financial report","month end","quarter end","year end","discrepancy","variance"],
+  "Logistics & Supply Chain": ["shipment","delivery","shipping","logistics","supply chain","warehouse","inventory","stock","order","tracking","late delivery","lost package","damaged goods","return","refund","courier","freight","dispatch","fulfillment","pick pack","barcode","sku","purchase order","supplier","vendor","lead time","backorder","out of stock","customs","import","export","last mile"],
+  "Customer Complaints": ["customer","client","complaint","dissatisfied","unhappy","frustrated","angry","refund","compensation","poor service","bad experience","not resolved","escalate","manager","sla breach","waiting too long","no response","ignored","wrong product","wrong service","misleading","overcharged","cancel","churn","feedback","review","survey","nps","satisfaction"],
+  "Security & Compliance": ["security","breach","hack","phishing","malware","virus","ransomware","vulnerability","threat","attack","unauthorized access","data leak","gdpr","compliance","audit","regulation","policy violation","suspicious","anomaly","incident","forensic","firewall","antivirus","encryption","certificate","pen test","risk","exposure","pii","sensitive data","confidential"],
+};
+
+const SEVERITY_KEYWORDS = ["urgent","critical","emergency","down","outage","breach","blocked","cannot work","production down","all users affected","data loss","security breach","executive","board","deadline","legal","compliance","immediate","asap","sla breach","escalate"];
+
+const DOMAIN_CONTEXT = {
+  "IT / Tech Support": ["Software Configuration","Network Connectivity","Hardware Troubleshooting","Account Access Issues","Performance Degradation","Data Sync Errors","Integration Problems","Security & Compliance"],
+  "HR / People Ops": ["HR & People Issues","Account Access Issues","Finance & Billing","Software Configuration"],
+  "Financial Services": ["Finance & Billing","Security & Compliance","Data Sync Errors","Integration Problems"],
+  "Logistics & Supply Chain": ["Logistics & Supply Chain","Integration Problems","Data Sync Errors","Software Configuration"],
+  "Customer Service": ["Customer Complaints","Account Access Issues","Integration Problems","Performance Degradation"],
+  "Manufacturing": ["Hardware Troubleshooting","Logistics & Supply Chain","Data Sync Errors","Performance Degradation"],
+  "Retail / E-Commerce": ["Customer Complaints","Logistics & Supply Chain","Finance & Billing","Integration Problems"],
+};
+
+const RULE_BASED_RESPONSES = {
+  "Software Configuration": {
+    core_problem: "A software component is misconfigured, incompatible, or failing to run as expected in the target environment.",
+    business_impact: "Affected users cannot complete their work tasks, reducing team productivity and potentially delaying deliverables.",
+    recommended_action: "Collect error logs, identify recent changes (updates/deployments), and test in an isolated environment to reproduce the issue.",
+    red_flags: "Recent deployment, Production environment, Multiple users affected",
+  },
+  "Network Connectivity": {
+    core_problem: "Network infrastructure failure or misconfiguration is preventing users from accessing required systems or services.",
+    business_impact: "Users are unable to connect to critical systems, halting operations and communication across the affected area.",
+    recommended_action: "Run diagnostic ping/traceroute, check router/switch status, verify DNS resolution, and inspect firewall rules for recent changes.",
+    red_flags: "Multiple users affected, Core infrastructure, No workaround available",
+  },
+  "Hardware Troubleshooting": {
+    core_problem: "A physical device or peripheral is malfunctioning, damaged, or not being recognized by the operating system.",
+    business_impact: "The affected user cannot perform hardware-dependent tasks, reducing individual productivity until the device is repaired or replaced.",
+    recommended_action: "Test with known-good replacement hardware, update device drivers, check physical connections, and inspect for visible damage.",
+    red_flags: "No spare available, Shared device, Production hardware",
+  },
+  "Account Access Issues": {
+    core_problem: "A user is unable to authenticate or access required systems due to credential, permission, or session management failure.",
+    business_impact: "The user is completely blocked from performing their role, and if it affects multiple accounts, it may indicate a broader identity management issue.",
+    recommended_action: "Verify account status in directory service, reset credentials if needed, check permission group membership, and review recent auth logs.",
+    red_flags: "Multiple accounts affected, Admin account locked, Possible security incident",
+  },
+  "Performance Degradation": {
+    core_problem: "System resources are being exhausted or there is a bottleneck causing significantly slower than expected response times.",
+    business_impact: "User productivity is severely impacted due to excessive wait times, and if unchecked may escalate to a full system outage.",
+    recommended_action: "Monitor CPU/memory/disk usage in real-time, identify the resource-intensive process, and check for recent load increases or code changes.",
+    red_flags: "Trending worse over time, Approaching capacity limits, Affects all users",
+  },
+  "Data Sync Errors": {
+    core_problem: "Data is not being correctly transferred, replicated, or reconciled between systems, resulting in inconsistencies.",
+    business_impact: "Decision-making is compromised by inaccurate data, and duplicate or missing records may cause financial, operational, or compliance risks.",
+    recommended_action: "Identify the last successful sync timestamp, compare source vs. destination record counts, and inspect sync job error logs.",
+    red_flags: "Financial data affected, Duplicate records detected, Regulatory data involved",
+  },
+  "Integration Problems": {
+    core_problem: "A connection between two or more systems has broken down, preventing data flow or process automation across platforms.",
+    business_impact: "Cross-system workflows are interrupted, causing manual workarounds, data silos, and potential cascading failures in dependent processes.",
+    recommended_action: "Test API endpoint availability, verify authentication tokens/API keys are valid and not expired, check integration logs for error codes.",
+    red_flags: "Business-critical workflow blocked, SLA-sensitive integration, Third-party vendor involved",
+  },
+  "HR & People Issues": {
+    core_problem: "An HR process, policy, or employee lifecycle event is not being handled correctly or in a timely manner.",
+    business_impact: "Employee experience and compliance are at risk, potentially leading to legal exposure, talent retention issues, or audit findings.",
+    recommended_action: "Review relevant HR policy, escalate to the appropriate HR business partner, and document the issue with timeline for compliance tracking.",
+    red_flags: "Legal or compliance risk, Senior employee involved, Payroll deadline approaching",
+  },
+  "Finance & Billing": {
+    core_problem: "A financial transaction, invoice, or reporting process contains errors or has failed to complete correctly.",
+    business_impact: "Financial accuracy is compromised, which may affect cash flow, vendor relationships, regulatory compliance, or executive reporting.",
+    recommended_action: "Pull the transaction audit trail, cross-reference against source documents, and flag for finance manager review before period close.",
+    red_flags: "Period close deadline, Audit trail gap, Regulatory reporting affected",
+  },
+  "Logistics & Supply Chain": {
+    core_problem: "A shipment, inventory, or fulfillment process has failed or been delayed, disrupting the supply chain.",
+    business_impact: "Customer commitments and operational continuity are at risk, potentially causing revenue loss and customer churn.",
+    recommended_action: "Trace the shipment or order through the tracking system, contact carrier or warehouse, and initiate exception handling procedure.",
+    red_flags: "Customer-facing SLA at risk, High-value shipment, Customs or regulatory hold",
+  },
+  "Customer Complaints": {
+    core_problem: "A customer has experienced a service failure or unmet expectation that requires immediate acknowledgment and resolution.",
+    business_impact: "Unresolved customer complaints increase churn risk, damage brand reputation, and may trigger negative reviews or legal claims.",
+    recommended_action: "Acknowledge the complaint immediately, retrieve the customer's history, identify root cause, and provide a resolution timeline within the hour.",
+    red_flags: "High-value customer, Public complaint risk, Repeat complaint from same customer",
+  },
+  "Security & Compliance": {
+    core_problem: "A potential security vulnerability, policy violation, or compliance gap has been identified that requires immediate investigation.",
+    business_impact: "Unaddressed security incidents can result in data breaches, regulatory fines, reputational damage, and legal liability.",
+    recommended_action: "Isolate affected systems immediately, preserve evidence logs, notify the security team and compliance officer, and initiate incident response protocol.",
+    red_flags: "PII or sensitive data exposed, Regulatory breach possible, Active attack suspected",
+  },
 };
 
 const DEFAULT_TECHNICIANS = [
@@ -4900,29 +4993,65 @@ function AITriageSimulator() {
 
   // ── Complexity detector ──
   const isComplexComplaint = (text) => {
+    const lower = text.toLowerCase();
     const wordCount = text.trim().split(/\s+/).length;
     const allKeywords = Object.values(COMPLAINT_KEYWORDS).flat();
-    const matchCount = allKeywords.filter(k => text.toLowerCase().includes(k)).length;
+    const matchCount = allKeywords.filter(k => lower.includes(k)).length;
     const categoryScores = Object.entries(COMPLAINT_KEYWORDS).map(([, kws]) =>
-      kws.filter(k => text.toLowerCase().includes(k)).length
+      kws.filter(k => lower.includes(k)).length
     );
-    const topTwo = categoryScores.sort((a, b) => b - a).slice(0, 2);
+    const topTwo = [...categoryScores].sort((a, b) => b - a).slice(0, 2);
     const isAmbiguous = topTwo[0] > 0 && topTwo[1] > 0 && (topTwo[0] - topTwo[1]) <= 1;
-    return wordCount > 20 || matchCount === 0 || isAmbiguous;
+    const hasSeverity = SEVERITY_KEYWORDS.some(k => lower.includes(k));
+    const hasMultipleSentences = text.split(/[.!?]/).filter(s => s.trim().length > 10).length >= 3;
+    return (matchCount === 0) || (isAmbiguous && wordCount > 25) || (wordCount > 50 && hasMultipleSentences);
   };
 
-  // ── Classify (rule-based) ──
+// ── Classify (rule-based) ──
   const classifyComplaint = (text) => {
     const lower = text.toLowerCase();
     const scores = {};
+    const industry = company?.industry || "IT / Tech Support";
+    const domainCats = DOMAIN_CONTEXT[industry] || Object.keys(COMPLAINT_KEYWORDS);
+
     for (const [cat, keywords] of Object.entries(COMPLAINT_KEYWORDS)) {
-      scores[cat] = keywords.filter(k => lower.includes(k)).length;
+      const baseScore = keywords.filter(k => lower.includes(k)).length;
+      // Boost domain-relevant categories
+      const domainBoost = domainCats.includes(cat) ? 1.3 : 1.0;
+      scores[cat] = baseScore * domainBoost;
     }
+
     const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
     const topCat = sorted[0][0];
     const totalMatches = sorted.reduce((acc, [, v]) => acc + v, 0);
-    const confidence = totalMatches === 0 ? 55 : Math.min(60 + (sorted[0][1] / Math.max(totalMatches, 1)) * 40, 97);
-    return { category: topCat, confidence: Math.round(confidence), allScores: sorted.slice(0, 3), method: "rule-based" };
+    const rawConf = totalMatches === 0 ? 55 : Math.min(60 + (sorted[0][1] / Math.max(totalMatches, 1)) * 40, 97);
+
+    // Detect urgency from severity keywords
+    const severityCount = SEVERITY_KEYWORDS.filter(k => lower.includes(k)).length;
+    const urgency = severityCount >= 3 ? "Critical" : severityCount >= 2 ? "High" : severityCount >= 1 ? "Medium" : "Low";
+    const wordCount = text.trim().split(/\s+/).length;
+    const complexity = wordCount > 50 ? "Complex" : wordCount > 20 ? "Moderate" : "Simple";
+
+    const rb = RULE_BASED_RESPONSES[topCat] || {
+      core_problem: "The reported issue requires investigation to identify the root cause.",
+      business_impact: "Operations may be impacted until this issue is resolved.",
+      recommended_action: "Gather more details from the requester and assign to the appropriate team.",
+      red_flags: "None",
+    };
+
+    return {
+      category: topCat,
+      confidence: Math.round(rawConf),
+      allScores: sorted.slice(0, 3),
+      method: "rule-based",
+      urgency,
+      complexity,
+      core_problem: rb.core_problem,
+      business_impact: rb.business_impact,
+      recommended_action: rb.recommended_action,
+      red_flags: severityCount >= 2 ? `${rb.red_flags}, High Severity Detected` : rb.red_flags,
+      reasoning: `Classified as "${topCat}" based on keyword pattern matching${domainCats.includes(topCat) ? ` with domain boost for ${industry}` : ""}. Urgency assessed from ${severityCount} severity indicator(s) found in text.`,
+    };
   };
 
   // ── Classify via Gemini ──
@@ -5569,6 +5698,280 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
   );
 }
 
+// ─── LIVE OPS CENTER ─────────────────────────────────────────────────────────
+function LiveOpsCenter() {
+  const company = useCompany();
+  const [history] = useLocalState("triage_history", []);
+  const [technicians] = useLocalState(
+    company?.isPulseDigital !== false ? "triage_team_pd" : `triage_team_${company?.name || "custom"}`,
+    DEFAULT_TECHNICIANS
+  );
+  const [now, setNow] = useState(Date.now());
+  const [activeTab, setActiveTab] = useState("queue");
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const slaColor = (s) => s === "ON TRACK" ? T.green : s === "AT RISK" ? T.yellow : T.red;
+  const urgencyOrder = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+  const urgencyColor = (u) => u === "Critical" ? T.red : u === "High" ? T.orange : u === "Medium" ? T.yellow : T.green;
+
+  // Priority queue — sort by urgency then SLA
+  const priorityQueue = [...history]
+    .sort((a, b) => (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2) || (a.estimatedHrs - b.estimatedHrs))
+    .slice(0, 15);
+
+  // Technician scorecard
+  const scorecards = technicians.map(t => {
+    const assigned = history.filter(h => h.technician?.name === t.name);
+    const resolved = assigned.filter(h => h.sla === "ON TRACK").length;
+    const breached = assigned.filter(h => h.sla === "BREACH").length;
+    const avgConf = assigned.length > 0 ? Math.round(assigned.reduce((a, h) => a + (h.confidence || 0), 0) / assigned.length) : 0;
+    const avgHrs = assigned.length > 0 ? Math.round(assigned.reduce((a, h) => a + (h.estimatedHrs || 0), 0) / assigned.length) : 0;
+    return { ...t, assigned: assigned.length, resolved, breached, avgConf, avgHrs };
+  });
+
+  // Category breakdown
+  const catCounts = {};
+  history.forEach(h => { catCounts[h.category] = (catCounts[h.category] || 0) + 1; });
+  const catSorted = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
+  const maxCat = catSorted[0]?.[1] || 1;
+
+  // SLA stats
+  const onTrack = history.filter(h => h.sla === "ON TRACK").length;
+  const atRisk = history.filter(h => h.sla === "AT RISK").length;
+  const breach = history.filter(h => h.sla === "BREACH").length;
+  const slaRate = history.length > 0 ? Math.round((onTrack / history.length) * 100) : 0;
+
+  // Similar case finder
+  const findSimilar = (target) => {
+    if (!target) return [];
+    return history
+      .filter(h => h.id !== target.id && h.category === target.category)
+      .slice(0, 3);
+  };
+
+  const tabs = [
+    { key: "queue", label: "📊 Priority Queue" },
+    { key: "scorecard", label: "👥 Scorecard" },
+    { key: "insights", label: "🔍 Insights" },
+  ];
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1100, margin: "0 auto" }}>
+      <SectionHeader
+        module="Module 10 — Live Operations Center"
+        title="Team Operations Dashboard"
+        sub={`Real-time visibility into ticket queue, technician performance, and SLA health for ${company?.name || "your team"}.`}
+      />
+
+      {/* KPI Bar */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
+        {[
+          { label: "Total Tickets", val: history.length, color: T.cyan },
+          { label: "SLA Rate", val: `${slaRate}%`, color: slaRate >= 80 ? T.green : slaRate >= 60 ? T.yellow : T.red },
+          { label: "On Track", val: onTrack, color: T.green },
+          { label: "At Risk", val: atRisk, color: T.yellow },
+          { label: "Breached", val: breach, color: T.red },
+          { label: "Team Size", val: technicians.length, color: T.textMid },
+        ].map(k => (
+          <div key={k.label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "0.85rem 1rem" }}>
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{k.label}</div>
+            <div style={{ color: k.color, fontFamily: T.display, fontSize: "1.4rem", fontWeight: 800 }}>{k.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem", borderBottom: `1px solid ${T.border}`, paddingBottom: "0.75rem", flexWrap: "wrap" }}>
+        {tabs.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+            background: activeTab === t.key ? `${T.cyan}18` : "transparent",
+            border: `1px solid ${activeTab === t.key ? T.cyan : T.border}`,
+            color: activeTab === t.key ? T.cyan : T.textDim,
+            padding: "0.45rem 1rem", borderRadius: 6, cursor: "pointer",
+            fontFamily: T.mono, fontSize: "0.68rem", fontWeight: activeTab === t.key ? 700 : 400,
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Priority Queue */}
+      {activeTab === "queue" && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          {history.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.75rem" }}>
+              No tickets yet — submit complaints in the AI Triage module to populate the queue.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              {priorityQueue.map((h, i) => {
+                const elapsed = Math.floor((now - (h.timestamp || now)) / 1000 / 60);
+                const slaRemainMins = (h.estimatedHrs * 60) - elapsed;
+                const slaRemainHrs = Math.max(0, Math.floor(slaRemainMins / 60));
+                const slaRemainMinsRem = Math.max(0, Math.floor(slaRemainMins % 60));
+                const isExpired = slaRemainMins <= 0;
+                const similar = findSimilar(h);
+                return (
+                  <div key={h.id || i} style={{ background: T.surface, border: `1px solid ${h.urgency === "Critical" ? T.red + "66" : T.border}`, borderRadius: 8, padding: "0.85rem 1rem", borderLeft: `4px solid ${urgencyColor(h.urgency || "Low")}` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", marginBottom: "0.3rem" }}>
+                          <span style={{ background: `${urgencyColor(h.urgency || "Low")}18`, border: `1px solid ${urgencyColor(h.urgency || "Low")}44`, color: urgencyColor(h.urgency || "Low"), fontFamily: T.mono, fontSize: "0.6rem", padding: "0.1rem 0.5rem", borderRadius: 20, fontWeight: 700 }}>{h.urgency || "Low"}</span>
+                          <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem" }}>{h.category}</span>
+                          <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>{h.method === "gemini-ai" ? "✦ AI" : "⚡ Rule"}</span>
+                        </div>
+                        <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.72rem", lineHeight: 1.4 }}>{h.input?.length > 100 ? h.input.slice(0, 100) + "…" : h.input}</div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ color: isExpired ? T.red : slaRemainMins < 120 ? T.yellow : T.green, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}>
+                          {isExpired ? "⏰ EXPIRED" : `${slaRemainHrs}h ${slaRemainMinsRem}m`}
+                        </div>
+                        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>SLA remaining</div>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>→ {h.technician?.name}</span>
+                      <span style={{ color: slaColor(h.sla), fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700 }}>{h.sla}</span>
+                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>{h.confidence}% conf</span>
+                      {h.needsManualReview && <span style={{ color: T.red, fontFamily: T.mono, fontSize: "0.58rem" }}>⚠ Review</span>}
+                    </div>
+                    {similar.length > 0 && (
+                      <div style={{ marginTop: "0.5rem", padding: "0.4rem 0.65rem", background: `${T.cyan}08`, borderRadius: 4, borderLeft: `2px solid ${T.cyan}44` }}>
+                        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.2rem" }}>🔍 Similar past cases</div>
+                        {similar.map((s, j) => (
+                          <div key={j} style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.62rem" }}>· {s.input?.slice(0, 60)}… → {s.technician?.name} ({s.sla})</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* Technician Scorecard */}
+      {activeTab === "scorecard" && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {scorecards.map((t, i) => (
+              <div key={i} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1rem 1.25rem" }}>
+                <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${TECH_COLORS[i % TECH_COLORS.length]}22`, border: `2px solid ${TECH_COLORS[i % TECH_COLORS.length]}`, display: "flex", alignItems: "center", justifyContent: "center", color: TECH_COLORS[i % TECH_COLORS.length], fontFamily: T.display, fontSize: "1.1rem", fontWeight: 800, flexShrink: 0 }}>{t.name.charAt(0)}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: T.text, fontFamily: T.display, fontSize: "0.95rem", fontWeight: 700 }}>{t.name}</div>
+                    <div style={{ color: TECH_COLORS[i % TECH_COLORS.length], fontFamily: T.mono, fontSize: "0.65rem" }}>{t.level}</div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "0.75rem", textAlign: "center" }}>
+                    {[
+                      { label: "Assigned", val: t.assigned, color: T.cyan },
+                      { label: "On Track", val: t.resolved, color: T.green },
+                      { label: "Breached", val: t.breached, color: T.red },
+                      { label: "Avg Conf", val: t.avgConf ? `${t.avgConf}%` : "—", color: T.yellow },
+                    ].map(k => (
+                      <div key={k.label}>
+                        <div style={{ color: k.color, fontFamily: T.mono, fontSize: "1rem", fontWeight: 700 }}>{k.val}</div>
+                        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase" }}>{k.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ marginTop: "0.75rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
+                    <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>Current Load</span>
+                    <span style={{ color: t.load > 25 ? T.red : T.green, fontFamily: T.mono, fontSize: "0.6rem", fontWeight: 700 }}>{t.load}/{t.maxLoad}</span>
+                  </div>
+                  <div style={{ height: 4, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: `${(t.load / t.maxLoad) * 100}%`, height: "100%", background: t.load > 25 ? T.red : t.load > 15 ? T.yellow : T.green, borderRadius: 2, transition: "width 0.3s" }} />
+                  </div>
+                </div>
+                <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.3rem", flexWrap: "wrap" }}>
+                  {t.skills.map(s => <Badge key={s} label={s} color={T.textDim} />)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Insights */}
+      {activeTab === "insights" && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "1rem" }}>
+            {/* Category breakdown */}
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem" }}>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "1rem" }}>Top Issue Categories</div>
+              {catSorted.length === 0 ? (
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.7rem" }}>No data yet.</div>
+              ) : catSorted.slice(0, 7).map(([cat, count], i) => (
+                <div key={cat} style={{ marginBottom: "0.6rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
+                    <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.68rem" }}>{cat}</span>
+                    <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.68rem", fontWeight: 700 }}>{count}</span>
+                  </div>
+                  <div style={{ height: 3, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: `${(count / maxCat) * 100}%`, height: "100%", background: i === 0 ? T.cyan : T.textDim, borderRadius: 2 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* AI vs Rule breakdown */}
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem" }}>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "1rem" }}>Classification Method</div>
+              {(() => {
+                const geminiCount = history.filter(h => h.method === "gemini-ai").length;
+                const ruleCount = history.filter(h => h.method === "rule-based").length;
+                const fbCount = history.filter(h => h.method === "rule-based-fallback").length;
+                const total = history.length || 1;
+                return [
+                  { label: "✦ Gemini AI", count: geminiCount, color: T.cyan },
+                  { label: "⚡ Rule-Based", count: ruleCount, color: T.green },
+                  { label: "↩ Fallback", count: fbCount, color: T.yellow },
+                ].map(m => (
+                  <div key={m.label} style={{ marginBottom: "0.85rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
+                      <span style={{ color: m.color, fontFamily: T.mono, fontSize: "0.7rem" }}>{m.label}</span>
+                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.68rem" }}>{m.count} ({Math.round(m.count/total*100)}%)</span>
+                    </div>
+                    <div style={{ height: 4, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
+                      <div style={{ width: `${(m.count/total)*100}%`, height: "100%", background: m.color, borderRadius: 2 }} />
+                    </div>
+                  </div>
+                ));
+              })()}
+              <div style={{ marginTop: "1rem", padding: "0.65rem", background: T.panel, borderRadius: 6, color: T.textMid, fontFamily: T.mono, fontSize: "0.65rem", lineHeight: 1.5 }}>
+                💡 Lower Gemini % = more efficient. Rule-based handles simple tickets instantly with zero API cost.
+              </div>
+            </div>
+            {/* Urgency distribution */}
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem" }}>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "1rem" }}>Urgency Distribution</div>
+              {["Critical","High","Medium","Low"].map(u => {
+                const count = history.filter(h => h.urgency === u).length;
+                const pct = history.length > 0 ? Math.round((count / history.length) * 100) : 0;
+                return (
+                  <div key={u} style={{ marginBottom: "0.6rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
+                      <span style={{ color: urgencyColor(u), fontFamily: T.mono, fontSize: "0.68rem" }}>{u === "Critical" ? "🔴" : u === "High" ? "🟠" : u === "Medium" ? "🟡" : "🟢"} {u}</span>
+                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem" }}>{count} ({pct}%)</span>
+                    </div>
+                    <div style={{ height: 3, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: urgencyColor(u), borderRadius: 2 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </motion.div>
+  );
+}
+
 // ─── UNIVERSAL COPQ CALCULATOR ───────────────────────────────────────────────
 const INDUSTRY_PRESETS = {
   techsupport: {
@@ -6017,6 +6420,7 @@ export default function App() {
     fmea: FMEAScorer, copq: COPQEngine, spc: SPCCharts,
     pareto: ParetoBuilder, rootcause: RootCauseAnalyzer,
     triage: AITriageSimulator, universal: UniversalCOPQ,
+    ops: LiveOpsCenter,
   };
   const ActiveView = views[activeTab] || views.overview;
 
