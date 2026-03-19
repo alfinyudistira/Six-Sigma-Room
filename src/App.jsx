@@ -4984,7 +4984,20 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
       const clean = raw.replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(clean);
       if (!categories.includes(parsed.category)) throw new Error("Invalid category");
-      return { category: parsed.category, confidence: parsed.confidence, reasoning: parsed.reasoning, complexity: parsed.complexity, allScores: [[parsed.category, parsed.confidence]], method: "gemini-ai" };
+      return {
+        category: parsed.category,
+        confidence: parsed.confidence,
+        reasoning: parsed.reasoning,
+        complexity: parsed.complexity,
+        urgency: parsed.urgency,
+        core_problem: parsed.core_problem,
+        business_impact: parsed.business_impact,
+        suggested_assignee: parsed.suggested_assignee,
+        red_flags: parsed.red_flags,
+        recommended_action: parsed.recommended_action,
+        allScores: [[parsed.category, parsed.confidence]],
+        method: "gemini-ai",
+      };
     } catch {
       return { ...classifyComplaint(text), method: "rule-based-fallback" };
     }
@@ -5415,9 +5428,69 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
                 ))}
               </div>
               {result.reasoning && (
-                <div style={{ background: T.panel, borderRadius: 6, padding: "0.75rem 1rem", borderLeft: `3px solid ${T.green}`, marginBottom: "1rem" }}>
+                <div style={{ background: T.panel, borderRadius: 6, padding: "0.75rem 1rem", borderLeft: `3px solid ${T.green}`, marginBottom: "0.75rem" }}>
                   <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>✦ Gemini Reasoning</div>
                   <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.72rem", lineHeight: 1.5 }}>{result.reasoning}</div>
+                </div>
+              )}
+              {(result.urgency || result.complexity) && (
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
+                  {result.urgency && (
+                    <div style={{ background: `${result.urgency === "Critical" ? T.red : result.urgency === "High" ? T.orange : result.urgency === "Medium" ? T.yellow : T.green}18`, border: `1px solid ${result.urgency === "Critical" ? T.red : result.urgency === "High" ? T.orange : result.urgency === "Medium" ? T.yellow : T.green}44`, borderRadius: 6, padding: "0.5rem 0.85rem", flex: 1, minWidth: 120 }}>
+                      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.2rem" }}>Urgency</div>
+                      <div style={{ color: result.urgency === "Critical" ? T.red : result.urgency === "High" ? T.orange : result.urgency === "Medium" ? T.yellow : T.green, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}>
+                        {result.urgency === "Critical" ? "🔴" : result.urgency === "High" ? "🟠" : result.urgency === "Medium" ? "🟡" : "🟢"} {result.urgency}
+                      </div>
+                    </div>
+                  )}
+                  {result.complexity && (
+                    <div style={{ background: `${T.cyan}10`, border: `1px solid ${T.cyan}33`, borderRadius: 6, padding: "0.5rem 0.85rem", flex: 1, minWidth: 120 }}>
+                      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.2rem" }}>Complexity</div>
+                      <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}>
+                        {result.complexity === "Critical" ? "💀" : result.complexity === "Complex" ? "🔥" : result.complexity === "Moderate" ? "⚡" : "✓"} {result.complexity}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {result.core_problem && (
+                <div style={{ background: `${T.red}08`, border: `1px solid ${T.red}22`, borderRadius: 6, padding: "0.75rem 1rem", marginBottom: "0.75rem", display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+                  <span style={{ fontSize: "1rem", flexShrink: 0 }}>🎯</span>
+                  <div>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>Core Problem</div>
+                    <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.72rem", lineHeight: 1.5 }}>{result.core_problem}</div>
+                  </div>
+                </div>
+              )}
+              {result.business_impact && (
+                <div style={{ background: `${T.orange}08`, border: `1px solid ${T.orange}22`, borderRadius: 6, padding: "0.75rem 1rem", marginBottom: "0.75rem", display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+                  <span style={{ fontSize: "1rem", flexShrink: 0 }}>💰</span>
+                  <div>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>Business Impact</div>
+                    <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.72rem", lineHeight: 1.5 }}>{result.business_impact}</div>
+                  </div>
+                </div>
+              )}
+              {result.red_flags && result.red_flags !== "None" && (
+                <div style={{ background: `${T.red}10`, border: `1px solid ${T.red}33`, borderRadius: 6, padding: "0.75rem 1rem", marginBottom: "0.75rem", display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+                  <span style={{ fontSize: "1rem", flexShrink: 0 }}>🚩</span>
+                  <div>
+                    <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.25rem", fontWeight: 700 }}>Red Flags</div>
+                    <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                      {result.red_flags.split(",").map((f, i) => (
+                        <span key={i} style={{ background: `${T.red}15`, border: `1px solid ${T.red}33`, borderRadius: 20, padding: "0.2rem 0.6rem", color: T.red, fontFamily: T.mono, fontSize: "0.62rem" }}>{f.trim()}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {result.recommended_action && (
+                <div style={{ background: `${T.green}08`, border: `1px solid ${T.green}22`, borderRadius: 6, padding: "0.75rem 1rem", display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+                  <span style={{ fontSize: "1rem", flexShrink: 0 }}>⚡</span>
+                  <div>
+                    <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.25rem", fontWeight: 700 }}>Recommended First Action</div>
+                    <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.72rem", lineHeight: 1.5 }}>{result.recommended_action}</div>
+                  </div>
                 </div>
               )}
               {result.allScores && result.allScores.length > 1 && (
