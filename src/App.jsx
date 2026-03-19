@@ -1977,6 +1977,171 @@ const DMAIC_DEFAULTS = {
 };
 
 function DMAICTracker() {
+  const company = useCompany();
+  const [showBridge, setShowBridge] = useState(false);
+  const [bridgePhase, setBridgePhase] = useState(null);
+  const [bridgeData, setBridgeData] = useState({});
+  const [bridgeStatus, setBridgeStatus] = useState({});
+
+  const pullFromModules = (phaseId) => {
+    const pulled = {};
+    const status = {};
+
+    // Pull dari Sigma Calculator
+    try {
+      const sigmaRaw = localStorage.getItem("sigma_history") || "[]";
+      const sigmaHistory = JSON.parse(sigmaRaw);
+      if (sigmaHistory.length > 0) {
+        const latest = sigmaHistory[0];
+        pulled.sigma = {
+          source: "Σ Calculator",
+          icon: "σ",
+          color: "#00D4FF",
+          items: [
+            `Sigma Level: ${latest.sigma || "—"}σ`,
+            `DPMO: ${latest.dpmo?.toLocaleString() || "—"}`,
+            `Ppk: ${latest.ppk || "—"}`,
+            `Yield: ${latest.yield || "—"}%`,
+          ].filter(i => !i.includes("—")),
+        };
+        status.sigma = "ok";
+      } else { status.sigma = "empty"; }
+    } catch { status.sigma = "error"; }
+
+    // Pull dari SPC Charts
+    try {
+      const spcRaw = localStorage.getItem("spc_data") || localStorage.getItem("spc_points") || "[]";
+      const spcData = JSON.parse(spcRaw);
+      if (spcData.length > 0) {
+        const vals = spcData.map(d => d.value || d.v || d).filter(v => typeof v === "number");
+        if (vals.length > 0) {
+          const mean = (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
+          const max = Math.max(...vals).toFixed(2);
+          const min = Math.min(...vals).toFixed(2);
+          pulled.spc = {
+            source: "SPC Charts",
+            icon: "~",
+            color: "#00FF9C",
+            items: [
+              `Data Points: ${vals.length}`,
+              `Mean: ${mean}`,
+              `Range: ${min} – ${max}`,
+            ],
+          };
+          status.spc = "ok";
+        } else { status.spc = "empty"; }
+      } else { status.spc = "empty"; }
+    } catch { status.spc = "error"; }
+
+    // Pull dari Pareto Builder
+    try {
+      const paretoRaw = localStorage.getItem("pareto_items") || "[]";
+      const paretoItems = JSON.parse(paretoRaw);
+      const active = paretoItems.filter(i => i.active !== false);
+      if (active.length > 0) {
+        const sorted = [...active].sort((a, b) => (b.cases || 0) - (a.cases || 0));
+        const total = sorted.reduce((a, i) => a + (i.cases || 0), 0);
+        let cum = 0;
+        const vitalFew = sorted.filter(i => {
+          cum += i.cases || 0;
+          return total > 0 && (cum / total) * 100 <= 80;
+        });
+        pulled.pareto = {
+          source: "Pareto Builder",
+          icon: "∥",
+          color: "#FFD60A",
+          items: [
+            `Total Categories: ${active.length}`,
+            `Vital Few (80%): ${vitalFew.length} categories`,
+            ...vitalFew.slice(0, 3).map(i => `  → ${i.category}: ${i.cases} cases`),
+          ],
+        };
+        status.pareto = "ok";
+      } else { status.pareto = "empty"; }
+    } catch { status.pareto = "error"; }
+
+    // Pull dari FMEA
+    try {
+      const fmeaRaw = localStorage.getItem("fmea_items") || "[]";
+      const fmeaItems = JSON.parse(fmeaRaw);
+      if (fmeaItems.length > 0) {
+        const withRpn = fmeaItems.map(i => ({ ...i, rpn: (i.S || 1) * (i.O || 1) * (i.D || 1) }));
+        const sorted = [...withRpn].sort((a, b) => b.rpn - a.rpn);
+        const critical = sorted.filter(i => i.rpn >= 200);
+        pulled.fmea = {
+          source: "FMEA Scorer",
+          icon: "⚠",
+          color: "#FF3B5C",
+          items: [
+            `Total Failure Modes: ${fmeaItems.length}`,
+            `Critical RPN (≥200): ${critical.length}`,
+            ...sorted.slice(0, 2).map(i => `  → ${i.failure || "Unknown"}: RPN ${i.rpn}`),
+          ],
+        };
+        status.fmea = "ok";
+      } else { status.fmea = "empty"; }
+    } catch { status.fmea = "error"; }
+
+    // Pull dari Triage History
+    try {
+      const triageRaw = localStorage.getItem("triage_history") || localStorage.getItem("triage_history_pd") || "[]";
+      const triageItems = JSON.parse(triageRaw);
+      if (triageItems.length > 0) {
+        const cats = {};
+        triageItems.forEach(t => { cats[t.category] = (cats[t.category] || 0) + 1; });
+        const top = Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        const breach = triageItems.filter(t => t.sla === "BREACH").length;
+        pulled.triage = {
+          source: "Smart Triage",
+          icon: "▶",
+          color: "#00FF9C",
+          items: [
+            `Total Tickets: ${triageItems.length}`,
+            `SLA Breach: ${breach} (${((breach / triageItems.length) * 100).toFixed(0)}%)`,
+            ...top.map(([c, n]) => `  → ${c}: ${n} tickets`),
+          ],
+        };
+        status.triage = "ok";
+      } else { status.triage = "empty"; }
+    } catch { status.triage = "error"; }
+
+    // Pull dari Root Cause
+    try {
+      const rcRaw = localStorage.getItem("rootcauses") || "[]";
+      const rcItems = JSON.parse(rcRaw);
+      if (rcItems.length > 0) {
+        const validated = rcItems.filter(r => r.validated);
+        const topImpact = [...rcItems].sort((a, b) => (b.contribution || 0) - (a.contribution || 0));
+        pulled.rootcause = {
+          source: "Root Cause",
+          icon: "?",
+          color: "#FF8C00",
+          items: [
+            `Root Causes Identified: ${rcItems.length}`,
+            `Validated: ${validated.length}`,
+            ...topImpact.slice(0, 2).map(r => `  → ${r.title}: ${r.contribution || 0}% impact`),
+          ],
+        };
+        status.rootcause = "ok";
+      } else { status.rootcause = "empty"; }
+    } catch { status.rootcause = "error"; }
+
+    setBridgeData(pulled);
+    setBridgeStatus(status);
+    setBridgePhase(phaseId);
+    setShowBridge(true);
+  };
+
+  const getRelevantSources = (phaseId) => {
+    const map = {
+      define:  ["triage","pareto"],
+      measure: ["sigma","spc"],
+      analyze: ["pareto","fmea","rootcause"],
+      improve: ["fmea","rootcause","sigma"],
+      control: ["spc","sigma","triage"],
+    };
+    return map[phaseId] || [];
+  };
   const [phases, setPhases] = useLocalState("dmaic_phases", DMAIC_DEFAULTS);
   const [activePhase, setActivePhase] = useLocalState("dmaic_activePhase", "D");
   const [viewMode, setViewMode] = useLocalState("dmaic_view", "detail"); // detail | timeline | checklist | custom
@@ -2254,6 +2419,144 @@ ${phaseKeys.map(k => {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1200, margin: "0 auto" }}>
+
+      {/* ── INTELLIGENCE BRIDGE MODAL ── */}
+      <AnimatePresence>
+        {showBridge && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, zIndex: 9500, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+            onClick={e => { if (e.target === e.currentTarget) setShowBridge(false); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 30, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20 }}
+              style={{ background: T.panel, border: `1px solid ${T.borderHi}`, borderRadius: 12, width: "100%", maxWidth: 680, maxHeight: "85vh", overflowY: "auto", boxShadow: `0 24px 80px rgba(0,0,0,0.8), 0 0 40px ${T.cyan}11` }}
+            >
+              <div style={{ padding: "1.5rem 1.75rem", borderBottom: `1px solid ${T.border}`, position: "sticky", top: 0, background: T.panel, zIndex: 1, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.58rem", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "0.3rem" }}>
+                    ✦ DMAIC INTELLIGENCE BRIDGE
+                  </div>
+                  <div style={{ color: T.text, fontFamily: T.display, fontSize: "1rem", fontWeight: 700 }}>
+                    Evidence for {bridgePhase?.toUpperCase()} Phase
+                  </div>
+                </div>
+                <button onClick={() => setShowBridge(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, width: 32, height: 32, borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+              </div>
+
+              <div style={{ padding: "1.75rem" }}>
+                {/* Phase guidance */}
+                <div style={{ background: `${T.cyan}08`, border: `1px solid ${T.cyan}22`, borderRadius: 8, padding: "0.85rem 1rem", marginBottom: "1.5rem" }}>
+                  <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>What to look for in {bridgePhase?.toUpperCase()}</div>
+                  <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.7rem", lineHeight: 1.6 }}>
+                    {bridgePhase === "define" && "Identify the problem scope using Pareto (vital few issues) and Triage data (ticket volume & category patterns)."}
+                    {bridgePhase === "measure" && "Baseline your process using Sigma Level, DPMO, and SPC control limits. These are your measurement evidence."}
+                    {bridgePhase === "analyze" && "Use Pareto to find root cause candidates, FMEA to assess risk, and Root Cause module for validated 5-Whys."}
+                    {bridgePhase === "improve" && "Reference FMEA action items and Root Cause solutions. Track Sigma improvement post-implementation."}
+                    {bridgePhase === "control" && "Monitor SPC for out-of-control signals and Sigma trend. Use Triage data to verify ticket reduction."}
+                  </div>
+                </div>
+
+                {/* Evidence cards from each module */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+                  {getRelevantSources(bridgePhase).map(sourceKey => {
+                    const data = bridgeData[sourceKey];
+                    const st = bridgeStatus[sourceKey];
+                    const allSources = {
+                      sigma: { label: "Σ Calculator", icon: "σ", color: T.cyan },
+                      spc: { label: "SPC Charts", icon: "~", color: T.green },
+                      pareto: { label: "Pareto Builder", icon: "∥", color: T.yellow },
+                      fmea: { label: "FMEA Scorer", icon: "⚠", color: T.red },
+                      triage: { label: "Smart Triage", icon: "▶", color: T.green },
+                      rootcause: { label: "Root Cause", icon: "?", color: T.orange },
+                    };
+                    const meta = allSources[sourceKey];
+                    return (
+                      <div key={sourceKey} style={{
+                        background: T.surface,
+                        border: `1px solid ${st === "ok" ? meta.color + "44" : T.border}`,
+                        borderRadius: 8, padding: "1rem 1.25rem",
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: st === "ok" ? "0.75rem" : 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <span style={{ color: meta.color, fontFamily: T.mono, fontSize: "0.85rem" }}>{meta.icon}</span>
+                            <span style={{ color: st === "ok" ? meta.color : T.textDim, fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700 }}>{meta.label}</span>
+                          </div>
+                          <span style={{
+                            background: st === "ok" ? `${meta.color}18` : `${T.textDim}11`,
+                            border: `1px solid ${st === "ok" ? meta.color + "44" : T.border}`,
+                            color: st === "ok" ? meta.color : T.textDim,
+                            fontFamily: T.mono, fontSize: "0.55rem",
+                            padding: "0.15rem 0.5rem", borderRadius: 20,
+                          }}>
+                            {st === "ok" ? "✓ DATA FOUND" : st === "empty" ? "NO DATA YET" : "ERROR"}
+                          </span>
+                        </div>
+                        {st === "ok" && data?.items && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                            {data.items.map((item, i) => (
+                              <div key={i} style={{ color: item.startsWith("  →") ? T.textMid : T.text, fontFamily: T.mono, fontSize: "0.68rem", paddingLeft: item.startsWith("  →") ? "0.5rem" : 0 }}>
+                                {item.startsWith("  →") ? item : `· ${item}`}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {st === "empty" && (
+                          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem" }}>
+                            Go to {meta.label} and add data first — then come back here.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* All other sources as secondary */}
+                  {Object.keys(bridgeData).filter(k => !getRelevantSources(bridgePhase).includes(k)).length > 0 && (
+                    <div>
+                      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.5rem", marginTop: "0.5rem" }}>Additional Evidence Available</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        {Object.entries(bridgeData).filter(([k]) => !getRelevantSources(bridgePhase).includes(k)).map(([key, data]) => (
+                          <div key={key} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "0.6rem 1rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ color: data.color, fontFamily: T.mono, fontSize: "0.65rem" }}>{data.icon} {data.source}</span>
+                            <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>{data.items?.[0] || "—"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Evidence score */}
+                {(() => {
+                  const relevant = getRelevantSources(bridgePhase);
+                  const filled = relevant.filter(k => bridgeStatus[k] === "ok").length;
+                  const pct = relevant.length > 0 ? Math.round((filled / relevant.length) * 100) : 0;
+                  const color = pct >= 80 ? T.green : pct >= 50 ? T.yellow : T.red;
+                  return (
+                    <div style={{ background: `${color}08`, border: `1px solid ${color}22`, borderRadius: 8, padding: "1rem", marginTop: "1.25rem" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+                        <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase" }}>Phase Evidence Score</span>
+                        <span style={{ color, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700 }}>{filled}/{relevant.length} modules linked · {pct}%</span>
+                      </div>
+                      <div style={{ height: 5, background: T.panel, borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: `linear-gradient(90deg, ${color}88, ${color})`, borderRadius: 3, transition: "width 0.5s" }} />
+                      </div>
+                      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", marginTop: "0.4rem" }}>
+                        {pct >= 80 ? "✓ Strong evidence base — phase is well-supported" : pct >= 50 ? "⚠ Partial evidence — fill remaining modules for stronger case" : "✕ Weak evidence — go complete the recommended modules first"}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <SectionHeader
         module="Module 03 — DMAIC Intelligence"
         title="Full Cycle DMAIC Tracker"
@@ -2367,8 +2670,18 @@ ${phaseKeys.map(k => {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "1.5rem", marginBottom: "1.5rem" }}>
                 {/* Tools panel with checkboxes */}
                 <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem" }}>
-                  <div style={{ color: p.color, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "1rem", borderBottom: `1px solid ${T.border}`, paddingBottom: "0.5rem" }}>
-                    [ TOOLS DEPLOYED ]
+                                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${T.border}`, paddingBottom: "0.5rem", marginBottom: "1rem" }}>
+                    <div style={{ color: p.color, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase" }}>
+                      [ TOOLS DEPLOYED ]
+                    </div>
+                    <button onClick={() => pullFromModules(p.id)} style={{
+                      background: `${T.cyan}12`, border: `1px solid ${T.cyan}33`,
+                      color: T.cyan, padding: "0.3rem 0.75rem", borderRadius: 4,
+                      cursor: "pointer", fontFamily: T.mono, fontSize: "0.58rem",
+                      display: "flex", alignItems: "center", gap: "0.4rem",
+                    }}>
+                      <span style={{ fontSize: "0.7rem" }}>✦</span> Pull Evidence
+                    </button>
                   </div>
                   {p.tools.map((tool, i) => (
                     <motion.div key={tool.name} whileHover={{ x: 3 }}
