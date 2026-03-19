@@ -3199,7 +3199,7 @@ function calcCOPQ(p) {
 }
 
 function COPQEngine() {
-  const { sym, s: currSym, fmt, fmtFull } = useCurrencyFmt();
+  const { sym, s, fmt, fmtFull } = useCurrencyFmt();
   const company = useCompany();
   const [showExecDeck, setShowExecDeck] = useState(false);
   const [activeScenario, setActiveScenario] = useLocalState("copq_activeScenario", "A");
