@@ -3602,7 +3602,7 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
                     style={{ height: "100%", background: pct >= 30 ? T.green : T.yellow, borderRadius: 4 }} />
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem", minWidth: 120, flexShrink: 0 }}>
-                  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.7rem" }}>{currSym}</span>
+                  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.7rem" }}>{s}</span>
                   <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>· {months}mo payback</span>
                 </div>
               </div>
