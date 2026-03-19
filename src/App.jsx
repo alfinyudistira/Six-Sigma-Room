@@ -1888,7 +1888,7 @@ const DMAIC_DEFAULTS = {
     ],
     insight: "The SIPOC reveals Support operates as a reactive 'shock absorber' for product defects. True optimization requires closing the feedback loop to Engineering.",
     risk: "HIGH — scope too broad initially. Narrowed to Tier 2/3 only.",
-    riskColor: T => T.orange,
+    riskColor: "#FF8C00",
     decisions: [
       "Scope narrowed from all complaints → Tier 2/3 escalated only",
       "Timeline extended 4→6 months to ensure thorough data collection",
@@ -1914,7 +1914,7 @@ const DMAIC_DEFAULTS = {
     ],
     insight: "The mean of 72.1h is operationally deceptive (+1.28 skewness). Managing to the mean is a strategic error — tail risk (90th pct = 102.4h) is the real target.",
     risk: "MEDIUM — Hawthorne Effect risk during data collection. Mitigated with blind historical review.",
-    riskColor: T => T.yellow,
+    riskColor: "#FFD60A",
     decisions: [
       "Scope refined: simple FCR cases excluded — fundamentally different behavior",
       "Added 'time-to-first-response' as secondary metric (r = 0.61 correlation)",
@@ -1941,7 +1941,7 @@ const DMAIC_DEFAULTS = {
     ],
     insight: "Experience is not a soft HR concern — it's a hard operational variable. Each year of experience lost to turnover costs one full business day per case. R² = 0.58.",
     risk: "LOW — all 6 root causes validated at p < 0.001. Scope refined to exclude vendor-dependent Integration Problems.",
-    riskColor: T => T.green,
+    riskColor: "#00FF9C",
     decisions: [
       "Integration Problems (9.9%) removed — external vendor dependencies outside our control",
       "Added 'skill-to-case match rate' as new KPI — unmeasured but critical",
@@ -1967,7 +1967,7 @@ const DMAIC_DEFAULTS = {
     ],
     insight: "DoE revealed A×C interaction: skills-based routing delivers max value only when technicians are better trained. Parallel deployment is mandatory, not optional.",
     risk: "MEDIUM — Knowledge platform delayed Week 22 due to data migration. Manual workaround activated.",
-    riskColor: T => T.yellow,
+    riskColor: "#FFD60A",
     decisions: [
       "Wave 1 (quick wins) launched Week 18 — immediate CSAT +0.8 pts",
       "DoE confirmed: routing + training must be simultaneous, not sequential",
@@ -1994,7 +1994,7 @@ const DMAIC_DEFAULTS = {
     ],
     insight: "The project achieved what DMAIC is designed to deliver: making failure structurally impossible through system-enforced controls. Process is in statistical control.",
     risk: "LOW — all metrics GREEN for 5 consecutive weeks. Entropy risk flagged for 3-6 month horizon.",
-    riskColor: T => T.green,
+    riskColor: "#00FF9C",
     decisions: [
       "Process ownership transferred to Support Ops Manager",
       "Automated OCAP triggers activated on SPC violations",
@@ -2685,7 +2685,7 @@ ${phaseKeys.map(k => {
                   { label: "Phase Progress", val: `${p.progress}%`, color: p.color },
                   { label: "Tools Deployed", val: `${p.tools.filter(t => t.done).length}/${p.tools.length}`, color: T.cyan },
                   { label: "Weeks", val: `W${p.startWeek} – W${p.endWeek}`, color: T.textMid },
-                  { label: "Risk Level", val: p.risk.split("—")[0].trim(), color: p.riskColor(T) },
+                  { label: "Risk Level", val: p.risk.split("—")[0].trim(), color: p.riskColor },
                 ].map(k => (
                   <div key={k.label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "0.75rem 1rem", textAlign: "center" }}>
                     <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{k.label}</div>
@@ -2761,8 +2761,8 @@ ${phaseKeys.map(k => {
 
               {/* Risk + Decisions */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "1rem" }}>
-                <div style={{ background: `${p.riskColor(T)}0A`, border: `1px solid ${p.riskColor(T)}33`, borderRadius: 8, padding: "1.25rem" }}>
-                  <div style={{ color: p.riskColor(T), fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.6rem" }}>[ RISK ASSESSMENT ]</div>
+                <div style={{ background: `${p.riskColor}0A`, border: `1px solid ${p.riskColor}33`, borderRadius: 8, padding: "1.25rem" }}>
+                  <div style={{ color: p.riskColor, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.6rem" }}>[ RISK ASSESSMENT ]</div>
                   <p style={{ color: T.text, fontFamily: T.mono, fontSize: "0.78rem", lineHeight: 1.6, margin: 0 }}>{p.risk}</p>
                 </div>
                 <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem" }}>
