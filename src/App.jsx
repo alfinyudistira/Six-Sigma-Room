@@ -4873,6 +4873,8 @@ const COMPLAINT_KEYWORDS = {
   "Logistics & Supply Chain": ["shipment","delivery","shipping","logistics","supply chain","warehouse","inventory","stock","order","tracking","late delivery","lost package","damaged goods","return","refund","courier","freight","dispatch","fulfillment","pick pack","barcode","sku","purchase order","supplier","vendor","lead time","backorder","out of stock","customs","import","export","last mile"],
   "Customer Complaints": ["customer","client","complaint","dissatisfied","unhappy","frustrated","angry","refund","compensation","poor service","bad experience","not resolved","escalate","manager","sla breach","waiting too long","no response","ignored","wrong product","wrong service","misleading","overcharged","cancel","churn","feedback","review","survey","nps","satisfaction"],
   "Security & Compliance": ["security","breach","hack","phishing","malware","virus","ransomware","vulnerability","threat","attack","unauthorized access","data leak","gdpr","compliance","audit","regulation","policy violation","suspicious","anomaly","incident","forensic","firewall","antivirus","encryption","certificate","pen test","risk","exposure","pii","sensitive data","confidential"],
+  "Physical Security & Facilities": ["security guard", "patrol", "access card", "cctv", "gate", "door locked", "parking", "building", "facility", "maintenance", "broken window", "leak", "ac broken", "alarm", "trespasser", "safety", "hazard", "incident report", "visitor", "evacuation"],
+  "Data Analytics & Reporting": ["dashboard", "report", "analytics", "data visualization", "metrics", "kpi", "wrong data", "missing data", "export", "excel", "spreadsheet", "bi", "business intelligence", "six sigma", "statistics", "trend", "chart not loading"]
 };
 
 const SEVERITY_KEYWORDS = ["urgent","critical","emergency","down","outage","breach","blocked","cannot work","production down","all users affected","data loss","security breach","executive","board","deadline","legal","compliance","immediate","asap","sla breach","escalate"];
@@ -4960,6 +4962,18 @@ const RULE_BASED_RESPONSES = {
     recommended_action: "Isolate affected systems immediately, preserve evidence logs, notify the security team and compliance officer, and initiate incident response protocol.",
     red_flags: "PII or sensitive data exposed, Regulatory breach possible, Active attack suspected",
   },
+    "Physical Security & Facilities": {
+    core_problem: "A physical security or facility maintenance issue requires on-site intervention.",
+    business_impact: "Compromises employee safety or disrupts normal physical operations in the building.",
+    recommended_action: "Dispatch security patrol or facility maintenance staff to the location immediately.",
+    red_flags: "Safety hazard, Unauthorized access, Physical damage",
+  },
+  "Data Analytics & Reporting": {
+    core_problem: "A business intelligence dashboard or critical data report is inaccurate or unavailable.",
+    business_impact: "Management decision-making is delayed or impaired due to lack of visibility.",
+    recommended_action: "Verify data pipeline status and check query execution logs in the BI tool.",
+    red_flags: "Executive report affected, EOD/EOM deadline",
+  },
 };
 
 const DEFAULT_TECHNICIANS = [
@@ -4969,7 +4983,14 @@ const DEFAULT_TECHNICIANS = [
   { name: "Technician D", level: "Junior (1-2 yr)", skills: ["Account Access Issues","Hardware Troubleshooting"], load: 28, maxLoad: 30, color: T.orange },
   { name: "Technician E", level: "Senior (5+ yr)", skills: ["Integration Problems","Performance Degradation","Software Configuration"], load: 12, maxLoad: 30, color: T.green },
 ];
-const SKILL_OPTIONS = ["Software Configuration","Network Connectivity","Hardware Troubleshooting","Account Access Issues","Integration Problems","Performance Degradation","Data Sync Errors"];
+const SKILL_OPTIONS = ["Software Configuration","Network Connectivity","Hardware Troubleshooting","Account Access Issues","Integration Problems","Performance Degradation","Data Sync Errors", "HR & People Issues",
+  "Finance & Billing",
+  "Logistics & Supply Chain",
+  "Customer Complaints",
+  "Security & Compliance",
+  "Physical Security & Facilities",
+  "Data Analytics & Reporting"
+];
 const LEVEL_OPTIONS = ["Junior (1-2 yr)","Mid (3-5 yr)","Senior (5+ yr)"];
 const TECH_COLORS = [T.green, T.cyan, T.yellow, T.orange, "#9B8EC4", T.red, T.textMid];
 
