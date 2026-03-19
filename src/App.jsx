@@ -126,8 +126,7 @@ function CompanySetup({ company, onChange, onClose, isOpen }) {
     const n = raw === "" ? 0 : parseFloat(raw);
     if (!isNaN(n)) setDraft(p => ({ ...p, [k]: n }));
   };
-  const isPD = draft.name === "Pulse Digital" && draft.dept === "Technical Support";
-
+  
   const save = () => {
     const errs = [];
     if (!draft.name.trim()) errs.push("Company Name is required");
@@ -137,7 +136,7 @@ function CompanySetup({ company, onChange, onClose, isOpen }) {
       errs.push("Target must be between LSL and USL");
     if (errs.length > 0) { setValidationErrors(errs); return; }
     setValidationErrors([]);
-    onChange({ ...draft, isPulseDigital: isPD });
+    onChange({ ...draft });
     onClose();
   };
 
@@ -412,6 +411,20 @@ function CompanySetup({ company, onChange, onClose, isOpen }) {
                 ))}
               </div>
             )}
+
+    {/* Demo Mode Toggle */}
+<div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.25rem", padding: "0.85rem 1rem", background: `${T.cyan}08`, border: `1px solid ${T.cyan}22`, borderRadius: 6 }}>
+  <input
+    type="checkbox"
+    id="demo-mode-toggle"
+    checked={draft.isPulseDigital || false}
+    onChange={e => setDraft(p => ({ ...p, isPulseDigital: e.target.checked }))}
+    style={{ accentColor: T.cyan, width: 14, height: 14, cursor: "pointer" }}
+  />
+  <label htmlFor="demo-mode-toggle" style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", cursor: "pointer" }}>
+    Use as Demo Mode (Pulse Digital showcase data)
+  </label>
+</div>
 
             {/* Actions */}
             <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
@@ -917,7 +930,7 @@ function NavBar({ active, setActive }) {
     <nav style={{
       background: T.panel, borderBottom: `1px solid ${T.border}`,
       padding: "0 1.5rem", display: "flex", gap: "0", overflowX: "auto", flexShrink: 0,
-      position: "relative",
+      position: "relative", scrollbarWidth: "none", WebkitOverflowScrolling: "touch",
     }}>
       {tabs.map(t => (
         <button key={t.id} onClick={() => setActive(t.id)} style={{
@@ -3176,7 +3189,7 @@ function calcCOPQ(p) {
 }
 
 function COPQEngine() {
-  const { fmt, fmtFull, s } = useCurrencyFmt();
+  const { sym, s: currSym, fmt, fmtFull } = useCurrencyFmt();
   const company = useCompany();
   const [showExecDeck, setShowExecDeck] = useState(false);
   const [activeScenario, setActiveScenario] = useLocalState("copq_activeScenario", "A");
@@ -3568,9 +3581,9 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
             Payback Analysis
           </div>
           {[10, 25, 33, 50, 75].map(pct => {
-            const s = Math.round(copqA.total * pct / 100);
+  const savings = Math.round(copqA.total * pct / 100);
             const months = s > 0 ? Math.max(Math.round((investment / s) * 12), 1) : "∞";
-            const barPct = Math.min(pct * 1.5, 100);
+            const barPct = copqA.total > 0 ? Math.min((savings / copqA.total) * 100, 100) : 0;
             return (
               <div key={pct} style={{ marginBottom: "0.65rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
                 <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", width: 35, textAlign: "right", flexShrink: 0 }}>{pct}%</div>
@@ -3579,7 +3592,7 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
                     style={{ height: "100%", background: pct >= 30 ? T.green : T.yellow, borderRadius: 4 }} />
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem", minWidth: 120, flexShrink: 0 }}>
-                  <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.68rem" }}>{fmt(s)}</span>
+                  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.7rem" }}>{currSym}</span>
                   <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>· {months}mo payback</span>
                 </div>
               </div>
@@ -5999,7 +6012,10 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
               <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase" }}>
                 [ TEAM CONFIGURATION — {company?.name || "Your Company"} ]
               </div>
-              <button onClick={() => setTechnicians(getDefaultTechnicians(company?.industry || "IT / Tech Support"))} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>↺ Reset to Demo</button>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button onClick={() => { if (!window.confirm("Reset all loads to 0?")) return; setTechnicians(prev => prev.map(t => ({ ...t, load: 0 }))); }} style={{ background: `${T.yellow}12`, border: `1px solid ${T.yellow}44`, color: T.yellow, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>↺ Reset Loads</button>
+                <button onClick={() => { if (!window.confirm("Reset entire team to default?")) return; setTechnicians(getDefaultTechnicians(company?.industry || "IT / Tech Support")); }} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>↺ Reset to Demo</button>
+              </div>
             </div>
             {/* Existing technicians */}
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem" }}>
@@ -7109,6 +7125,9 @@ Alfin Yudistira · Pulse Digital`;
                                 {isExpired ? "⏰ EXPIRED" : `${slaRemainHrs}h ${slaRemainMinsRem}m`}
                               </div>
                               <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>SLA remaining</div>
+<div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", marginTop: "0.1rem" }}>
+  submitted {elapsed < 60 ? `${elapsed}m` : `${Math.floor(elapsed/60)}h ${elapsed%60}m`} ago
+                            </div>
                             </div>
                           </div>
                           <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
@@ -7445,11 +7464,23 @@ function UniversalCOPQ() {
   const [industry, setIndustry] = useState("techsupport");
   const [improvement, setImprovement] = useState(25);
   const [fieldVals, setFieldVals] = useState({});
+  const [importedFromCompany, setImportedFromCompany] = useState(false);
 
   const preset = INDUSTRY_PRESETS[industry];
-  const vals = preset.fields.reduce((acc, f) => ({ ...acc, [f.key]: fieldVals[`${industry}_${f.key}`] ?? f.val }), {});
-  const setVal = (key, val) => setFieldVals(prev => ({ ...prev, [`${industry}_${key}`]: val }));
 
+  // Auto-populate dari Company Setup kalau ada data valid
+  const companyDefaults = (key) => {
+    if (!company || company.isPulseDigital) return null;
+    const map = { laborRate: company.laborRate, volume: company.monthlyVolume, ltv: company.customerLTV };
+    return map[key] ?? null;
+  };
+
+  const vals = preset.fields.reduce((acc, f) => {
+    const stored = fieldVals[`${industry}_${f.key}`];
+    const fromCompany = companyDefaults(f.key);
+    return { ...acc, [f.key]: stored ?? fromCompany ?? f.val };
+  }, {});
+  const setVal = (key, val) => setFieldVals(prev => ({ ...prev, [`${industry}_${key}`]: val }));
   const { rework, escalation, waste, churn, other } = preset.calcCopq(vals);
   const totalCopq = rework + escalation + waste + churn + other;
   const savings = totalCopq * (improvement / 100);
@@ -7470,6 +7501,16 @@ function UniversalCOPQ() {
         sub="Enter your company's real numbers. This calculator reveals the hidden cost of process inefficiency — for any industry, any department."
       />
 
+      {/* Company import notice */}
+      {company && !company.isPulseDigital && (
+        <div style={{ background: `${T.green}0A`, border: `1px solid ${T.green}33`, borderRadius: 8, padding: "0.75rem 1.25rem", marginBottom: "1.25rem", display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          <span style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700 }}>⚡ Company Data Loaded</span>
+          <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>
+            Labor rate, volume & LTV pre-filled from {company.name}'s profile. You can override any value below.
+          </span>
+        </div>
+      )}
+     
       {/* Industry selector */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "0.75rem", marginBottom: "2rem" }}>
         {Object.entries(INDUSTRY_PRESETS).map(([key, p]) => (
@@ -7749,7 +7790,7 @@ function AppKPIChips({ company }) {
             );
             return ppk.toFixed(2);
           })(),
-          sub: "Ppk", color: T.yellow,
+          sub: "Baseline Ppk", color: T.yellow,
         },
         { label: `${company.baselineMean} ${company.processUnit}`, sub: "Baseline", color: T.red },
         { label: `${company.target} ${company.processUnit}`, sub: "Target", color: T.green },
