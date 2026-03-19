@@ -8,6 +8,33 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from "recharts";
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ minHeight: "100vh", background: "#050A0F", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "1rem", padding: "2rem" }}>
+          <div style={{ color: "#FF3B5C", fontFamily: "monospace", fontSize: "1.2rem" }}>⚠ MODULE ERROR</div>
+          <div style={{ color: "#7A99B8", fontFamily: "monospace", fontSize: "0.8rem", maxWidth: 500, textAlign: "center" }}>
+            {this.state.error?.message || "Unknown error"}
+          </div>
+          <button onClick={() => this.setState({ hasError: false, error: null })}
+            style={{ background: "transparent", border: "1px solid #00D4FF", color: "#00D4FF", padding: "0.5rem 1.5rem", fontFamily: "monospace", cursor: "pointer", borderRadius: 4 }}>
+            ↺ Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ─── DESIGN TOKENS ───────────────────────────────────────────────────────────
 const T = {
   bg:       "#050A0F",
@@ -7815,7 +7842,9 @@ export default function App() {
         <main style={{ flex: 1, padding: "2rem 1.5rem", overflowY: "auto" }}>
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
-              <ActiveView />
+              <ErrorBoundary>
+  <ActiveView />
+</ErrorBoundary>
             </motion.div>
           </AnimatePresence>
         </main>
