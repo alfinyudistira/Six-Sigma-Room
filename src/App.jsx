@@ -4863,20 +4863,55 @@ const COMPLAINT_KEYWORDS = {
   "Integration Problems": ["integration","third party","vendor","api","webhook","connector","middleware","sap","salesforce","erp","crm"],
 };
 
-const TECHNICIANS = [
-  { name: "Andi Pratama", level: "Senior (5+ yr)", skills: ["Software Configuration","Network Connectivity","Integration Problems"], load: 18, maxLoad: 30, color: T.green },
-  { name: "Budi Santoso", level: "Mid (3-5 yr)", skills: ["Hardware Troubleshooting","Account Access Issues","Performance Degradation"], load: 22, maxLoad: 30, color: T.cyan },
-  { name: "Cindy Rahayu", level: "Mid (3-5 yr)", skills: ["Data Sync Errors","Software Configuration","Network Connectivity"], load: 25, maxLoad: 30, color: T.yellow },
-  { name: "Doni Kusuma", level: "Junior (1-2 yr)", skills: ["Account Access Issues","Hardware Troubleshooting"], load: 28, maxLoad: 30, color: T.orange },
-  { name: "Eka Wijaya", level: "Senior (5+ yr)", skills: ["Integration Problems","Performance Degradation","Software Configuration"], load: 12, maxLoad: 30, color: T.green },
+const DEFAULT_TECHNICIANS = [
+  { name: "Technician A", level: "Senior (5+ yr)", skills: ["Software Configuration","Network Connectivity","Integration Problems"], load: 18, maxLoad: 30, color: T.green },
+  { name: "Technician B", level: "Mid (3-5 yr)", skills: ["Hardware Troubleshooting","Account Access Issues","Performance Degradation"], load: 22, maxLoad: 30, color: T.cyan },
+  { name: "Technician C", level: "Mid (3-5 yr)", skills: ["Data Sync Errors","Software Configuration","Network Connectivity"], load: 25, maxLoad: 30, color: T.yellow },
+  { name: "Technician D", level: "Junior (1-2 yr)", skills: ["Account Access Issues","Hardware Troubleshooting"], load: 28, maxLoad: 30, color: T.orange },
+  { name: "Technician E", level: "Senior (5+ yr)", skills: ["Integration Problems","Performance Degradation","Software Configuration"], load: 12, maxLoad: 30, color: T.green },
 ];
+const SKILL_OPTIONS = ["Software Configuration","Network Connectivity","Hardware Troubleshooting","Account Access Issues","Integration Problems","Performance Degradation","Data Sync Errors"];
+const LEVEL_OPTIONS = ["Junior (1-2 yr)","Mid (3-5 yr)","Senior (5+ yr)"];
+const TECH_COLORS = [T.green, T.cyan, T.yellow, T.orange, "#9B8EC4", T.red, T.textMid];
+
 
 function AITriageSimulator() {
+  const company = useCompany();
+  const isPD = company?.isPulseDigital !== false;
+
+  // ── State ──
   const [input, setInput] = useState("");
-  const [phase, setPhase] = useState("idle"); // idle | analyzing | result
+  const [bulkInput, setBulkInput] = useState("");
+  const [phase, setPhase] = useState("idle");
   const [result, setResult] = useState(null);
   const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState("");
+  const [history, setHistory] = useLocalState("triage_history", []);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showTeamEditor, setShowTeamEditor] = useState(false);
+  const [technicians, setTechnicians] = useLocalState(
+    isPD ? "triage_team_pd" : `triage_team_${company?.name || "custom"}`,
+    DEFAULT_TECHNICIANS
+  );
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkResults, setBulkResults] = useState([]);
+  const [bulkPhase, setBulkPhase] = useState("idle");
+  const [newTech, setNewTech] = useState({ name: "", level: "Mid (3-5 yr)", skills: [], load: 0, maxLoad: 30 });
 
+  // ── Complexity detector ──
+  const isComplexComplaint = (text) => {
+    const wordCount = text.trim().split(/\s+/).length;
+    const allKeywords = Object.values(COMPLAINT_KEYWORDS).flat();
+    const matchCount = allKeywords.filter(k => text.toLowerCase().includes(k)).length;
+    const categoryScores = Object.entries(COMPLAINT_KEYWORDS).map(([, kws]) =>
+      kws.filter(k => text.toLowerCase().includes(k)).length
+    );
+    const topTwo = categoryScores.sort((a, b) => b - a).slice(0, 2);
+    const isAmbiguous = topTwo[0] > 0 && topTwo[1] > 0 && (topTwo[0] - topTwo[1]) <= 1;
+    return wordCount > 20 || matchCount === 0 || isAmbiguous;
+  };
+
+  // ── Classify (rule-based) ──
   const classifyComplaint = (text) => {
     const lower = text.toLowerCase();
     const scores = {};
@@ -4886,17 +4921,88 @@ function AITriageSimulator() {
     const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
     const topCat = sorted[0][0];
     const totalMatches = sorted.reduce((acc, [, v]) => acc + v, 0);
-    const confidence = totalMatches === 0 ? 72 : Math.min(60 + (sorted[0][1] / Math.max(totalMatches, 1)) * 40, 97);
-    return { category: topCat, confidence: Math.round(confidence), allScores: sorted.slice(0, 3) };
+    const confidence = totalMatches === 0 ? 55 : Math.min(60 + (sorted[0][1] / Math.max(totalMatches, 1)) * 40, 97);
+    return { category: topCat, confidence: Math.round(confidence), allScores: sorted.slice(0, 3), method: "rule-based" };
   };
 
+  // ── Classify via Gemini ──
+  const classifyViaGemini = async (text) => {
+    const categories = Object.keys(COMPLAINT_KEYWORDS);
+    const teamContext = technicians.map(t =>
+      `- ${t.name} (${t.level}): specializes in ${t.skills.join(", ")} | current load ${t.load}/${t.maxLoad} cases`
+    ).join("\n");
+
+    const prompt = `You are an intelligent AI triage and routing system embedded inside a ${company?.industry || "business"} operations platform. Your job is to analyze incoming complaints, tickets, or requests — from ANY domain — and classify them so they can be routed to the right person on the team.
+
+## CONTEXT
+- Company: ${company?.name || "Unknown Company"}
+- Department: ${company?.dept || "Operations"}
+- Industry: ${company?.industry || "General"}
+- Country: ${company?.country || "Unknown"}
+- Process being improved: ${company?.processName || "General Process"}
+
+## AVAILABLE ROUTING CATEGORIES
+${categories.map((c, i) => `${i + 1}. ${c}`).join("\n")}
+
+## CURRENT TEAM
+${teamContext}
+
+## COMPLAINT / TICKET / REQUEST TO ANALYZE
+"${text}"
+
+## YOUR TASK
+1. Read the complaint carefully — it could be a support ticket, HR request, customer complaint, operational issue, manufacturing defect report, logistics delay — anything relevant to the company above.
+2. Classify it into ONE of the available categories above that best fits.
+3. Assess confidence honestly. If the complaint is vague, ambiguous, or multi-topic, lower the confidence accordingly.
+4. Identify the core problem in one sharp sentence.
+5. Assess urgency: how time-sensitive is this? What's the potential business impact if unresolved?
+6. Suggest the best technician/person from the team above based on their skills AND current workload — prefer someone with relevant skills who is not overloaded.
+7. Note any red flags: escalation risk, SLA breach potential, repeated failure patterns, safety concerns.
+
+## OUTPUT FORMAT
+Respond ONLY with valid JSON. No markdown backticks, no explanation outside the JSON:
+{
+  "category": "<exact category name from the list above>",
+  "confidence": <integer between 50 and 97>,
+  "reasoning": "<one precise sentence explaining why this category fits>",
+  "complexity": "<Simple|Moderate|Complex|Critical>",
+  "urgency": "<Low|Medium|High|Critical>",
+  "core_problem": "<one sentence: what is the actual root symptom here>",
+  "business_impact": "<one sentence: what happens to the business if this is not resolved quickly>",
+  "suggested_assignee": "<name of the best technician from the team above, or 'Escalate to Manager' if none fit>",
+  "red_flags": "<comma-separated list of concerns, or 'None' if clean>",
+  "recommended_action": "<one concrete first action the assigned technician should take>"
+}`;
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${import.meta.env.GEMINI_API_KEY}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      });
+      const data = await res.json();
+      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const clean = raw.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
+      if (!categories.includes(parsed.category)) throw new Error("Invalid category");
+      return { category: parsed.category, confidence: parsed.confidence, reasoning: parsed.reasoning, complexity: parsed.complexity, allScores: [[parsed.category, parsed.confidence]], method: "gemini-ai" };
+    } catch {
+      return { ...classifyComplaint(text), method: "rule-based-fallback" };
+    }
+  };
+
+  // ── Route ──
   const routeToTechnician = (category) => {
-    const eligible = TECHNICIANS.filter(t => t.skills.includes(category) && t.load < t.maxLoad);
-    if (eligible.length === 0) return TECHNICIANS.sort((a, b) => a.load - b.load)[0];
-    return eligible.sort((a, b) => {
-      const levelScore = (t) => t.level.includes("Senior") ? 3 : t.level.includes("Mid") ? 2 : 1;
-      return levelScore(b) - levelScore(a) || a.load - b.load;
+    const eligible = technicians.filter(t => t.skills.includes(category) && t.load < t.maxLoad);
+    const allOverloaded = technicians.every(t => t.load >= t.maxLoad);
+    if (eligible.length === 0) {
+      const fallback = [...technicians].sort((a, b) => a.load - b.load)[0];
+      return { tech: fallback, overloaded: true, allOverloaded };
+    }
+    const best = eligible.sort((a, b) => {
+      const lvl = (t) => t.level.includes("Senior") ? 3 : t.level.includes("Mid") ? 2 : 1;
+      return lvl(b) - lvl(a) || a.load - b.load;
     })[0];
+    return { tech: best, overloaded: false, allOverloaded: false };
   };
 
   const estimateResolution = (category, tech) => {
@@ -4907,30 +5013,99 @@ function AITriageSimulator() {
     return Math.round(base * expFactor * loadFactor);
   };
 
+  // ── Analyze single ──
   const analyze = async () => {
     if (!input.trim()) return;
     setPhase("analyzing");
     setProgress(0);
-    // Simulate progressive analysis steps
-    const steps = [
-      { label: "Tokenizing complaint text...", pct: 20 },
-      { label: "Running keyword classification model...", pct: 45 },
-      { label: "Checking skills matrix...", pct: 65 },
-      { label: "Evaluating workload capacity...", pct: 82 },
-      { label: "Generating routing recommendation...", pct: 100 },
-    ];
-    for (const step of steps) {
-      await new Promise(r => setTimeout(r, 350 + Math.random() * 200));
-      setProgress(step.pct);
+
+    const complex = isComplexComplaint(input);
+    const steps = complex
+      ? [
+          { label: "Tokenizing complaint...", pct: 15 },
+          { label: "Detecting complexity → routing to Gemini AI...", pct: 35 },
+          { label: "Gemini analyzing context & intent...", pct: 65 },
+          { label: "Matching skills matrix...", pct: 82 },
+          { label: "Generating routing recommendation...", pct: 100 },
+        ]
+      : [
+          { label: "Tokenizing complaint...", pct: 20 },
+          { label: "Running keyword classification...", pct: 50 },
+          { label: "Checking skills matrix...", pct: 75 },
+          { label: "Generating routing recommendation...", pct: 100 },
+        ];
+
+    for (let i = 0; i < steps.length - (complex ? 1 : 0); i++) {
+      setProgressLabel(steps[i].label);
+      await new Promise(r => setTimeout(r, 300 + Math.random() * 200));
+      setProgress(steps[i].pct);
     }
-    const classification = classifyComplaint(input);
-    const tech = routeToTechnician(classification.category);
+
+    const classification = complex ? await classifyViaGemini(input) : classifyComplaint(input);
+    setProgressLabel(steps[steps.length - 1].label);
+    setProgress(100);
+
+    const { tech, overloaded, allOverloaded } = routeToTechnician(classification.category);
     const estHrs = estimateResolution(classification.category, tech);
-    setResult({ ...classification, technician: tech, estimatedHrs: estHrs, sla: estHrs <= 48 ? "ON TRACK" : "AT RISK" });
+    const sla = estHrs <= 48 ? "ON TRACK" : estHrs <= 72 ? "AT RISK" : "BREACH";
+    const needsManualReview = classification.confidence < 75;
+
+    const r = {
+      ...classification, technician: tech, estimatedHrs: estHrs, sla,
+      overloaded, allOverloaded, needsManualReview,
+      input: input.trim(), timestamp: Date.now(), id: Date.now(),
+    };
+    setResult(r);
     setPhase("result");
+    setHistory(prev => [r, ...prev].slice(0, 20));
   };
 
-  const reset = () => { setPhase("idle"); setInput(""); setResult(null); setProgress(0); };
+  // ── Bulk analyze ──
+  const analyzeBulk = async () => {
+    const lines = bulkInput.split("\n").map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return;
+    setBulkPhase("analyzing");
+    setBulkResults([]);
+    const results = [];
+    for (let i = 0; i < lines.length; i++) {
+      const text = lines[i];
+      const complex = isComplexComplaint(text);
+      const classification = complex ? await classifyViaGemini(text) : classifyComplaint(text);
+      const { tech, overloaded } = routeToTechnician(classification.category);
+      const estHrs = estimateResolution(classification.category, tech);
+      results.push({
+        input: text, ...classification, technician: tech,
+        estimatedHrs: estHrs, sla: estHrs <= 48 ? "ON TRACK" : estHrs <= 72 ? "AT RISK" : "BREACH",
+        overloaded, needsManualReview: classification.confidence < 75,
+        id: Date.now() + i,
+      });
+      setBulkResults([...results]);
+      await new Promise(r => setTimeout(r, 200));
+    }
+    setBulkPhase("done");
+    setHistory(prev => [...results, ...prev].slice(0, 20));
+  };
+
+  const reset = () => { setPhase("idle"); setInput(""); setResult(null); setProgress(0); setProgressLabel(""); };
+
+  const exportReport = (r) => {
+    const lines = [
+      `TRIAGE REPORT — ${new Date(r.timestamp || Date.now()).toLocaleString()}`,
+      `${"─".repeat(50)}`,
+      `Complaint  : ${r.input}`,
+      `Category   : ${r.category}`,
+      `Confidence : ${r.confidence}% (${r.method})`,
+      `Assigned   : ${r.technician.name} (${r.technician.level})`,
+      `Workload   : ${r.technician.load}/${r.technician.maxLoad} cases`,
+      `Est. Time  : ${r.estimatedHrs}h`,
+      `SLA Status : ${r.sla}`,
+      r.needsManualReview ? `⚠️  LOW CONFIDENCE — Manual review recommended` : "",
+      r.overloaded ? `⚠️  TECHNICIAN OVERLOADED — Monitor closely` : "",
+      r.reasoning ? `AI Reasoning: ${r.reasoning}` : "",
+    ].filter(Boolean).join("\n");
+    navigator.clipboard?.writeText(lines);
+    return lines;
+  };
 
   const EXAMPLES = [
     "Database keeps crashing when I try to run reports. Getting SQL timeout errors.",
@@ -4939,107 +5114,338 @@ function AITriageSimulator() {
     "API integration with Salesforce stopped syncing customer data since yesterday.",
     "Everything is extremely slow — system takes 3 minutes to load a single page.",
   ];
+  const EXAMPLE_LABELS = ["DB Crash","Login Issue","Printer","API Sync","Slow System"];
+
+  const slaColor = (s) => s === "ON TRACK" ? T.green : s === "AT RISK" ? T.yellow : T.red;
+  const methodBadge = (m) => m === "gemini-ai" ? { label: "✦ Gemini AI", color: T.cyan } : m === "rule-based-fallback" ? { label: "⚡ Fallback", color: T.yellow } : { label: "⚡ Rule-Based", color: T.textMid };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1000, margin: "0 auto" }}>
       <SectionHeader
-        module="Module 09 — Live Demo · Try It Yourself"
+        module="Module 09 — Hybrid AI · Rule-Based + Gemini"
         title="AI Triage & Routing Simulator"
-        sub="Type any support complaint below. The AI will classify it, match it to the right technician based on skills + workload, and estimate resolution time — just like the real system built in this project."
+        sub={`Simple complaints → instant rule-based. Complex/ambiguous → Gemini AI analysis. Assigned to ${company?.name || "your team"}'s technicians based on skills + workload.`}
       />
 
-      {/* Input area */}
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
-        <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "1rem" }}>
-          [ COMPLAINT INPUT — TYPE ANYTHING ]
-        </div>
-        <textarea
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          disabled={phase === "analyzing"}
-          placeholder="Describe a support issue... e.g. 'Our database keeps crashing and the API integration stopped working.'"
-          style={{ width: "100%", minHeight: 100, background: T.panel, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "0.85rem 1rem", fontFamily: T.mono, fontSize: "0.85rem", lineHeight: 1.6, resize: "vertical", boxSizing: "border-box" }}
-        />
-        {/* Example buttons */}
-        <div style={{ marginTop: "0.75rem", marginBottom: "1rem" }}>
-          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.5rem" }}>Quick Examples:</div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            {EXAMPLES.map((ex, i) => (
-              <button key={i} onClick={() => setInput(ex)} disabled={phase === "analyzing"} style={{
-                background: T.panel, border: `1px solid ${T.border}`, color: T.textMid,
-                padding: "0.3rem 0.65rem", borderRadius: 20, cursor: "pointer",
-                fontFamily: T.mono, fontSize: "0.62rem",
-              }}>Example {i + 1}</button>
-            ))}
-          </div>
-        </div>
-        <button onClick={phase === "result" ? reset : analyze} disabled={phase === "analyzing" || (!input.trim() && phase === "idle")} style={{
-          background: phase === "result" ? `${T.yellow}18` : `${T.cyan}18`,
-          border: `2px solid ${phase === "result" ? T.yellow : T.cyan}`,
-          color: phase === "result" ? T.yellow : T.cyan,
-          padding: "0.85rem 2rem", borderRadius: 6, cursor: "pointer",
-          fontFamily: T.mono, fontSize: "0.8rem", fontWeight: 700, letterSpacing: "0.1em",
-          textTransform: "uppercase", width: "100%", transition: "all 0.3s",
-          textShadow: `0 0 15px ${phase === "result" ? T.yellow : T.cyan}44`,
-        }}>
-          {phase === "idle" && "▶ SUBMIT & ANALYZE"}
-          {phase === "analyzing" && `⏳ ANALYZING... ${progress}%`}
-          {phase === "result" && "↺ RESET — TRY ANOTHER"}
-        </button>
-        {phase === "analyzing" && (
-          <div style={{ marginTop: "0.75rem", height: 4, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
-            <motion.div animate={{ width: `${progress}%` }} transition={{ duration: 0.3 }}
-              style={{ height: "100%", background: T.cyan, borderRadius: 2, boxShadow: `0 0 8px ${T.cyan}` }} />
+      {/* ── Top toolbar ── */}
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+        {[
+          { label: bulkMode ? "◈ Single Mode" : "◈ Bulk Mode", action: () => { setBulkMode(p => !p); setPhase("idle"); setBulkPhase("idle"); } },
+          { label: `📋 History (${history.length})`, action: () => setShowHistory(p => !p) },
+          { label: `👥 Team (${technicians.length})`, action: () => setShowTeamEditor(p => !p) },
+        ].map(b => (
+          <button key={b.label} onClick={b.action} style={{
+            background: T.surface, border: `1px solid ${T.border}`, color: T.textMid,
+            padding: "0.4rem 0.85rem", borderRadius: 6, cursor: "pointer",
+            fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.05em",
+          }}>{b.label}</button>
+        ))}
+        {!isPD && (
+          <div style={{ background: `${T.yellow}15`, border: `1px solid ${T.yellow}44`, borderRadius: 6, padding: "0.4rem 0.85rem", color: T.yellow, fontFamily: T.mono, fontSize: "0.62rem" }}>
+            ⚡ Company Mode: {company?.name}
           </div>
         )}
       </div>
 
-      {/* Result */}
+      {/* ── Team Editor ── */}
       <AnimatePresence>
-        {phase === "result" && result && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            {/* AI Classification */}
-            <div style={{ background: T.surface, border: `2px solid ${T.cyan}44`, borderRadius: 8, padding: "1.5rem", marginBottom: "1rem" }}>
-              <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "1.25rem" }}>
-                [ AI CLASSIFICATION RESULT ]
+        {showTeamEditor && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 8, padding: "1.25rem", marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+                [ TEAM CONFIGURATION — {company?.name || "Your Company"} ]
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "1rem", marginBottom: "1.25rem" }}>
-                <div style={{ background: `${T.cyan}10`, border: `1px solid ${T.cyan}33`, borderRadius: 6, padding: "1.25rem" }}>
-                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.4rem" }}>Category</div>
-                  <div style={{ color: T.cyan, fontFamily: T.display, fontSize: "1rem", fontWeight: 700 }}>{result.category}</div>
-                </div>
-                <div style={{ background: `${T.green}10`, border: `1px solid ${T.green}33`, borderRadius: 6, padding: "1.25rem" }}>
-                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.4rem" }}>AI Confidence</div>
-                  <div style={{ color: T.green, fontFamily: T.display, fontSize: "1.5rem", fontWeight: 800 }}>{result.confidence}%</div>
-                </div>
-                <div style={{ background: `${T.yellow}10`, border: `1px solid ${T.yellow}33`, borderRadius: 6, padding: "1.25rem" }}>
-                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.4rem" }}>Est. Resolution</div>
-                  <div style={{ color: T.yellow, fontFamily: T.display, fontSize: "1.5rem", fontWeight: 800 }}>{result.estimatedHrs}h</div>
-                </div>
-                <div style={{ background: result.sla === "ON TRACK" ? `${T.green}10` : `${T.red}10`, border: `1px solid ${result.sla === "ON TRACK" ? T.green : T.red}33`, borderRadius: 6, padding: "1.25rem" }}>
-                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.4rem" }}>48h SLA Status</div>
-                  <div style={{ color: result.sla === "ON TRACK" ? T.green : T.red, fontFamily: T.display, fontSize: "1rem", fontWeight: 800 }}>{result.sla}</div>
-                </div>
-              </div>
-              {/* Confidence bar for alternatives */}
-              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.5rem" }}>Alternative Classifications</div>
-              {result.allScores.map(([cat, score], i) => (
-                <div key={cat} style={{ marginBottom: "0.4rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
-                    <span style={{ color: i === 0 ? T.cyan : T.textMid, fontFamily: T.mono, fontSize: "0.7rem" }}>{cat}</span>
-                    <span style={{ color: i === 0 ? T.cyan : T.textDim, fontFamily: T.mono, fontSize: "0.68rem" }}>{i === 0 ? result.confidence : Math.max(result.confidence - 20 - i * 12, 10)}%</span>
+              <button onClick={() => setTechnicians(DEFAULT_TECHNICIANS)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>↺ Reset to Demo</button>
+            </div>
+            {/* Existing technicians */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem" }}>
+              {technicians.map((t, i) => (
+                <div key={i} style={{ display: "flex", gap: "0.5rem", alignItems: "center", background: T.panel, borderRadius: 6, padding: "0.6rem 0.85rem", flexWrap: "wrap" }}>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${TECH_COLORS[i % TECH_COLORS.length]}22`, border: `1px solid ${TECH_COLORS[i % TECH_COLORS.length]}`, display: "flex", alignItems: "center", justifyContent: "center", color: TECH_COLORS[i % TECH_COLORS.length], fontFamily: T.mono, fontSize: "0.75rem", fontWeight: 700, flexShrink: 0 }}>{t.name.charAt(0)}</div>
+                  <div style={{ flex: 1, minWidth: 120 }}>
+                    <input value={t.name} onChange={e => setTechnicians(prev => prev.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                      style={{ background: "transparent", border: "none", color: T.text, fontFamily: T.mono, fontSize: "0.78rem", width: "100%", borderBottom: `1px dashed ${T.border}` }} />
                   </div>
-                  <div style={{ height: 3, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
-                    <div style={{ width: `${i === 0 ? result.confidence : Math.max(result.confidence - 20 - i * 12, 10)}%`, height: "100%", background: i === 0 ? T.cyan : T.textDim, borderRadius: 2 }} />
+                  <select value={t.level} onChange={e => setTechnicians(prev => prev.map((x, j) => j === i ? { ...x, level: e.target.value } : x))}
+                    style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.textMid, borderRadius: 4, padding: "0.25rem 0.4rem", fontFamily: T.mono, fontSize: "0.65rem", cursor: "pointer" }}>
+                    {LEVEL_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                  <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap", flex: 2, minWidth: 160 }}>
+                    {SKILL_OPTIONS.map(sk => (
+                      <button key={sk} onClick={() => setTechnicians(prev => prev.map((x, j) => j === i ? { ...x, skills: x.skills.includes(sk) ? x.skills.filter(s => s !== sk) : [...x.skills, sk] } : x))}
+                        style={{ background: t.skills.includes(sk) ? `${T.cyan}20` : T.surface, border: `1px solid ${t.skills.includes(sk) ? T.cyan : T.border}`, color: t.skills.includes(sk) ? T.cyan : T.textDim, padding: "0.15rem 0.4rem", borderRadius: 20, cursor: "pointer", fontFamily: T.mono, fontSize: "0.55rem" }}>
+                        {sk.split(" ")[0]}
+                      </button>
+                    ))}
                   </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                    <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>Load:</span>
+                    <input type="number" value={t.load} min={0} max={t.maxLoad} onChange={e => setTechnicians(prev => prev.map((x, j) => j === i ? { ...x, load: +e.target.value } : x))}
+                      style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.yellow, borderRadius: 3, padding: "0.2rem 0.4rem", fontFamily: T.mono, fontSize: "0.72rem", width: 40, textAlign: "center" }} />
+                    <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem" }}>/{t.maxLoad}</span>
+                  </div>
+                  <button onClick={() => setTechnicians(prev => prev.filter((_, j) => j !== i))}
+                    style={{ background: `${T.red}15`, border: `1px solid ${T.red}33`, color: T.red, borderRadius: 4, padding: "0.25rem 0.5rem", cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem" }}>✕</button>
                 </div>
               ))}
+            </div>
+            {/* Add new technician */}
+            <div style={{ background: `${T.green}08`, border: `1px dashed ${T.green}44`, borderRadius: 6, padding: "0.85rem", display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+              <input value={newTech.name} onChange={e => setNewTech(p => ({ ...p, name: e.target.value }))} placeholder="Name"
+                style={{ background: T.panel, border: `1px solid ${T.border}`, color: T.text, borderRadius: 4, padding: "0.4rem 0.6rem", fontFamily: T.mono, fontSize: "0.75rem", flex: 1, minWidth: 100, boxSizing: "border-box" }} />
+              <select value={newTech.level} onChange={e => setNewTech(p => ({ ...p, level: e.target.value }))}
+                style={{ background: T.panel, border: `1px solid ${T.border}`, color: T.textMid, borderRadius: 4, padding: "0.4rem 0.5rem", fontFamily: T.mono, fontSize: "0.65rem", cursor: "pointer" }}>
+                {LEVEL_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+              <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap" }}>
+                {SKILL_OPTIONS.map(sk => (
+                  <button key={sk} onClick={() => setNewTech(p => ({ ...p, skills: p.skills.includes(sk) ? p.skills.filter(s => s !== sk) : [...p.skills, sk] }))}
+                    style={{ background: newTech.skills.includes(sk) ? `${T.green}20` : T.panel, border: `1px solid ${newTech.skills.includes(sk) ? T.green : T.border}`, color: newTech.skills.includes(sk) ? T.green : T.textDim, padding: "0.15rem 0.4rem", borderRadius: 20, cursor: "pointer", fontFamily: T.mono, fontSize: "0.55rem" }}>
+                    {sk.split(" ")[0]}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => {
+                if (!newTech.name.trim() || newTech.skills.length === 0) return;
+                setTechnicians(prev => [...prev, { ...newTech, color: TECH_COLORS[prev.length % TECH_COLORS.length], maxLoad: 30 }]);
+                setNewTech({ name: "", level: "Mid (3-5 yr)", skills: [], load: 0, maxLoad: 30 });
+              }} style={{ background: T.green, border: "none", color: T.bg, padding: "0.4rem 1rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700 }}>
+                + Add
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── History Panel ── */}
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.1em" }}>[ TRIAGE HISTORY — LAST {history.length} ]</div>
+              <button onClick={() => setHistory([])} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.red, padding: "0.2rem 0.5rem", borderRadius: 3, cursor: "pointer", fontFamily: T.mono, fontSize: "0.58rem" }}>Clear All</button>
+            </div>
+            {history.length === 0 ? (
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.7rem", textAlign: "center", padding: "1rem" }}>No history yet — submit a complaint to start.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: 260, overflowY: "auto" }}>
+                {history.map((h, i) => (
+                  <div key={h.id || i} onClick={() => { setResult(h); setInput(h.input); setPhase("result"); setShowHistory(false); }}
+                    style={{ display: "flex", gap: "0.75rem", alignItems: "center", background: T.panel, borderRadius: 6, padding: "0.5rem 0.75rem", cursor: "pointer", borderLeft: `3px solid ${slaColor(h.sla)}` }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.7rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.input}</div>
+                      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", marginTop: "0.15rem" }}>{h.category} · {h.technician?.name} · {h.estimatedHrs}h</div>
+                    </div>
+                    <div style={{ flexShrink: 0, textAlign: "right" }}>
+                      <div style={{ color: slaColor(h.sla), fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700 }}>{h.sla}</div>
+                      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>{h.confidence}%</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── SINGLE MODE ── */}
+      {!bulkMode && (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
+            <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+              [ COMPLAINT INPUT ]
+            </div>
+            <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+              <div style={{ background: `${T.cyan}12`, border: `1px solid ${T.cyan}33`, borderRadius: 20, padding: "0.2rem 0.65rem", color: T.cyan, fontFamily: T.mono, fontSize: "0.58rem" }}>⚡ Simple → Rule-Based</div>
+              <div style={{ background: `${T.green}12`, border: `1px solid ${T.green}33`, borderRadius: 20, padding: "0.2rem 0.65rem", color: T.green, fontFamily: T.mono, fontSize: "0.58rem" }}>✦ Complex → Gemini AI</div>
+            </div>
+          </div>
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            disabled={phase === "analyzing"}
+            placeholder="Describe a support issue... Simple = instant. Complex/ambiguous = Gemini AI analysis."
+            style={{ width: "100%", minHeight: 100, background: T.panel, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "0.85rem 1rem", fontFamily: T.mono, fontSize: "0.85rem", lineHeight: 1.6, resize: "vertical", boxSizing: "border-box" }}
+          />
+          <div style={{ marginTop: "0.75rem", marginBottom: "1rem" }}>
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.5rem" }}>Quick Examples:</div>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              {EXAMPLES.map((ex, i) => (
+                <button key={i} onClick={() => setInput(ex)} disabled={phase === "analyzing"} style={{
+                  background: T.panel, border: `1px solid ${T.border}`, color: T.textMid,
+                  padding: "0.3rem 0.65rem", borderRadius: 20, cursor: "pointer",
+                  fontFamily: T.mono, fontSize: "0.62rem",
+                }}>{EXAMPLE_LABELS[i]}</button>
+              ))}
+            </div>
+          </div>
+          {input.trim() && phase === "idle" && (
+            <div style={{ marginBottom: "0.75rem", padding: "0.4rem 0.75rem", background: T.panel, borderRadius: 6, color: T.textMid, fontFamily: T.mono, fontSize: "0.65rem", borderLeft: `3px solid ${isComplexComplaint(input) ? T.green : T.cyan}` }}>
+              {isComplexComplaint(input) ? "✦ Complex detected → Will use Gemini AI" : "⚡ Simple complaint → Rule-based (instant)"}
+            </div>
+          )}
+          <button onClick={phase === "result" ? reset : analyze} disabled={phase === "analyzing" || (!input.trim() && phase === "idle")} style={{
+            background: phase === "result" ? `${T.yellow}18` : `${T.cyan}18`,
+            border: `2px solid ${phase === "result" ? T.yellow : T.cyan}`,
+            color: phase === "result" ? T.yellow : T.cyan,
+            padding: "0.85rem 2rem", borderRadius: 6, cursor: "pointer",
+            fontFamily: T.mono, fontSize: "0.8rem", fontWeight: 700, letterSpacing: "0.1em",
+            textTransform: "uppercase", width: "100%", transition: "all 0.3s",
+          }}>
+            {phase === "idle" && "▶ SUBMIT & ANALYZE"}
+            {phase === "analyzing" && `⏳ ${progressLabel || "ANALYZING..."} ${progress}%`}
+            {phase === "result" && "↺ RESET — TRY ANOTHER"}
+          </button>
+          {phase === "analyzing" && (
+            <div style={{ marginTop: "0.75rem", height: 4, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
+              <motion.div animate={{ width: `${progress}%` }} transition={{ duration: 0.3 }}
+                style={{ height: "100%", background: T.cyan, borderRadius: 2, boxShadow: `0 0 8px ${T.cyan}` }} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── BULK MODE ── */}
+      {bulkMode && (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+          <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "0.75rem" }}>
+            [ BULK TRIAGE — ONE COMPLAINT PER LINE ]
+          </div>
+          <textarea
+            value={bulkInput}
+            onChange={e => setBulkInput(e.target.value)}
+            disabled={bulkPhase === "analyzing"}
+            placeholder={"Complaint 1 here\nComplaint 2 here\nComplaint 3 here\n..."}
+            style={{ width: "100%", minHeight: 140, background: T.panel, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "0.85rem 1rem", fontFamily: T.mono, fontSize: "0.8rem", lineHeight: 1.7, resize: "vertical", boxSizing: "border-box" }}
+          />
+          <div style={{ marginTop: "0.5rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>
+            {bulkInput.split("\n").filter(l => l.trim()).length} complaint(s) queued
+          </div>
+          <button onClick={bulkPhase === "done" ? () => { setBulkPhase("idle"); setBulkInput(""); setBulkResults([]); } : analyzeBulk}
+            disabled={bulkPhase === "analyzing" || (!bulkInput.trim() && bulkPhase === "idle")}
+            style={{ background: `${T.cyan}18`, border: `2px solid ${T.cyan}`, color: T.cyan, padding: "0.75rem 2rem", borderRadius: 6, cursor: "pointer", fontFamily: T.mono, fontSize: "0.78rem", fontWeight: 700, width: "100%", marginTop: "0.75rem", textTransform: "uppercase" }}>
+            {bulkPhase === "idle" && "▶ ANALYZE ALL"}
+            {bulkPhase === "analyzing" && `⏳ Processing ${bulkResults.length}/${bulkInput.split("\n").filter(l => l.trim()).length}...`}
+            {bulkPhase === "done" && "↺ RESET BULK"}
+          </button>
+          {bulkResults.length > 0 && (
+            <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              {bulkResults.map((r, i) => {
+                const mb = methodBadge(r.method);
+                return (
+                  <div key={r.id || i} style={{ background: T.panel, borderRadius: 6, padding: "0.75rem 1rem", borderLeft: `3px solid ${slaColor(r.sla)}` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.35rem" }}>
+                      <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.72rem", flex: 1 }}>{r.input.length > 80 ? r.input.slice(0, 80) + "…" : r.input}</div>
+                      <div style={{ display: "flex", gap: "0.4rem" }}>
+                        <span style={{ color: slaColor(r.sla), fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700 }}>{r.sla}</span>
+                        <span style={{ color: mb.color, fontFamily: T.mono, fontSize: "0.6rem" }}>{mb.label}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                      <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem" }}>{r.category}</span>
+                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem" }}>→ {r.technician?.name}</span>
+                      <span style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.65rem" }}>{r.estimatedHrs}h</span>
+                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>{r.confidence}% confidence</span>
+                      {r.needsManualReview && <span style={{ color: T.red, fontFamily: T.mono, fontSize: "0.6rem" }}>⚠ Manual Review</span>}
+                      {r.overloaded && <span style={{ color: T.orange, fontFamily: T.mono, fontSize: "0.6rem" }}>⚡ Overloaded</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── RESULT ── */}
+      <AnimatePresence>
+        {phase === "result" && result && !bulkMode && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            {/* Warnings */}
+            {(result.needsManualReview || result.allOverloaded || result.overloaded) && (
+              <div style={{ marginBottom: "1rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                {result.needsManualReview && (
+                  <div style={{ background: `${T.red}12`, border: `1px solid ${T.red}44`, borderRadius: 6, padding: "0.65rem 1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                    <span style={{ fontSize: "1.1rem" }}>⚠️</span>
+                    <div>
+                      <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700 }}>LOW CONFIDENCE — MANUAL REVIEW RECOMMENDED</div>
+                      <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.65rem" }}>Confidence {result.confidence}% is below 75% threshold. A Tier 2 supervisor should validate this classification before assignment.</div>
+                    </div>
+                  </div>
+                )}
+                {result.allOverloaded && (
+                  <div style={{ background: `${T.orange}12`, border: `1px solid ${T.orange}44`, borderRadius: 6, padding: "0.65rem 1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                    <span style={{ fontSize: "1.1rem" }}>🔴</span>
+                    <div>
+                      <div style={{ color: T.orange, fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700 }}>ALL TECHNICIANS AT CAPACITY</div>
+                      <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.65rem" }}>Team is fully loaded. Consider queue management, overtime authorization, or contractor escalation.</div>
+                    </div>
+                  </div>
+                )}
+                {result.overloaded && !result.allOverloaded && (
+                  <div style={{ background: `${T.yellow}10`, border: `1px solid ${T.yellow}33`, borderRadius: 6, padding: "0.65rem 1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                    <span style={{ fontSize: "1rem" }}>⚡</span>
+                    <div style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.65rem" }}>No skilled technician available for this category — assigned to least-loaded technician as fallback.</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Classification */}
+            <div style={{ background: T.surface, border: `2px solid ${T.cyan}44`, borderRadius: 8, padding: "1.5rem", marginBottom: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase" }}>[ AI CLASSIFICATION RESULT ]</div>
+                {(() => { const mb = methodBadge(result.method); return (
+                  <div style={{ background: `${mb.color}15`, border: `1px solid ${mb.color}44`, borderRadius: 20, padding: "0.2rem 0.75rem", color: mb.color, fontFamily: T.mono, fontSize: "0.62rem" }}>{mb.label}</div>
+                ); })()}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "1rem", marginBottom: "1.25rem" }}>
+                {[
+                  { label: "Category", val: result.category, color: T.cyan, big: false },
+                  { label: "AI Confidence", val: `${result.confidence}%`, color: result.confidence >= 75 ? T.green : T.red, big: true },
+                  { label: "Est. Resolution", val: `${result.estimatedHrs}h`, color: T.yellow, big: true },
+                  { label: "SLA Status", val: result.sla, color: slaColor(result.sla), big: false },
+                ].map(k => (
+                  <div key={k.label} style={{ background: `${k.color}10`, border: `1px solid ${k.color}33`, borderRadius: 6, padding: "1rem" }}>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.4rem" }}>{k.label}</div>
+                    <div style={{ color: k.color, fontFamily: T.display, fontSize: k.big ? "1.5rem" : "0.95rem", fontWeight: 800 }}>{k.val}</div>
+                  </div>
+                ))}
+              </div>
+              {result.reasoning && (
+                <div style={{ background: T.panel, borderRadius: 6, padding: "0.75rem 1rem", borderLeft: `3px solid ${T.green}`, marginBottom: "1rem" }}>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>✦ Gemini Reasoning</div>
+                  <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.72rem", lineHeight: 1.5 }}>{result.reasoning}</div>
+                </div>
+              )}
+              {result.allScores && result.allScores.length > 1 && (
+                <>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.5rem" }}>Alternative Classifications</div>
+                  {result.allScores.map(([cat, score], i) => {
+                    const pct = i === 0 ? result.confidence : Math.max(result.confidence - 22 - i * 15, 8);
+                    return (
+                      <div key={cat} style={{ marginBottom: "0.4rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
+                          <span style={{ color: i === 0 ? T.cyan : T.textMid, fontFamily: T.mono, fontSize: "0.7rem" }}>{cat}</span>
+                          <span style={{ color: i === 0 ? T.cyan : T.textDim, fontFamily: T.mono, fontSize: "0.68rem" }}>{pct}%</span>
+                        </div>
+                        <div style={{ height: 3, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: i === 0 ? T.cyan : T.textDim, borderRadius: 2 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
             </div>
 
             {/* Routing Result */}
             <div style={{ background: T.surface, border: `2px solid ${T.green}33`, borderRadius: 8, padding: "1.5rem" }}>
-              <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "1.25rem" }}>
-                [ SKILLS-BASED ROUTING — ASSIGNED TECHNICIAN ]
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase" }}>[ ASSIGNED TECHNICIAN ]</div>
+                <CopyReportButton data={exportReport(result)} label="⎘ Copy Report" />
               </div>
               <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", alignItems: "center" }}>
                 <div style={{ width: 60, height: 60, borderRadius: "50%", background: `${result.technician.color}22`, border: `2px solid ${result.technician.color}`, display: "flex", alignItems: "center", justifyContent: "center", color: result.technician.color, fontFamily: T.display, fontSize: "1.4rem", fontWeight: 800, flexShrink: 0 }}>
@@ -5049,7 +5455,7 @@ function AITriageSimulator() {
                   <div style={{ color: T.text, fontFamily: T.display, fontSize: "1.1rem", fontWeight: 700, marginBottom: "0.25rem" }}>{result.technician.name}</div>
                   <div style={{ color: result.technician.color, fontFamily: T.mono, fontSize: "0.72rem", marginBottom: "0.5rem" }}>{result.technician.level}</div>
                   <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                    {result.technician.skills.map(s => <Badge key={s} label={s} color={result.technician.skills.includes(result.category) ? T.green : T.textDim} />)}
+                    {result.technician.skills.map(s => <Badge key={s} label={s} color={s === result.category ? T.green : T.textDim} />)}
                   </div>
                 </div>
                 <div style={{ textAlign: "center" }}>
@@ -5064,19 +5470,20 @@ function AITriageSimulator() {
                 </div>
               </div>
               <div style={{ marginTop: "1rem", background: T.panel, borderRadius: 6, padding: "0.85rem", color: T.textMid, fontFamily: T.mono, fontSize: "0.75rem", lineHeight: 1.6, borderLeft: `3px solid ${T.cyan}` }}>
-                💡 <strong style={{ color: T.cyan }}>Why this technician?</strong> Skill match for "{result.category}" ✓ · Workload below 30-case cap ✓ · {result.technician.level.includes("Senior") ? "Senior experience reduces est. resolution by ~42% vs junior" : "Mid-level experience, appropriate for this complexity tier"}
+                💡 <strong style={{ color: T.cyan }}>Why this technician?</strong> Skill match for "{result.category}" ✓ · {result.overloaded ? "Fallback — no skilled tech available" : "Workload within 30-case cap ✓"} · {result.technician.level.includes("Senior") ? "Senior experience reduces est. resolution by ~42% vs junior" : "Mid-level experience, appropriate for this complexity tier"}
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Explainer */}
-      <div style={{ background: T.panel, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", marginTop: "1.5rem", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: "1rem" }}>
+      {/* ── Explainer ── */}
+      <div style={{ background: T.panel, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", marginTop: "1.5rem", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "1rem" }}>
         {[
-          { icon: "🤖", title: "AI Classification", desc: "Keyword-weighted NLP model assigns category + confidence score. If <75% confidence, flags for Tier 2 manual review." },
-          { icon: "🎯", title: "Skills-Based Routing", desc: "Matches case category to technician skill matrix. Blocks assignment if workload exceeds 30-case weekly cap." },
-          { icon: "⏱", title: "Resolution Estimate", desc: "Calculates based on category baseline × technician experience factor × current workload. Real coefficients from 547-case dataset." },
+          { icon: "🤖", title: "Hybrid AI Engine", desc: "Short/clear complaints → instant keyword classification. Long, ambiguous, or multi-category complaints → Gemini AI for deep NLP analysis." },
+          { icon: "🎯", title: "Skills-Based Routing", desc: "Matches category to your team's skill matrix. Warns if all technicians are at capacity and falls back to least-loaded." },
+          { icon: "⚠️", title: "Confidence Gating", desc: "Confidence <75% triggers a mandatory manual review flag — Tier 2 supervisor must validate before assignment proceeds." },
+          { icon: "📋", title: "Audit Trail", desc: "Every triage result is logged to history (up to 20 entries). Click any history item to reload the full result." },
         ].map(tip => (
           <div key={tip.title}>
             <div style={{ fontSize: "1.2rem", marginBottom: "0.4rem" }}>{tip.icon}</div>
