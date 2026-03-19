@@ -6138,22 +6138,161 @@ function LiveOpsCenter() {
     </div>
   );
 
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1300, margin: "0 auto" }}>
+      return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1300, margin: "0 auto" }}>
+        
+        {/* WAR ROOM OVERLAY */}
+        {warRoomMode && (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 9000,
+            background: T.bg, display: "flex", flexDirection: "column",
+            padding: "1rem",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: T.red, boxShadow: `0 0 12px ${T.red}`, animation: "pulse 1s infinite" }} />
+                <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.75rem", letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 700 }}>
+                  ⚠ WAR ROOM MODE — LIVE OPS CENTER
+                </div>
+              </div>
+              <button onClick={() => setWarRoomMode(false)} style={{
+                background: `${T.red}20`, border: `1px solid ${T.red}`, color: T.red,
+                padding: "0.4rem 1rem", borderRadius: 4, cursor: "pointer",
+                fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700,
+              }}>✕ EXIT WAR ROOM</button>
+            </div>
+            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", overflowY: "auto" }}>
+              {[
+                { label: "ACTIVE TICKETS", value: triageHistory.length, color: T.cyan, sub: "in queue" },
+                { label: "CRITICAL ISSUES", value: triageHistory.filter(t => t.urgency === "Critical").length, color: T.red, sub: "need immediate action" },
+                { label: "SLA BREACH", value: triageHistory.filter(t => t.sla === "BREACH").length, color: T.orange, sub: "tickets breached" },
+                { label: "AT RISK", value: triageHistory.filter(t => t.sla === "AT RISK").length, color: T.yellow, sub: "approaching breach" },
+                { label: "ON TRACK", value: triageHistory.filter(t => t.sla === "ON TRACK").length, color: T.green, sub: "within SLA" },
+                { label: "AVG EST. TIME", value: triageHistory.length > 0 ? Math.round(triageHistory.reduce((a, t) => a + (t.estimatedHrs || 0), 0) / triageHistory.length) + "h" : "—", color: T.textMid, sub: "resolution estimate" },
+              ].map(k => (
+                <div key={k.label} style={{ background: T.panel, border: `2px solid ${k.color}33`, borderRadius: 8, padding: "1.5rem", textAlign: "center" }}>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "0.5rem" }}>{k.label}</div>
+                  <div style={{ color: k.color, fontFamily: T.display, fontSize: "3rem", fontWeight: 800, textShadow: `0 0 30px ${k.color}66`, lineHeight: 1 }}>{k.value}</div>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", marginTop: "0.4rem" }}>{k.sub}</div>
+                </div>
+              ))}
+            </div>
+            {/* Critical queue */}
+            {triageHistory.filter(t => t.urgency === "Critical").length > 0 && (
+              <div style={{ background: `${T.red}0A`, border: `1px solid ${T.red}33`, borderRadius: 8, padding: "1rem", marginTop: "1rem" }}>
+                <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.75rem" }}>⚠ CRITICAL QUEUE</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: 180, overflowY: "auto" }}>
+                  {triageHistory.filter(t => t.urgency === "Critical").slice(0, 8).map((t, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", background: T.panel, borderRadius: 4, padding: "0.5rem 0.75rem" }}>
+                      <span style={{ color: T.text, fontFamily: T.mono, fontSize: "0.65rem" }}>{t.input?.slice(0, 50)}...</span>
+                      <span style={{ color: T.red, fontFamily: T.mono, fontSize: "0.62rem", flexShrink: 0, marginLeft: "0.5rem" }}>{t.technician?.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
-      {/* ── HEADER ── */}
-      <div style={{ marginBottom: "1.75rem" }}>
-        <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "0.4rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: T.green, boxShadow: `0 0 10px ${T.green}`, animation: "pulse 1.5s infinite" }} />
-          Module 11 — Team Operations Center
+        {/* SHIFT REPORT MODAL */}
+        {showShiftReport && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 9500, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+            <div style={{ background: T.panel, border: `1px solid ${T.borderHi}`, borderRadius: 12, width: "100%", maxWidth: 600, maxHeight: "80vh", overflowY: "auto", padding: "1.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
+                <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase" }}>📋 SHIFT REPORT</div>
+                <button onClick={() => setShowShiftReport(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, width: 28, height: 28, borderRadius: 4, cursor: "pointer", fontFamily: T.mono }}>✕</button>
+              </div>
+              <pre style={{ color: T.text, fontFamily: T.mono, fontSize: "0.72rem", lineHeight: 1.7, whiteSpace: "pre-wrap", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "1rem", marginBottom: "1rem" }}>
+                {shiftReport}
+              </pre>
+              <div style={{ display: "flex", gap: "0.75rem" }}>
+                <button onClick={() => { navigator.clipboard?.writeText(shiftReport).catch(() => {}); }} style={{ flex: 1, background: `${T.cyan}18`, border: `1px solid ${T.cyan}`, color: T.cyan, padding: "0.65rem", borderRadius: 6, cursor: "pointer", fontFamily: T.mono, fontSize: "0.7rem" }}>
+                  📋 Copy to Clipboard
+                </button>
+                <button onClick={() => setShowShiftReport(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.65rem 1rem", borderRadius: 6, cursor: "pointer", fontFamily: T.mono, fontSize: "0.7rem" }}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── HEADER DENGAN TOMBOL WAR ROOM & SHIFT REPORT ── */}
+        <div style={{ marginBottom: "1.75rem", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
+          <div>
+            <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "0.4rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: T.green, boxShadow: `0 0 10px ${T.green}`, animation: "pulse 1.5s infinite" }} />
+              Module 11 — Team Operations Center
+            </div>
+            <h2 style={{ fontFamily: T.display, fontSize: "clamp(1.5rem,3.5vw,2.2rem)", color: T.text, fontWeight: 800, margin: "0 0 0.4rem", lineHeight: 1.1 }}>
+              Mission Control Room
+            </h2>
+            <p style={{ color: T.textMid, fontSize: "0.82rem", maxWidth: 650, margin: 0, lineHeight: 1.6 }}>
+              Live aggregation of all 10 modules. Every change you make anywhere on this platform reflects here in real-time.
+            </p>
+          </div>
+          
+          {/* TOMBOLNYA ADA DI SINI */}
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button onClick={() => setWarRoomMode(true)} style={{
+              background: `${T.red}18`, border: `1px solid ${T.red}55`,
+              color: T.red, padding: "0.5rem 1rem", borderRadius: 6,
+              cursor: "pointer", fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700,
+            }}>⚡ WAR ROOM</button>
+            
+            <button onClick={() => {
+              const h = triageHistory;
+              const total = h.length;
+              const cats = {};
+              h.forEach(t => { cats[t.category] = (cats[t.category] || 0) + 1; });
+              const sortedCats = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+              const topCat = sortedCats[0];
+              const critical = h.filter(t => t.urgency === "Critical").length;
+              const breach = h.filter(t => t.sla === "BREACH").length;
+              const ontrack = h.filter(t => t.sla === "ON TRACK").length;
+              const avgHrs = total > 0 ? (h.reduce((a, t) => a + (t.estimatedHrs || 0), 0) / total).toFixed(1) : 0;
+              const techLoad = {};
+              h.forEach(t => { if (t.technician?.name) techLoad[t.technician.name] = (techLoad[t.technician.name] || 0) + 1; });
+              const topTech = Object.entries(techLoad).sort((a, b) => b[1] - a[1])[0];
+              const now = new Date();
+              const report = `SHIFT REPORT — ${company?.name || "Company"}
+Generated: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}
+Department: ${company?.dept || "Operations"}
+${"─".repeat(45)}
+
+📊 TICKET SUMMARY
+  Total Tickets    : ${total}
+  Critical Issues  : ${critical}
+  SLA Breach       : ${breach}
+  At Risk          : ${h.filter(t => t.sla === "AT RISK").length}
+  On Track         : ${ontrack}
+
+⏱ PERFORMANCE
+  Avg Est. Time    : ${avgHrs}h
+  SLA Compliance   : ${total > 0 ? ((ontrack / total) * 100).toFixed(1) : 0}%
+
+🔥 TOP ISSUE CATEGORY
+  ${topCat ? `${topCat[0]} (${topCat[1]} tickets)` : "No data"}
+
+👤 MOST LOADED TECHNICIAN
+  ${topTech ? `${topTech[0]} — ${topTech[1]} tickets handled` : "No data"}
+
+📋 CATEGORY BREAKDOWN
+${sortedCats.map(([c, n]) => `  ${c.padEnd(30)} ${n} ticket(s)`).join("\n")}
+
+${"─".repeat(45)}
+Report generated by DMAIC Intelligence Platform
+Alfin Yudistira · Pulse Digital`;
+              setShiftReport(report);
+              setShowShiftReport(true);
+            }} style={{
+              background: `${T.green}18`, border: `1px solid ${T.green}55`,
+              color: T.green, padding: "0.5rem 1rem", borderRadius: 6,
+              cursor: "pointer", fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700,
+            }}>📋 SHIFT REPORT</button>
+          </div>
         </div>
-        <h2 style={{ fontFamily: T.display, fontSize: "clamp(1.5rem,3.5vw,2.2rem)", color: T.text, fontWeight: 800, margin: "0 0 0.4rem", lineHeight: 1.1 }}>
-          Mission Control Room
-        </h2>
-        <p style={{ color: T.textMid, fontSize: "0.82rem", maxWidth: 650, margin: 0, lineHeight: 1.6 }}>
-          Live aggregation of all 10 modules. Every change you make anywhere on this platform reflects here in real-time.
-        </p>
-      </div>
+
 
       {/* ══ ROW 1: PROJECT HEALTH BANNER ══════════════════════════════════════ */}
       <div style={{
