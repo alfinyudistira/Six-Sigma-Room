@@ -2838,6 +2838,7 @@ function calcCOPQ(p) {
 function COPQEngine() {
   const { fmt, fmtFull, s } = useCurrencyFmt();
   const company = useCompany();
+  const [showExecDeck, setShowExecDeck] = useState(false);
   const [activeScenario, setActiveScenario] = useLocalState("copq_activeScenario", "A");
   const [scenarios, setScenarios] = useLocalState("copq_scenarios", COPQ_DEFAULTS);
   const [viewMode, setViewMode] = useLocalState("copq_viewMode", "single"); // "single" | "compare"
@@ -3020,6 +3021,73 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1200, margin: "0 auto" }}>
+    {showExecDeck && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9500, background: "rgba(0,0,0,0.9)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+          <div style={{
+            background: T.panel, border: `1px solid ${T.borderHi}`,
+            borderRadius: 12, width: "100%", maxWidth: 680,
+            maxHeight: "90vh", overflowY: "auto",
+            boxShadow: `0 24px 80px rgba(0,0,0,0.8), 0 0 40px ${T.cyan}11`,
+          }}>
+            {/* Deck Header */}
+            <div style={{ background: `linear-gradient(135deg, ${T.bg} 0%, #0a1a2e 100%)`, padding: "2rem 2rem 1.5rem", borderBottom: `1px solid ${T.border}`, position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${T.cyan}, ${T.green}, ${T.yellow})` }} />
+              <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.58rem", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "0.5rem" }}>EXECUTIVE SUMMARY · COST OF POOR QUALITY</div>
+              <div style={{ color: T.text, fontFamily: T.display, fontSize: "1.4rem", fontWeight: 800, marginBottom: "0.25rem" }}>{company?.name || "Company"} — COPQ Analysis</div>
+              <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.68rem" }}>{company?.dept || "Department"} · {company?.processName || "Process"} · {new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}</div>
+              <div style={{ position: "absolute", top: "1rem", right: "1.5rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <button onClick={() => window.print()} style={{ background: `${T.cyan}18`, border: `1px solid ${T.cyan}44`, color: T.cyan, padding: "0.35rem 0.75rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>🖨 Print</button>
+                <button onClick={() => setShowExecDeck(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, width: 28, height: 28, borderRadius: 4, cursor: "pointer", fontFamily: T.mono }}>✕</button>
+              </div>
+            </div>
+            <div style={{ padding: "1.75rem" }}>
+              {/* KPI Row */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
+                {[
+                  { label: "Annual COPQ (Baseline)", value: fmtFull(copqA.total * 12), color: T.red },
+                  { label: "Annual COPQ (Post-DMAIC)", value: fmtFull(copqB.total * 12), color: T.green },
+                  { label: "Annual Savings", value: fmtFull(Math.max(0, (copqA.total - copqB.total) * 12)), color: T.cyan },
+                  { label: "ROI 12-Month", value: copqA.total > 0 ? `${(((copqA.total - copqB.total) / copqA.total) * 100).toFixed(0)}%` : "—", color: T.yellow },
+                ].map(k => (
+                  <div key={k.label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1rem", textAlign: "center" }}>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.52rem", textTransform: "uppercase", marginBottom: "0.4rem", lineHeight: 1.3 }}>{k.label}</div>
+                    <div style={{ color: k.color, fontFamily: T.display, fontSize: "1.1rem", fontWeight: 800 }}>{k.value}</div>
+                  </div>
+                ))}
+              </div>
+              {/* COPQ Breakdown */}
+              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", marginBottom: "1.25rem" }}>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "1rem" }}>COPQ Breakdown — Baseline vs Post-DMAIC</div>
+                {[
+                  { label: "Wasted Labor Capacity", a: copqA.wastedCap, b: copqB.wastedCap, color: T.red },
+                  { label: "Customer Churn Cost", a: copqA.churn, b: copqB.churn, color: T.orange },
+                  { label: "Escalation Cost", a: copqA.escalation, b: copqB.escalation, color: T.yellow },
+                  { label: "Rework Cost", a: copqA.rework, b: copqB.rework, color: T.cyan },
+                ].map(row => (
+                  <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.5rem 0", borderBottom: `1px solid ${T.border}` }}>
+                    <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.65rem" }}>{row.label}</span>
+                    <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", textDecoration: "line-through" }}>{fmtFull(row.a)}</span>
+                      <span style={{ color: row.color, fontFamily: T.mono, fontSize: "0.72rem", fontWeight: 700 }}>{fmtFull(row.b)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Recommendation */}
+              <div style={{ background: `${T.green}0A`, border: `1px solid ${T.green}33`, borderRadius: 8, padding: "1.25rem", marginBottom: "1.25rem" }}>
+                <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.6rem" }}>Strategic Recommendation</div>
+                <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.75rem", lineHeight: 1.7 }}>
+                  Based on COPQ analysis, implementing the proposed DMAIC improvement initiative for <strong style={{ color: T.cyan }}>{company?.processName || "this process"}</strong> is projected to reduce annual Cost of Poor Quality from <strong style={{ color: T.red }}>{fmtFull(copqA.total * 12)}</strong> to <strong style={{ color: T.green }}>{fmtFull(copqB.total * 12)}</strong>, delivering a net saving of <strong style={{ color: T.cyan }}>{fmtFull(Math.max(0, (copqA.total - copqB.total) * 12))}</strong> per year. Recommend immediate prioritization of the top COPQ driver: <strong style={{ color: T.yellow }}>Wasted Labor Capacity</strong>.
+                </div>
+              </div>
+              {/* Footer */}
+              <div style={{ textAlign: "center", color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
+                Generated by DMAIC Intelligence Platform · Alfin Maulana Yudistira · Six Sigma Black Belt
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <SectionHeader
         module="Module 05 — Financial Intelligence"
         title="COPQ Engine"
@@ -3028,10 +3096,16 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
 
       {/* Toolbar */}
       <ModuleToolbar
-        onReset={() => { setScenarios(COPQ_DEFAULTS); setScenarioNames({ A: COPQ_DEFAULTS.A.name, B: COPQ_DEFAULTS.B.name }); }}
+        onReset={() => { 
+          setScenarios(COPQ_DEFAULTS); setScenarioNames({ A: COPQ_DEFAULTS.A.name, B: COPQ_DEFAULTS.B.name }); }}
         copyData={reportText}
         saved={true}
       >
+        <button onClick={() => setShowExecDeck(true)} style={{
+          background: `${T.yellow}18`, border: `1px solid ${T.yellow}55`,
+          color: T.yellow, padding: "0.35rem 0.85rem", borderRadius: 4,
+          cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700,
+        }}>📊 Executive Deck</button>
         <ScenarioBadge label="Single View" color={T.cyan} active={viewMode === "single"} onClick={() => setViewMode("single")} />
         <ScenarioBadge label="⇄ Compare A vs B" color={T.yellow} active={viewMode === "compare"} onClick={() => setViewMode("compare")} />
       </ModuleToolbar>
