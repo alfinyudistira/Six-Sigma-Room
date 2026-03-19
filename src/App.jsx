@@ -866,7 +866,6 @@ function MetricCard({ label, before, after, target, unit = "", decimals = 1, inv
 // ─── NAVBAR ──────────────────────────────────────────────────────────────────
 function NavBar({ active, setActive }) {
   const tabs = [
-    { id: "ops",        label: "Live Ops",        icon: "⚡", highlight: true },
     { id: "overview",   label: "Mission Status",  icon: "◈" },
     { id: "sigma",      label: "Σ Calculator",    icon: "σ" },
     { id: "dmaic",      label: "DMAIC Tracker",   icon: "◎" },
@@ -877,6 +876,7 @@ function NavBar({ active, setActive }) {
     { id: "rootcause",  label: "Root Cause",      icon: "?" },
     { id: "triage",     label: "AI Triage",       icon: "▶", highlight: true },
     { id: "universal",  label: "Try Your Data",   icon: "⚡", highlight: true },
+    { id: "ops",        label: "Live Ops",        icon: "⚡", highlight: true },
   ];
   return (
     <nav style={{
@@ -5762,7 +5762,7 @@ function LiveOpsCenter() {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1100, margin: "0 auto" }}>
       <SectionHeader
-        module="Module 10 — Live Operations Center"
+        module="Module 11 — Live Operations Center"
         title="Team Operations Dashboard"
         sub={`Real-time visibility into ticket queue, technician performance, and SLA health for ${company?.name || "your team"}.`}
       />
