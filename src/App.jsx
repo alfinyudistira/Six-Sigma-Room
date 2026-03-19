@@ -652,7 +652,7 @@ function SmartTooltip({ id, children }) {
 }
 
 
-// ── Universal localStorage hook ──────────────────────────────────────────────
+// ── Universal localStorage hook ─────────────
 function useLocalState(key, initial) {
   const [val, setVal] = useState(() => {
     try {
@@ -660,14 +660,20 @@ function useLocalState(key, initial) {
       return stored !== null ? JSON.parse(stored) : initial;
     } catch { return initial; }
   });
+
   const set = useCallback((v) => {
-    setVal(v);
-    try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
+    setVal(prev => {
+      const newVal = typeof v === "function" ? v(prev) : v;
+      try { localStorage.setItem(key, JSON.stringify(newVal)); } catch {}
+      return newVal;
+    });
   }, [key]);
+
   const reset = useCallback(() => {
     setVal(initial);
     try { localStorage.removeItem(key); } catch {}
   }, [key, initial]);
+
   return [val, set, reset];
 }
 
@@ -5917,34 +5923,6 @@ function LiveOpsCenter() {
                   </div>
                 </div>
               ))}
-            </div>
-            {/* AI vs Rule breakdown */}
-            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem" }}>
-              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "1rem" }}>Classification Method</div>
-              {(() => {
-                const geminiCount = history.filter(h => h.method === "gemini-ai").length;
-                const ruleCount = history.filter(h => h.method === "rule-based").length;
-                const fbCount = history.filter(h => h.method === "rule-based-fallback").length;
-                const total = history.length || 1;
-                return [
-                  { label: "✦ Gemini AI", count: geminiCount, color: T.cyan },
-                  { label: "⚡ Rule-Based", count: ruleCount, color: T.green },
-                  { label: "↩ Fallback", count: fbCount, color: T.yellow },
-                ].map(m => (
-                  <div key={m.label} style={{ marginBottom: "0.85rem" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
-                      <span style={{ color: m.color, fontFamily: T.mono, fontSize: "0.7rem" }}>{m.label}</span>
-                      <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.68rem" }}>{m.count} ({Math.round(m.count/total*100)}%)</span>
-                    </div>
-                    <div style={{ height: 4, background: T.panel, borderRadius: 2, overflow: "hidden" }}>
-                      <div style={{ width: `${(m.count/total)*100}%`, height: "100%", background: m.color, borderRadius: 2 }} />
-                    </div>
-                  </div>
-                ));
-              })()}
-              <div style={{ marginTop: "1rem", padding: "0.65rem", background: T.panel, borderRadius: 6, color: T.textMid, fontFamily: T.mono, fontSize: "0.65rem", lineHeight: 1.5 }}>
-                💡 Lower Gemini % = more efficient. Rule-based handles simple tickets instantly with zero API cost.
-              </div>
             </div>
             {/* Urgency distribution */}
             <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem" }}>
