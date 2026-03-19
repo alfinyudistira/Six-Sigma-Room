@@ -874,7 +874,7 @@ function NavBar({ active, setActive }) {
     { id: "spc",        label: "SPC Charts",      icon: "~" },
     { id: "pareto",     label: "Pareto Builder",  icon: "∥" },
     { id: "rootcause",  label: "Root Cause",      icon: "?" },
-    { id: "triage",     label: "AI Triage",       icon: "▶", highlight: true },
+    { id: "triage",     label: "Smart Triage",       icon: "▶", highlight: true },
     { id: "universal",  label: "Try Your Data",   icon: "⚡", highlight: true },
     { id: "ops",        label: "Live Ops",        icon: "⚡", highlight: true },
   ];
@@ -5165,8 +5165,8 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
     const steps = complex
       ? [
           { label: "Tokenizing complaint...", pct: 15 },
-          { label: "Detecting complexity → routing to Gemini AI...", pct: 35 },
-          { label: "Gemini analyzing context & intent...", pct: 65 },
+          { label: "Detecting complexity → routing to semantic engine...", pct: 35 },
+          { label: "Engine analyzing context & intent...", pct: 65 },
           { label: "Matching skills matrix...", pct: 82 },
           { label: "Generating routing recommendation...", pct: 100 },
         ]
@@ -5259,14 +5259,14 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
   const EXAMPLE_LABELS = ["DB Crash","Login Issue","Printer","API Sync","Slow System"];
 
   const slaColor = (s) => s === "ON TRACK" ? T.green : s === "AT RISK" ? T.yellow : T.red;
-  const methodBadge = (m) => m === "gemini-ai" ? { label: "✦ Gemini AI", color: T.cyan } : m === "rule-based-fallback" ? { label: "⚡ Fallback", color: T.yellow } : { label: "⚡ Rule-Based", color: T.textMid };
+  const methodBadge = (m) => m === "gemini-ai" ? { label: "✦ Smart Analysis", color: T.cyan } : m === "rule-based-fallback" ? { label: "⚡ Fallback", color: T.yellow } : { label: "⚡ Rule-Based", color: T.textMid };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1000, margin: "0 auto" }}>
-      <SectionHeader
-        module="Module 09 — Hybrid AI · Rule-Based + Gemini"
-        title="AI Triage & Routing Simulator"
-        sub={`Simple complaints → instant rule-based. Complex/ambiguous → Gemini AI analysis. Assigned to ${company?.name || "your team"}'s technicians based on skills + workload.`}
+      <SectionHeader 
+        module="Module 09 — Smart Triage & Dispatch System" 
+        title="Dynamic Triage & Routing Simulator" 
+        sub={`Standard complaints → automated routing. Complex issues → advanced semantic analysis. Assigned to ${company?.name || "your team"}'s technicians based on skills + workload.`} 
       />
 
       {/* ── Top toolbar ── */}
@@ -5400,15 +5400,15 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
               [ COMPLAINT INPUT ]
             </div>
             <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
-              <div style={{ background: `${T.cyan}12`, border: `1px solid ${T.cyan}33`, borderRadius: 20, padding: "0.2rem 0.65rem", color: T.cyan, fontFamily: T.mono, fontSize: "0.58rem" }}>⚡ Simple → Rule-Based</div>
-              <div style={{ background: `${T.green}12`, border: `1px solid ${T.green}33`, borderRadius: 20, padding: "0.2rem 0.65rem", color: T.green, fontFamily: T.mono, fontSize: "0.58rem" }}>✦ Complex → Gemini AI</div>
+              <div style={{ background: `${T.cyan}12`, border: `1px solid ${T.cyan}33`, borderRadius: 20, padding: "0.2rem 0.65rem", color: T.cyan, fontFamily: T.mono, fontSize: "0.58rem" }}>✦ Analysis</div>
+              <div style={{ background: `${T.green}12`, border: `1px solid ${T.green}33`, borderRadius: 20, padding: "0.2rem 0.65rem", color: T.green, fontFamily: T.mono, fontSize: "0.58rem" }}>✦ Deep Analysis</div>
             </div>
           </div>
           <textarea
             value={input}
             onChange={e => setInput(e.target.value)}
             disabled={phase === "analyzing"}
-            placeholder="Describe a support issue... Simple = instant. Complex/ambiguous = Gemini AI analysis."
+            placeholder="Describe a support issue... Simple = instant. Complex/ambiguous = Deep context analysis."
             style={{ width: "100%", minHeight: 100, background: T.panel, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "0.85rem 1rem", fontFamily: T.mono, fontSize: "0.85rem", lineHeight: 1.6, resize: "vertical", boxSizing: "border-box" }}
           />
           <div style={{ marginTop: "0.75rem", marginBottom: "1rem" }}>
@@ -5425,7 +5425,7 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
           </div>
           {input.trim() && phase === "idle" && (
             <div style={{ marginBottom: "0.75rem", padding: "0.4rem 0.75rem", background: T.panel, borderRadius: 6, color: T.textMid, fontFamily: T.mono, fontSize: "0.65rem", borderLeft: `3px solid ${isComplexComplaint(input) ? T.green : T.cyan}` }}>
-              {isComplexComplaint(input) ? "✦ Complex detected → Will use Gemini AI" : "⚡ Simple complaint → Rule-based (instant)"}
+              {isComplexComplaint(input) ? "✦ Complex detected → Deep context analysis" : "⚡ Simple complaint → Instant standard routing"}
             </div>
           )}
           <button onClick={phase === "result" ? reset : analyze} disabled={phase === "analyzing" || (!input.trim() && phase === "idle")} style={{
@@ -6308,7 +6308,7 @@ function Hero({ onEnter }) {
         {/* Live Demo badges */}
         <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap", marginBottom: "2rem" }}>
           {[
-            { icon: "▶", label: "AI Triage Simulator", sub: "Type any complaint → watch AI route it live" },
+            { icon: "▶", label: "Dynamic Triage Simulator", sub: "Type any complaint → watch the system route it live" },
             { icon: "⚡", label: "Try Your Data", sub: "Enter your company numbers → get COPQ instantly" },
           ].map(f => (
             <div key={f.label} style={{ background: `${T.green}10`, border: `1px solid ${T.green}44`, borderRadius: 8, padding: "0.75rem 1.25rem", textAlign: "center" }}>
