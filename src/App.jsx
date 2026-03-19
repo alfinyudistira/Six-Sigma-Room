@@ -5829,7 +5829,7 @@ function LiveOpsCenter() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           {history.length === 0 ? (
             <div style={{ textAlign: "center", padding: "3rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.75rem" }}>
-              No tickets yet — submit complaints in the AI Triage module to populate the queue.
+              No tickets yet — submit complaints in the Smart Triage module to populate the queue.
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
