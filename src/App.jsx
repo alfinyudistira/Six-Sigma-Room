@@ -74,6 +74,7 @@ const COMPANY_DEFAULTS = {
   laborRate: 45,
   monthlyVolume: 295,
   customerLTV: 3200,
+  slaTarget: 48,
   isPulseDigital: true,
 };
 
@@ -87,7 +88,7 @@ const INDUSTRY_OPTIONS = [
 function CompanySetup({ company, onChange, onClose, isOpen }) {
   const [draft, setDraft] = useState({ ...company });
   const [validationErrors, setValidationErrors] = useState([]);
-  const numKeys = ["teamSize","baselineMean","baselineStdDev","target","usl","lsl","laborRate","monthlyVolume","customerLTV"];
+  const numKeys = ["teamSize","baselineMean","baselineStdDev","target","usl","lsl","laborRate","monthlyVolume","customerLTV","slaTarget"];
   const [strVals, setStrVals] = useState(() =>
     Object.fromEntries(numKeys.map(k => [k, String(company[k] ?? "")]))
   );
@@ -305,6 +306,7 @@ function CompanySetup({ company, onChange, onClose, isOpen }) {
                   { label: "Staff Hourly Cost", key: "laborRate", ph: "45", step: "1", unit: "/hr" },
                   { label: "Monthly Process Volume", key: "monthlyVolume", ph: "295", step: "10", unit: "units" },
                   { label: "Customer / Contract Value", key: "customerLTV", ph: "3200", step: "100", unit: "" },
+                  { label: "SLA Target (hrs)", key: "slaTarget", ph: "48", step: "1", unit: "hrs" },
                 ].map(f => (
                   <div key={f.key}>
                     <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>
@@ -5411,7 +5413,7 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
               <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.12em", textTransform: "uppercase" }}>
                 [ TEAM CONFIGURATION — {company?.name || "Your Company"} ]
               </div>
-              <button onClick={() => setTechnicians(DEFAULT_TECHNICIANS)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>↺ Reset to Demo</button>
+              <button onClick={() => setTechnicians(getDefaultTechnicians(company?.industry || "IT / Tech Support"))} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>↺ Reset to Demo</button>
             </div>
             {/* Existing technicians */}
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem" }}>
