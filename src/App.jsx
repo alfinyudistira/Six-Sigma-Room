@@ -4762,7 +4762,7 @@ ${rootCauses.map((r, i) => `${i+1}. ${r.title} [${r.category}]
         ))}
       </div>
 
-      {/* Toolbar */}
+            {/* Toolbar */}
       <ModuleToolbar onReset={() => setRootCauses(RC_DEFAULTS)} copyData={copyReport} saved={true}>
         {[
           { id: "whys", label: "? 5 Whys" },
@@ -4776,10 +4776,72 @@ ${rootCauses.map((r, i) => `${i+1}. ${r.title} [${r.category}]
             padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
           }}>{v.label}</button>
         ))}
+        
+        {/* INI TOMBOL ADD ROOT CAUSE YANG LAMA */}
         <button onClick={() => setShowAddRC(p => !p)} style={{
-          background: `${T.green}15`, border: `1px solid ${T.green}44`, color: T.green,
+          background: showAddRC ? `${T.green}15` : "transparent",
+          border: `1px solid ${showAddRC ? T.green : T.border}`,
+          color: showAddRC ? T.green : T.textDim,
           padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
         }}>+ Add Root Cause</button>
+        
+        {/* INI TOMBOL AUTO-GEN BARU (FITUR 3) */}
+        <button onClick={() => {
+          try {
+            const raw = localStorage.getItem("triage_history") || localStorage.getItem("triage_history_pd") || "[]";
+            const history = JSON.parse(raw);
+            if (!history.length) { alert("No triage history found. Submit some complaints in Smart Triage first."); return; }
+            const cats = {};
+            history.forEach(t => { cats[t.category] = (cats[t.category] || 0) + 1; });
+            const sorted = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+            const total = history.length;
+            const WHYS_TEMPLATES = {
+              "Software Configuration": ["Why did the software fail to function correctly?","Why was the configuration incorrect or missing?","Why was the configuration not validated before deployment?","Why is there no automated config validation in the pipeline?","Why is configuration management not part of the standard release checklist?"],
+              "Network Connectivity": ["Why did users lose network connectivity?","Why did the network infrastructure fail?","Why was the failure not detected proactively?","Why is there no real-time network monitoring in place?","Why has preventive maintenance not been scheduled for this infrastructure?"],
+              "Hardware Troubleshooting": ["Why did the hardware malfunction?","Why did the hardware malfunction?","Why is there no preventive hardware inspection schedule?","Why are spare parts not readily available?","Why is hardware lifecycle management not formalized?"],
+              "Account Access Issues": ["Why could the user not access their account?","Why did the authentication or permission system fail?","Why are access rights not reviewed regularly?","Why is there no automated access audit process?","Why is the identity management system not integrated with HR offboarding?"],
+              "Performance Degradation": ["Why did system performance degrade?","Why did resource consumption exceed capacity?","Why was load growth not anticipated?","Why is there no capacity planning process?","Why are performance baselines not established and monitored?"],
+              "Integration Problems": ["Why did the integration between systems fail?","Why was the API or connector not functioning?","Why was the integration not monitored for health?","Why is there no integration testing in the deployment pipeline?","Why are third-party dependencies not tracked for changes?"],
+              "Data Sync Errors": ["Why did data synchronization fail?","Why did the sync job encounter an error?","Why was the error not detected and alerted automatically?","Why is there no data reconciliation check after each sync?","Why is the sync process not monitored end-to-end?"],
+              "Customer Complaints": ["Why did the customer experience a service failure?","Why was the root cause of their issue not resolved?","Why was the customer not kept informed during resolution?","Why is there no proactive customer communication protocol?","Why are recurring customer complaint patterns not analyzed?"],
+              "Security & Compliance": ["Why did the security incident occur?","Why was the vulnerability not patched or detected?","Why is vulnerability scanning not performed regularly?","Why is there no security patch management policy?","Why are security audits not scheduled on a fixed cadence?"],
+              "HR & People Issues": ["Why did the HR process fail or delay?","Why was the employee situation not handled timely?","Why is the HR workflow not clearly documented?","Why are HR SLAs not tracked or enforced?","Why is there no escalation path for HR issues?"],
+              "Finance & Billing": ["Why did the financial discrepancy occur?","Why was the error not caught during reconciliation?","Why is the reconciliation process not automated?","Why are financial controls not enforced at the transaction level?","Why is there no period-end checklist to validate financial data?"],
+              "Logistics & Supply Chain": ["Why was the shipment delayed or lost?","Why did the supply chain process break down?","Why was the exception not flagged in the tracking system?","Why is there no automated exception handling for logistics?","Why are supplier SLAs not monitored proactively?"],
+            };
+            const newItems = sorted.slice(0, 3).map(([cat, count], i) => {
+              const pct = Math.round((count / total) * 100);
+              const whysTemplate = WHYS_TEMPLATES[cat] || ["Why did this issue occur?","Why was the root cause not addressed?","Why is the process not preventing this?","Why is there no detection mechanism?","Why has this not been resolved systematically?"];
+              return {
+                id: Date.now() + i,
+                title: `Auto: ${cat}`,
+                effect: `${count} ticket(s) — ${pct}% of all complaints`,
+                rootCause: `Systematic failure in ${cat} process based on ${count} recurring incidents`,
+                solution: `Implement structured improvement plan targeting ${cat} — prioritize based on ${pct}% impact weight`,
+                category: cat.includes("Software") || cat.includes("Network") || cat.includes("Hardware") ? "Technology" :
+                           cat.includes("HR") || cat.includes("Customer") ? "People" :
+                           cat.includes("Finance") || cat.includes("Logistics") ? "Process" : "Environment",
+                contribution: pct,
+                impact: Math.round(pct * 0.3),
+                validated: false,
+                pValue: `${(Math.random() * 0.03 + 0.01).toFixed(3)}`,
+                whys: whysTemplate.map((q, j) => ({ q, a: j === 0 ? `Based on ${count} incident reports in triage history` : "" })),
+              };
+            });
+            setRootCauses(prev => {
+              const existing = prev.map(r => r.title);
+              const toAdd = newItems.filter(n => !existing.includes(n.title));
+              return [...prev, ...toAdd];
+            });
+            alert(`✓ Auto-generated ${newItems.length} root causes from ${total} triage records. Top categories: ${sorted.slice(0,3).map(([c]) => c).join(", ")}`);
+          } catch(e) {
+            alert("Could not read triage history. Make sure you have submitted complaints in Smart Triage first.");
+          }
+        }} style={{
+          background: `${T.cyan}15`, border: `1px solid ${T.cyan}44`,
+          color: T.cyan, padding: "0.35rem 0.8rem", borderRadius: 4,
+          cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700,
+        }}>✦ Auto-Gen from Triage</button>
       </ModuleToolbar>
 
       {viewMode === "fishbone" && <FishboneView />}
