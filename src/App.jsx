@@ -1697,7 +1697,117 @@ ${compareMode ? `Comparison (Baseline):
 
       {/* History panel */}
       <AnimatePresence>
-        {showHistory && (
+        {/* ── TRAJECTORY FORECASTER ── */}
+      <div style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 8, padding: "1.5rem", marginBottom: "1.5rem" }}>
+        <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.62rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.cyan, display: "inline-block" }} />
+          Improvement Trajectory Forecaster
+        </div>
+        {(() => {
+          const currentDpmo = res.dpmo || 1;
+          const currentSigma = res.sigma || 0;
+          const INDUSTRY_BENCHMARKS = {
+            "IT / Tech Support": { sigma: 4.2, label: "IT Industry Avg" },
+            "Manufacturing": { sigma: 4.5, label: "Manufacturing Avg" },
+            "Healthcare": { sigma: 4.8, label: "Healthcare Avg" },
+            "Financial Services": { sigma: 4.6, label: "Financial Avg" },
+            "Retail / E-Commerce": { sigma: 3.8, label: "Retail Avg" },
+            "Logistics & Supply Chain": { sigma: 3.9, label: "Logistics Avg" },
+            "Customer Service": { sigma: 3.7, label: "Customer Svc Avg" },
+            "HR / People Ops": { sigma: 3.5, label: "HR Avg" },
+          };
+          const company = null;
+          const benchmark = INDUSTRY_BENCHMARKS["IT / Tech Support"];
+          const milestones = [3, 3.5, 4, 4.5, 5, 5.5, 6];
+          const dpmoFromSigma = (s) => {
+            const z = s - 1.5;
+            const p = 0.5 * (1 + Math.sign(z) * (1 - Math.exp(-0.147 * z * z - 0.118 * Math.abs(z) - 0.271)));
+            return Math.round((1 - p) * 1e6);
+          };
+          const monthsToSigma = (targetSigma, improvementPctPerMonth = 15) => {
+            if (currentSigma >= targetSigma) return 0;
+            let dpmo = currentDpmo;
+            let months = 0;
+            while (dpmo > dpmoFromSigma(targetSigma) && months < 120) {
+              dpmo = dpmo * (1 - improvementPctPerMonth / 100);
+              months++;
+            }
+            return months;
+          };
+          const trajectoryData = milestones.map(s => ({
+            sigma: s,
+            months: monthsToSigma(s),
+            dpmo: dpmoFromSigma(s),
+            reachable: monthsToSigma(s) <= 60,
+          })).filter(m => m.sigma > currentSigma);
+
+          const nextMilestone = trajectoryData[0];
+          const benchmarkGap = (benchmark.sigma - currentSigma).toFixed(2);
+
+          return (
+            <div>
+              {/* Benchmark comparison */}
+              <div style={{ display: "flex", gap: "1rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+                <div style={{ flex: 1, background: `${T.yellow}0A`, border: `1px solid ${T.yellow}22`, borderRadius: 6, padding: "0.85rem", minWidth: 140 }}>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>Your Process</div>
+                  <div style={{ color: T.yellow, fontFamily: T.display, fontSize: "1.6rem", fontWeight: 800 }}>{currentSigma.toFixed(2)}σ</div>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>{currentDpmo.toLocaleString()} DPMO</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", color: T.textDim, fontFamily: T.mono, fontSize: "1.2rem" }}>→</div>
+                <div style={{ flex: 1, background: `${T.cyan}0A`, border: `1px solid ${T.cyan}22`, borderRadius: 6, padding: "0.85rem", minWidth: 140 }}>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>{benchmark.label}</div>
+                  <div style={{ color: T.cyan, fontFamily: T.display, fontSize: "1.6rem", fontWeight: 800 }}>{benchmark.sigma}σ</div>
+                  <div style={{ color: parseFloat(benchmarkGap) > 0 ? T.red : T.green, fontFamily: T.mono, fontSize: "0.58rem" }}>
+                    {parseFloat(benchmarkGap) > 0 ? `▼ ${benchmarkGap}σ gap` : `▲ ${Math.abs(parseFloat(benchmarkGap))}σ above avg`}
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", color: T.textDim, fontFamily: T.mono, fontSize: "1.2rem" }}>→</div>
+                <div style={{ flex: 1, background: `${T.green}0A`, border: `1px solid ${T.green}22`, borderRadius: 6, padding: "0.85rem", minWidth: 140 }}>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>World Class</div>
+                  <div style={{ color: T.green, fontFamily: T.display, fontSize: "1.6rem", fontWeight: 800 }}>6.0σ</div>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>3.4 DPMO</div>
+                </div>
+              </div>
+
+              {/* Next milestone callout */}
+              {nextMilestone && (
+                <div style={{ background: `${T.green}0A`, border: `1px solid ${T.green}33`, borderRadius: 6, padding: "0.75rem 1rem", marginBottom: "1rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+                  <div>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase" }}>Next Milestone</div>
+                    <div style={{ color: T.green, fontFamily: T.mono, fontSize: "1rem", fontWeight: 700 }}>{nextMilestone.sigma}σ — {nextMilestone.dpmo.toLocaleString()} DPMO</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase" }}>Est. Time @ 15%/mo improvement</div>
+                    <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "1rem", fontWeight: 700 }}>{nextMilestone.months} months</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Milestone timeline */}
+              <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                {trajectoryData.map((m, i) => (
+                  <div key={m.sigma} style={{
+                    flex: "1 1 100px", background: m.reachable ? `${T.cyan}0A` : `${T.textDim}08`,
+                    border: `1px solid ${m.reachable ? T.cyan + "33" : T.border}`,
+                    borderRadius: 6, padding: "0.6rem 0.75rem", textAlign: "center",
+                  }}>
+                    <div style={{ color: m.reachable ? T.cyan : T.textDim, fontFamily: T.mono, fontSize: "0.9rem", fontWeight: 700 }}>{m.sigma}σ</div>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", marginTop: "0.15rem" }}>
+                      {m.months === 0 ? "✓ Reached" : m.reachable ? `~${m.months}mo` : ">60mo"}
+                    </div>
+                    <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.5rem" }}>{m.dpmo.toLocaleString()} DPMO</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", marginTop: "0.6rem" }}>
+                * Projection assumes 15% DPMO reduction per month via sustained DMAIC effort
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+
+      {showHistory && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
             <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", marginTop: "1.5rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.85rem", alignItems: "center" }}>
