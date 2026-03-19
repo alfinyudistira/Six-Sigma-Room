@@ -5927,7 +5927,10 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
 
 function LiveOpsCenter() {
   const company = useCompany();
-  const { fmt: fmtCur, s: currSym } = useCurrencyFmt();
+  const { fmt: fmtCur } = useCurrencyFmt();
+  const [warRoomMode, setWarRoomMode] = useState(false);
+  const [showShiftReport, setShowShiftReport] = useState(false);
+  const [shiftReport, setShiftReport] = useState("");
 
   // ── Pull data from every module via shared localStorage ──────────────────
   const [overviewData]    = useLocalState("overview_data",    OVERVIEW_DEFAULTS);
@@ -6382,8 +6385,6 @@ function LiveOpsCenter() {
         </Panel>
 
       </div>{/* end row 2 */}
-
-      {/* ══ ROW 3: OPS FLOOR — TRIAGE + TEAM LOAD ════════════════════════════ */}
 
       {/* ══ ROW 3: OPS FLOOR (FULL FEATURE — Queue / Scorecard / Insights) ══ */}
       {(() => {
