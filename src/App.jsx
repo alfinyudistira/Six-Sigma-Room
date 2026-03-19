@@ -24,7 +24,7 @@ class ErrorBoundary extends React.Component {
           <div style={{ color: "#7A99B8", fontFamily: "monospace", fontSize: "0.8rem", maxWidth: 500, textAlign: "center" }}>
             {this.state.error?.message || "Unknown error"}
           </div>
-          <<button onClick={() => {
+          <button onClick={() => {
             try {
               const keys = Object.keys(localStorage).filter(k =>
                 k.startsWith("ss_") || k.startsWith("sigma_") || k.startsWith("dmaic_") ||
