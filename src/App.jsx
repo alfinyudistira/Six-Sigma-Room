@@ -4977,7 +4977,7 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
       const res = await fetch("/api/claude", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ messages: [{ content: prompt }] }),
       });
       const data = await res.json();
       const raw = data?.content?.[0]?.text || "";
