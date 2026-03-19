@@ -323,7 +323,7 @@ function CompanySetup({ company, onChange, onClose, isOpen }) {
               const ppkScore = Math.min(ppk / 1.67 * 35, 35);
               const gap = draft.baselineMean > 0 ? Math.max(0, 1 - Math.abs(draft.baselineMean - draft.target) / draft.baselineMean) * 35 : 0;
               const teamScore = Math.min(draft.teamSize / 50 * 15, 15);
-              const volScore = draft.monthlyVolume > 0 ? Math.min(15, 15) : 0;
+              const volScore = draft.monthlyVolume > 0 ? Math.min(draft.monthlyVolume / 300 * 15, 15) : 0;
               const health = Math.round(ppkScore + gap + teamScore + volScore);
               const hColor = health >= 80 ? T.green : health >= 55 ? T.yellow : health >= 35 ? T.orange : T.red;
               const hLabel = health >= 80 ? "EXCELLENT" : health >= 55 ? "MODERATE" : health >= 35 ? "AT RISK" : "CRITICAL";
@@ -4976,13 +4976,70 @@ const RULE_BASED_RESPONSES = {
   },
 };
 
-const DEFAULT_TECHNICIANS = [
-  { name: "Technician A", level: "Senior (5+ yr)", skills: ["Software Configuration","Network Connectivity","Integration Problems"], load: 18, maxLoad: 30, color: T.green },
-  { name: "Technician B", level: "Mid (3-5 yr)", skills: ["Hardware Troubleshooting","Account Access Issues","Performance Degradation"], load: 22, maxLoad: 30, color: T.cyan },
-  { name: "Technician C", level: "Mid (3-5 yr)", skills: ["Data Sync Errors","Software Configuration","Network Connectivity"], load: 25, maxLoad: 30, color: T.yellow },
-  { name: "Technician D", level: "Junior (1-2 yr)", skills: ["Account Access Issues","Hardware Troubleshooting"], load: 28, maxLoad: 30, color: T.orange },
-  { name: "Technician E", level: "Senior (5+ yr)", skills: ["Integration Problems","Performance Degradation","Software Configuration"], load: 12, maxLoad: 30, color: T.green },
-];
+const INDUSTRY_TECHNICIANS = {
+  "IT / Tech Support": [
+    { name: "Technician A", level: "Senior (5+ yr)", skills: ["Software Configuration","Network Connectivity","Integration Problems"], load: 18, maxLoad: 30, color: T.green },
+    { name: "Technician B", level: "Mid (3-5 yr)", skills: ["Hardware Troubleshooting","Account Access Issues","Performance Degradation"], load: 22, maxLoad: 30, color: T.cyan },
+    { name: "Technician C", level: "Mid (3-5 yr)", skills: ["Data Sync Errors","Software Configuration","Network Connectivity"], load: 25, maxLoad: 30, color: T.yellow },
+    { name: "Technician D", level: "Junior (1-2 yr)", skills: ["Account Access Issues","Hardware Troubleshooting"], load: 28, maxLoad: 30, color: T.orange },
+    { name: "Technician E", level: "Senior (5+ yr)", skills: ["Integration Problems","Performance Degradation","Software Configuration"], load: 12, maxLoad: 30, color: T.green },
+  ],
+  "Manufacturing": [
+    { name: "Technician A", level: "Senior (5+ yr)", skills: ["Hardware Troubleshooting","Performance Degradation","Data Sync Errors"], load: 15, maxLoad: 30, color: T.green },
+    { name: "Technician B", level: "Mid (3-5 yr)", skills: ["Logistics & Supply Chain","Hardware Troubleshooting"], load: 20, maxLoad: 30, color: T.cyan },
+    { name: "Technician C", level: "Mid (3-5 yr)", skills: ["Data Sync Errors","Integration Problems"], load: 22, maxLoad: 30, color: T.yellow },
+    { name: "Technician D", level: "Junior (1-2 yr)", skills: ["Physical Security & Facilities","Hardware Troubleshooting"], load: 18, maxLoad: 30, color: T.orange },
+    { name: "Technician E", level: "Senior (5+ yr)", skills: ["Performance Degradation","Software Configuration","Data Analytics & Reporting"], load: 10, maxLoad: 30, color: T.green },
+  ],
+  "Healthcare": [
+    { name: "Technician A", level: "Senior (5+ yr)", skills: ["Software Configuration","Data Sync Errors","Security & Compliance"], load: 16, maxLoad: 30, color: T.green },
+    { name: "Technician B", level: "Mid (3-5 yr)", skills: ["Account Access Issues","HR & People Issues"], load: 20, maxLoad: 30, color: T.cyan },
+    { name: "Technician C", level: "Mid (3-5 yr)", skills: ["Data Analytics & Reporting","Integration Problems"], load: 24, maxLoad: 30, color: T.yellow },
+    { name: "Technician D", level: "Junior (1-2 yr)", skills: ["Account Access Issues","Software Configuration"], load: 26, maxLoad: 30, color: T.orange },
+    { name: "Technician E", level: "Senior (5+ yr)", skills: ["Security & Compliance","Data Sync Errors","Network Connectivity"], load: 14, maxLoad: 30, color: T.green },
+  ],
+  "Financial Services": [
+    { name: "Technician A", level: "Senior (5+ yr)", skills: ["Finance & Billing","Security & Compliance","Data Sync Errors"], load: 14, maxLoad: 30, color: T.green },
+    { name: "Technician B", level: "Mid (3-5 yr)", skills: ["Integration Problems","Finance & Billing"], load: 20, maxLoad: 30, color: T.cyan },
+    { name: "Technician C", level: "Mid (3-5 yr)", skills: ["Data Analytics & Reporting","Data Sync Errors"], load: 22, maxLoad: 30, color: T.yellow },
+    { name: "Technician D", level: "Junior (1-2 yr)", skills: ["Account Access Issues","Software Configuration"], load: 25, maxLoad: 30, color: T.orange },
+    { name: "Technician E", level: "Senior (5+ yr)", skills: ["Security & Compliance","Integration Problems","Finance & Billing"], load: 11, maxLoad: 30, color: T.green },
+  ],
+  "HR / People Ops": [
+    { name: "Technician A", level: "Senior (5+ yr)", skills: ["HR & People Issues","Finance & Billing","Software Configuration"], load: 12, maxLoad: 30, color: T.green },
+    { name: "Technician B", level: "Mid (3-5 yr)", skills: ["HR & People Issues","Account Access Issues"], load: 18, maxLoad: 30, color: T.cyan },
+    { name: "Technician C", level: "Mid (3-5 yr)", skills: ["Data Analytics & Reporting","Software Configuration"], load: 20, maxLoad: 30, color: T.yellow },
+    { name: "Technician D", level: "Junior (1-2 yr)", skills: ["Account Access Issues","HR & People Issues"], load: 22, maxLoad: 30, color: T.orange },
+    { name: "Technician E", level: "Senior (5+ yr)", skills: ["Finance & Billing","Integration Problems","HR & People Issues"], load: 10, maxLoad: 30, color: T.green },
+  ],
+  "Retail / E-Commerce": [
+    { name: "Technician A", level: "Senior (5+ yr)", skills: ["Customer Complaints","Logistics & Supply Chain","Integration Problems"], load: 20, maxLoad: 30, color: T.green },
+    { name: "Technician B", level: "Mid (3-5 yr)", skills: ["Finance & Billing","Customer Complaints"], load: 24, maxLoad: 30, color: T.cyan },
+    { name: "Technician C", level: "Mid (3-5 yr)", skills: ["Logistics & Supply Chain","Data Sync Errors"], load: 22, maxLoad: 30, color: T.yellow },
+    { name: "Technician D", level: "Junior (1-2 yr)", skills: ["Customer Complaints","Account Access Issues"], load: 27, maxLoad: 30, color: T.orange },
+    { name: "Technician E", level: "Senior (5+ yr)", skills: ["Integration Problems","Performance Degradation","Customer Complaints"], load: 15, maxLoad: 30, color: T.green },
+  ],
+  "Logistics & Supply Chain": [
+    { name: "Technician A", level: "Senior (5+ yr)", skills: ["Logistics & Supply Chain","Integration Problems","Data Sync Errors"], load: 17, maxLoad: 30, color: T.green },
+    { name: "Technician B", level: "Mid (3-5 yr)", skills: ["Logistics & Supply Chain","Hardware Troubleshooting"], load: 21, maxLoad: 30, color: T.cyan },
+    { name: "Technician C", level: "Mid (3-5 yr)", skills: ["Data Analytics & Reporting","Data Sync Errors"], load: 23, maxLoad: 30, color: T.yellow },
+    { name: "Technician D", level: "Junior (1-2 yr)", skills: ["Customer Complaints","Logistics & Supply Chain"], load: 26, maxLoad: 30, color: T.orange },
+    { name: "Technician E", level: "Senior (5+ yr)", skills: ["Integration Problems","Performance Degradation","Logistics & Supply Chain"], load: 13, maxLoad: 30, color: T.green },
+  ],
+  "Customer Service": [
+    { name: "Technician A", level: "Senior (5+ yr)", skills: ["Customer Complaints","Account Access Issues","Integration Problems"], load: 19, maxLoad: 30, color: T.green },
+    { name: "Technician B", level: "Mid (3-5 yr)", skills: ["Customer Complaints","Performance Degradation"], load: 23, maxLoad: 30, color: T.cyan },
+    { name: "Technician C", level: "Mid (3-5 yr)", skills: ["Software Configuration","Account Access Issues"], load: 21, maxLoad: 30, color: T.yellow },
+    { name: "Technician D", level: "Junior (1-2 yr)", skills: ["Customer Complaints","Account Access Issues"], load: 27, maxLoad: 30, color: T.orange },
+    { name: "Technician E", level: "Senior (5+ yr)", skills: ["Integration Problems","Data Analytics & Reporting","Customer Complaints"], load: 14, maxLoad: 30, color: T.green },
+  ],
+};
+
+const DEFAULT_TECHNICIANS = INDUSTRY_TECHNICIANS["IT / Tech Support"];
+
+const getDefaultTechnicians = (industry) =>
+  INDUSTRY_TECHNICIANS[industry] || INDUSTRY_TECHNICIANS["IT / Tech Support"];
+
 const SKILL_OPTIONS = ["Software Configuration","Network Connectivity","Hardware Troubleshooting","Account Access Issues","Integration Problems","Performance Degradation","Data Sync Errors", "HR & People Issues",
   "Finance & Billing",
   "Logistics & Supply Chain",
@@ -5009,9 +5066,10 @@ function AITriageSimulator() {
   const [history, setHistory] = useLocalState("triage_history", []);
   const [showHistory, setShowHistory] = useState(false);
   const [showTeamEditor, setShowTeamEditor] = useState(false);
+  const industry = company?.industry || "IT / Tech Support";
   const [technicians, setTechnicians] = useLocalState(
     isPD ? "triage_team_pd" : `triage_team_${company?.name || "custom"}`,
-    DEFAULT_TECHNICIANS
+    getDefaultTechnicians(industry)
   );
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkResults, setBulkResults] = useState([]);
@@ -5175,8 +5233,23 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
   };
 
   const estimateResolution = (category, tech) => {
-    const baseMap = { "Software Configuration": 89, "Network Connectivity": 78, "Hardware Troubleshooting": 52, "Account Access Issues": 64, "Integration Problems": 83, "Performance Degradation": 71, "Data Sync Errors": 68 };
-    const base = baseMap[category] || 72;
+    const baseMap = {
+      "Software Configuration": 89,
+      "Network Connectivity": 78,
+      "Hardware Troubleshooting": 52,
+      "Account Access Issues": 64,
+      "Integration Problems": 83,
+      "Performance Degradation": 71,
+      "Data Sync Errors": 68,
+      "HR & People Issues": 24,
+      "Finance & Billing": 36,
+      "Logistics & Supply Chain": 48,
+      "Customer Complaints": 12,
+      "Security & Compliance": 96,
+      "Physical Security & Facilities": 4,
+      "Data Analytics & Reporting": 32,
+    };
+    const base = baseMap[category] || 48;
     const expFactor = tech.level.includes("Senior") ? 0.58 : tech.level.includes("Mid") ? 0.82 : 1.0;
     const loadFactor = 1 + (tech.load / tech.maxLoad) * 0.15;
     return Math.round(base * expFactor * loadFactor);
@@ -5216,7 +5289,8 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
 
     const { tech, overloaded, allOverloaded } = routeToTechnician(classification.category);
     const estHrs = estimateResolution(classification.category, tech);
-    const sla = estHrs <= 48 ? "ON TRACK" : estHrs <= 72 ? "AT RISK" : "BREACH";
+    const slaTarget = company?.slaTarget || 48;
+    const sla = estHrs <= slaTarget ? "ON TRACK" : estHrs <= slaTarget * 1.5 ? "AT RISK" : "BREACH";
     const needsManualReview = classification.confidence < 75;
 
     const r = {
@@ -5227,6 +5301,10 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
     setResult(r);
     setPhase("result");
     setHistory(prev => [r, ...prev].slice(0, 20));
+    // Update technician load setelah routing
+    setTechnicians(prev => prev.map(t =>
+      t.name === tech.name ? { ...t, load: Math.min(t.load + 1, t.maxLoad) } : t
+    ));
   };
 
   // ── Bulk analyze ──
@@ -5244,7 +5322,7 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
       const estHrs = estimateResolution(classification.category, tech);
       results.push({
         input: text, ...classification, technician: tech,
-        estimatedHrs: estHrs, sla: estHrs <= 48 ? "ON TRACK" : estHrs <= 72 ? "AT RISK" : "BREACH",
+        estimatedHrs: estHrs, sla: estHrs <= (company?.slaTarget || 48) ? "ON TRACK" : estHrs <= (company?.slaTarget || 48) * 1.5 ? "AT RISK" : "BREACH",
         overloaded, needsManualReview: classification.confidence < 75,
         id: Date.now() + i,
       });
@@ -5253,8 +5331,16 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
     }
     setBulkPhase("done");
     setHistory(prev => [...results, ...prev].slice(0, 20));
+    // Update load semua technician yang kena routing dari bulk
+    const loadDelta = {};
+    results.forEach(r => {
+      const name = r.technician?.name;
+      if (name) loadDelta[name] = (loadDelta[name] || 0) + 1;
+    });
+    setTechnicians(prev => prev.map(t =>
+      loadDelta[t.name] ? { ...t, load: Math.min(t.load + loadDelta[t.name], t.maxLoad) } : t
+    ));
   };
-
   const reset = () => { setPhase("idle"); setInput(""); setResult(null); setProgress(0); setProgressLabel(""); };
 
   const exportReport = (r) => {
@@ -6968,9 +7054,10 @@ export default function App() {
   useEffect(() => {
     const handler = (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
-      const tabs = ["overview","sigma","dmaic","fmea","copq","spc","pareto","rootcause","triage","universal"];
+      const tabs = ["overview","sigma","dmaic","fmea","copq","spc","pareto","rootcause","triage","universal","ops"];
       if (e.key >= "1" && e.key <= "9") setActiveTab(tabs[parseInt(e.key) - 1]);
       if (e.key === "0") setActiveTab("universal");
+      if (e.key === "-") setActiveTab("ops");
       if (e.key === "Escape") {
         if (showCompanySetup) setShowCompanySetup(false);
         else setShowApp(false);
@@ -7044,7 +7131,7 @@ export default function App() {
 
         {/* Keyboard hints */}
         <div style={{ background: "#030709", borderTop: `1px solid ${T.border}`, padding: "0.3rem 1.5rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-          {[["1-9","Switch modules"],["ESC","Back / Exit"],["Click badge","Switch company"]].map(s => (
+          {[["1-9","Switch modules"],["- (minus)","Live Ops"],["ESC","Back / Exit"],["Click badge","Switch company"]].map(s => (
             <span key={s[0]} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
               <span style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 2, padding: "0.05rem 0.3rem", color: T.textMid, marginRight: "0.3rem" }}>{s[0]}</span>
               {s[1]}
