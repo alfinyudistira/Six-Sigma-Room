@@ -24,9 +24,19 @@ class ErrorBoundary extends React.Component {
           <div style={{ color: "#7A99B8", fontFamily: "monospace", fontSize: "0.8rem", maxWidth: 500, textAlign: "center" }}>
             {this.state.error?.message || "Unknown error"}
           </div>
-          <button onClick={() => this.setState({ hasError: false, error: null })}
+          <<button onClick={() => {
+            try {
+              const keys = Object.keys(localStorage).filter(k =>
+                k.startsWith("ss_") || k.startsWith("sigma_") || k.startsWith("dmaic_") ||
+                k.startsWith("fmea_") || k.startsWith("copq_") || k.startsWith("spc_") ||
+                k.startsWith("pareto_") || k.startsWith("rc_") || k.startsWith("triage_")
+              );
+              keys.forEach(k => localStorage.removeItem(k));
+            } catch {}
+            this.setState({ hasError: false, error: null });
+          }}
             style={{ background: "transparent", border: "1px solid #00D4FF", color: "#00D4FF", padding: "0.5rem 1.5rem", fontFamily: "monospace", cursor: "pointer", borderRadius: 4 }}>
-            ↺ Retry
+            ↺ Retry (Clear Module State)
           </button>
         </div>
       );
@@ -1466,9 +1476,9 @@ ${compareMode ? `Comparison (Baseline):
             if (p.mode === "dpmo") { setDefects(p.dpmo); setOpportunities(1000000); }
             if (p.mode === "ppk" && p.mean) { setMean(p.mean); setStdDev(p.std); setUsl(p.usl); setLsl(p.lsl); }
           }} style={{
-            background: res.dpmo === p.dpmo && mode === "dpmo" ? `${T.cyan}18` : T.panel,
-            border: `1px solid ${res.dpmo === p.dpmo && mode === "dpmo" ? T.cyan : T.border}`,
-            color: res.dpmo === p.dpmo && mode === "dpmo" ? T.cyan : T.textDim,
+            background: (p.mode === mode && (p.mode === "dpmo" ? res.dpmo === p.dpmo : p.mean === mean && p.std === stdDev)) ? `${T.cyan}18` : T.panel,
+            border: `1px solid ${(p.mode === mode && (p.mode === "dpmo" ? res.dpmo === p.dpmo : p.mean === mean && p.std === stdDev)) ? T.cyan : T.border}`,
+            color: (p.mode === mode && (p.mode === "dpmo" ? res.dpmo === p.dpmo : p.mean === mean && p.std === stdDev)) ? T.cyan : T.textDim,
             padding: "0.3rem 0.7rem", borderRadius: 20, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
             transition: "all 0.2s",
           }}>{p.label}</button>
