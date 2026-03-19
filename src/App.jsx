@@ -4974,13 +4974,13 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
   "recommended_action": "<one concrete first action the assigned technician should take>"
 }`;
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${import.meta.env.GEMINI_API_KEY}`, {
+      const res = await fetch("/api/claude", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        body: JSON.stringify({ prompt }),
       });
       const data = await res.json();
-      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const raw = data?.content?.[0]?.text || "";
       const clean = raw.replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(clean);
       if (!categories.includes(parsed.category)) throw new Error("Invalid category");
