@@ -1235,7 +1235,6 @@ FINANCIAL IMPACT:
       {/* Financial Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "1rem", marginBottom: "2rem" }}>
         {[
-          {[
           { key: "savings",    label: "Annual Savings Realized", color: T.green },
           { key: "copq",       label: "Total COPQ Identified",   color: T.red },
           { key: "investment", label: "Total Investment",         color: T.cyan },
