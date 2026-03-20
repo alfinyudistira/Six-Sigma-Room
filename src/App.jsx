@@ -889,6 +889,22 @@ function DeltaPill({ a, b, invert = false, fmtFn = v => v }) {
   );
 }
 
+function SyncFromCompanyButton({ onSync }) {
+  const company = useCompany();
+  if (!company || company.isPulseDigital) return null;
+  return (
+    <button onClick={() => onSync(company)} style={{
+      background: `${T.cyan}12`,
+      border: `1px solid ${T.cyan}44`,
+      color: T.cyan,
+      padding: "0.35rem 0.8rem", borderRadius: 4,
+      cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+    }}>
+      ⟳ Sync from Company
+    </button>
+  );
+}
+      
 // ── Module Toolbar (Export, Copy, Reset, Save indicator) ─────────────────────
 function ModuleToolbar({ onReset, copyData, exportId, saved, children }) {
   return (
@@ -1096,6 +1112,16 @@ FINANCIAL IMPACT:
         copyData={copyReport}
         saved={true}
       >
+        <SyncFromCompanyButton onSync={(company) => setData(p => ({
+          ...p,
+          dept: company.dept || p.dept,
+          projectName: company.processName || p.projectName,
+          metrics: p.metrics.map(m =>
+            m.id === "resolution"
+              ? { ...m, before: company.baselineMean, target: company.target }
+              : m
+          ),
+        }))} />
         <button onClick={() => setEditMode(p => !p)} style={{
           background: editMode ? `${T.yellow}18` : "transparent",
           border: `1px solid ${editMode ? T.yellow : T.border}`,
@@ -1209,12 +1235,13 @@ FINANCIAL IMPACT:
       {/* Financial Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "1rem", marginBottom: "2rem" }}>
         {[
+          {[
           { key: "savings",    label: "Annual Savings Realized", color: T.green },
           { key: "copq",       label: "Total COPQ Identified",   color: T.red },
           { key: "investment", label: "Total Investment",         color: T.cyan },
           { label: "ROI Year 1", color: roi >= 0 ? T.yellow : T.red, val: (roi >= 0 ? "+" : "") + roi + "%" },
         ].map(k => (
-          <motion.div key={k.label} whileHover={{ scale: 1.02 }}
+          <div key={k.label}
             style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", textAlign: "center", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 0%, ${k.color}08 0%, transparent 70%)` }} />
             <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.75rem" }}>{k.label}</div>
@@ -1227,7 +1254,7 @@ FINANCIAL IMPACT:
                 {k.val || fmt(data.financials[k.key])}
               </div>
             )}
-          </motion.div>
+          </div>
         ))}
       </div>
 
