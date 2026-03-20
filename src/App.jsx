@@ -6525,6 +6525,9 @@ function LiveOpsCenter() {
   const [showShiftReport, setShowShiftReport] = useState(false);
   const [shiftReport, setShiftReport] = useState("");
 
+  // ── Listen for localStorage changes (moved up — needed by readLS) ────────
+  const [lsRevision, setLsRevision] = useState(0);
+
   // ── Pull data from every module via shared localStorage ──────────────────
   const readLS = useCallback((key, fallback) => {
     try {
@@ -6559,7 +6562,6 @@ function LiveOpsCenter() {
   }, []);
 
   // ── Listen for localStorage changes from other modules ───────────────────
-  const [lsRevision, setLsRevision] = useState(0);
   const [opsTab, setOpsTab] = useState("queue");
   useEffect(() => {
     const handler = () => setLsRevision(r => r + 1);
