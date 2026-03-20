@@ -7940,17 +7940,17 @@ function Hero({ onEnter }) {
         </div>
 
         <p style={{ color: T.textMid, fontSize: "0.95rem", maxWidth: 560, lineHeight: 1.7, margin: "0 auto 2.5rem", fontFamily: T.mono }}>
-          Reducing Customer Complaint Resolution Time.<br />
-          547 cases analyzed · $9M COPQ identified · 1.8σ → 3.4σ achieved.
+          A full-cycle DMAIC toolkit for any industry.<br />
+          Enter your company data → get instant Sigma Level, COPQ, FMEA Risk, and process insights.
         </p>
 
         {/* Stats */}
         <div style={{ display: "flex", gap: "2rem", justifyContent: "center", flexWrap: "wrap", marginBottom: "3rem" }}>
           {[
-            { val: "72→49h", label: "Resolution Time" },
-            { val: "0.43→1.41", label: "Ppk Index" },
-            { val: "$300K", label: "Annual Savings" },
-            { val: "73%", label: "FMEA Risk ↓" },
+            { val: "10", label: "Interactive Modules" },
+            { val: "σ → 6σ", label: "Sigma Calculator" },
+            { val: "COPQ", label: "Cost of Poor Quality" },
+            { val: "FMEA", label: "Risk Scoring Engine" },
           ].map(stat => (
             <div key={stat.label} style={{ textAlign: "center" }}>
               <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "1.2rem", fontWeight: 700, textShadow: `0 0 15px ${T.cyan}66` }}>{stat.val}</div>
@@ -7962,8 +7962,8 @@ function Hero({ onEnter }) {
         {/* Live Demo badges */}
         <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap", marginBottom: "2rem" }}>
           {[
-            { icon: "▶", label: "Dynamic Triage Simulator", sub: "Type any complaint → watch the system route it live" },
-            { icon: "⚡", label: "Try Your Data", sub: "Enter your company numbers → get COPQ instantly" },
+            { icon: "▶", label: "Smart Triage Simulator", sub: "Type any complaint → AI routes it to the right team" },
+            { icon: "⚡", label: "Universal — Any Industry", sub: "Configure your company once → all 10 modules adapt" },
           ].map(f => (
             <div key={f.label} style={{ background: `${T.green}10`, border: `1px solid ${T.green}44`, borderRadius: 8, padding: "0.75rem 1.25rem", textAlign: "center" }}>
               <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.05em" }}>{f.icon} {f.label}</div>
