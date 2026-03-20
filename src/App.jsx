@@ -151,8 +151,6 @@ function CompanySetup({ company, onChange, onClose, isOpen }) {
     if (draft.usl <= draft.lsl) errs.push("USL must be greater than LSL");
     if (draft.target > draft.usl || draft.target < draft.lsl)
       errs.push("Target must be within spec limits (between LSL and USL)");
-    if (draft.baselineMean > 0 && draft.target >= draft.baselineMean)
-      errs.push("Target should be lower than Baseline Mean — target represents the improvement goal");
     if (draft.laborRate <= 0) errs.push("Staff Hourly Cost must be greater than 0");
     if (draft.monthlyVolume <= 0) errs.push("Monthly Volume must be greater than 0");
     if (errs.length > 0) { setValidationErrors(errs); return; }
