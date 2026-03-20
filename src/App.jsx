@@ -79,16 +79,22 @@ function useCurrencyFmt() {
   const S = { USD:"$", IDR:"Rp", EUR:"€", GBP:"£", SGD:"S$", AUD:"A$", JPY:"¥", MYR:"RM" };
   const s = S[sym] || sym + " ";
   const fmt = (n) => {
+    if (n == null || isNaN(n)) return `${s}0`;
+    const neg = n < 0;
+    const abs = Math.abs(n);
+    let result;
     if (sym === "IDR") {
-      if (n >= 1e12) return `${s}${(n/1e12).toFixed(1)}T`;
-      if (n >= 1e9)  return `${s}${(n/1e9).toFixed(1)}M`;
-      if (n >= 1e6)  return `${s}${(n/1e6).toFixed(0)}Jt`;
-      if (n >= 1e3)  return `${s}${(n/1e3).toFixed(0)}K`;
-      return `${s}${Math.round(n).toLocaleString()}`;
+      if (abs >= 1e12) result = `${(abs/1e12).toFixed(1)}T`;
+      else if (abs >= 1e9)  result = `${(abs/1e9).toFixed(1)}M`;
+      else if (abs >= 1e6)  result = `${(abs/1e6).toFixed(0)}Jt`;
+      else if (abs >= 1e3)  result = `${(abs/1e3).toFixed(0)}K`;
+      else result = `${Math.round(abs).toLocaleString()}`;
+    } else {
+      if (abs >= 1e9) result = `${(abs/1e9).toFixed(2)}B`;
+      else if (abs >= 1e6) result = `${(abs/1e6).toFixed(2)}M`;
+      else result = `${(abs/1e3).toFixed(0)}K`;
     }
-    if (n >= 1e9) return `${s}${(n/1e9).toFixed(2)}B`;
-    if (n >= 1e6) return `${s}${(n/1e6).toFixed(2)}M`;
-    return `${s}${(n/1e3).toFixed(0)}K`;
+    return neg ? `-${s}${result}` : `${s}${result}`;
   };
   const fmtFull = (n) => `${s}${Math.round(n).toLocaleString()}`;
   return { sym, s, fmt, fmtFull };
@@ -1128,7 +1134,7 @@ FINANCIAL IMPACT:
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ height: 4, background: T.panel, borderRadius: 2, overflow: "hidden", flex: 1, marginRight: "0.75rem" }}>
                   <motion.div
-                    animate={{ width: `${Math.min((m.invert ? (m.before - m.after) / (m.before - m.target) : (m.after - m.before) / (m.target - m.before)) * 100, 100)}%` }}
+                    animate={{ width: `${(() => { const raw = m.invert ? (m.before - m.after) / (m.before - m.target || 1) : (m.after - m.before) / (m.target - m.before || 1); return Math.min(Math.max(isNaN(raw) ? 0 : raw * 100, 0), 100); })()}%` }}
                     transition={{ duration: 0.6 }}
                     style={{ height: "100%", background: onTarget ? T.green : T.yellow, borderRadius: 2 }}
                   />
@@ -1766,8 +1772,9 @@ ${compareMode ? `Comparison (Baseline):
             "Customer Service": { sigma: 3.7, label: "Customer Svc Avg" },
             "HR / People Ops": { sigma: 3.5, label: "HR Avg" },
           };
-          const company = null;
-          const benchmark = INDUSTRY_BENCHMARKS["IT / Tech Support"];
+          const companyCtx = useCompany();
+          const industryKey = companyCtx?.industry || "IT / Tech Support";
+          const benchmark = INDUSTRY_BENCHMARKS[industryKey] || INDUSTRY_BENCHMARKS["IT / Tech Support"];
           const milestones = [3, 3.5, 4, 4.5, 5, 5.5, 6];
           const dpmoFromSigma = (s) => {
             const z = s - 1.5;
@@ -1891,6 +1898,14 @@ ${compareMode ? `Comparison (Baseline):
 
 
 // ─── 03: DMAIC TRACKER ───────────────────────────────────────────────────────
+const DMAIC_PROJECT_START = "2025-02-03"; // Tanggal mulai project (bisa diubah)
+
+const weekToDate = (weekNum, startDateStr) => {
+  const start = new Date(startDateStr);
+  const d = new Date(start.getTime() + (weekNum - 1) * 7 * 24 * 60 * 60 * 1000);
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+};
+
 const DMAIC_DEFAULTS = {
   D: {
     name: "DEFINE", color: "#00D4FF", status: "COMPLETE", progress: 100,
@@ -2692,7 +2707,12 @@ ${phaseKeys.map(k => {
                   </div>
                   <div>{key}</div>
                   <div style={{ fontFamily: T.mono, fontSize: "0.52rem", letterSpacing: "0.1em", marginTop: "0.2rem" }}>{ph.name}</div>
-                  <div style={{ fontFamily: T.mono, fontSize: "0.5rem", color: T.textDim, marginTop: "0.15rem" }}>W{ph.startWeek}–{ph.endWeek}</div>
+                  <div style={{ fontFamily: T.mono, fontSize: "0.5rem", color: T.textDim, marginTop: "0.15rem" }}>
+                    {weekToDate(ph.startWeek, DMAIC_PROJECT_START)} →
+                  </div>
+                  <div style={{ fontFamily: T.mono, fontSize: "0.5rem", color: T.textDim }}>
+                    {weekToDate(ph.endWeek, DMAIC_PROJECT_START)}
+                  </div>
                   <div style={{ marginTop: "0.3rem" }}><Badge label={ph.status} color={statusColor(ph.status)} /></div>
                 </motion.button>
               );
@@ -2707,7 +2727,7 @@ ${phaseKeys.map(k => {
                 {[
                   { label: "Phase Progress", val: `${p.progress}%`, color: p.color },
                   { label: "Tools Deployed", val: `${p.tools.filter(t => t.done).length}/${p.tools.length}`, color: T.cyan },
-                  { label: "Weeks", val: `W${p.startWeek} – W${p.endWeek}`, color: T.textMid },
+                  { label: "Duration", val: `${weekToDate(p.startWeek, DMAIC_PROJECT_START)} → ${weekToDate(p.endWeek, DMAIC_PROJECT_START)}`, color: T.textMid },
                   { label: "Risk Level", val: p.risk.split("—")[0].trim(), color: p.riskColor },
                 ].map(k => (
                   <div key={k.label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "0.75rem 1rem", textAlign: "center" }}>
@@ -3407,10 +3427,10 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
               {/* KPI Row */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
                 {[
-                  { label: "Annual COPQ (Baseline)", value: fmtFull(copqA.total * 12), color: T.red },
-                  { label: "Annual COPQ (Post-DMAIC)", value: fmtFull(copqB.total * 12), color: T.green },
-                  { label: "Annual Savings", value: fmtFull(Math.max(0, (copqA.total - copqB.total) * 12)), color: T.cyan },
-                  { label: "ROI 12-Month", value: copqA.total > 0 ? `${(((copqA.total - copqB.total) / copqA.total) * 100).toFixed(0)}%` : "—", color: T.yellow },
+              { label: "Annual COPQ (Baseline)", value: fmtFull(copqA.total), color: T.red },
+                  { label: "Annual COPQ (Post-DMAIC)", value: fmtFull(copqB.total), color: T.green },
+                  { label: "Annual Savings", value: fmtFull(Math.max(0, copqA.total - copqB.total)), color: T.cyan },
+                  { label: "ROI 12-Month", value: investment > 0 ? `${Math.round(((copqA.total - copqB.total) / investment) * 100)}%` : "—", color: T.yellow },
                 ].map(k => (
                   <div key={k.label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1rem", textAlign: "center" }}>
                     <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.52rem", textTransform: "uppercase", marginBottom: "0.4rem", lineHeight: 1.3 }}>{k.label}</div>
@@ -3591,23 +3611,23 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
             Payback Analysis
           </div>
           {[10, 25, 33, 50, 75].map(pct => {
-  const savings = Math.round(copqA.total * pct / 100);
-            const months = s > 0 ? Math.max(Math.round((investment / s) * 12), 1) : "∞";
-            const barPct = copqA.total > 0 ? Math.min((savings / copqA.total) * 100, 100) : 0;
-            return (
-              <div key={pct} style={{ marginBottom: "0.65rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", width: 35, textAlign: "right", flexShrink: 0 }}>{pct}%</div>
-                <div style={{ flex: 1, height: 8, background: T.panel, borderRadius: 4, overflow: "hidden" }}>
-                  <motion.div animate={{ width: `${barPct}%` }} transition={{ duration: 0.6, delay: pct * 0.01 }}
-                    style={{ height: "100%", background: pct >= 30 ? T.green : T.yellow, borderRadius: 4 }} />
-                </div>
-                <div style={{ display: "flex", gap: "0.5rem", minWidth: 120, flexShrink: 0 }}>
-                  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.7rem" }}>{s}</span>
-                  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>· {months}mo payback</span>
-                </div>
-              </div>
-            );
-          })}
+  const savingsAmt = Math.round(copqA.total * pct / 100);
+  const months = savingsAmt > 0 ? Math.max(Math.round((investment / savingsAmt) * 12), 1) : "∞";
+  const barPct = copqA.total > 0 ? Math.min((savingsAmt / copqA.total) * 100, 100) : 0;
+  return (
+    <div key={pct} style={{ marginBottom: "0.65rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+      <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", width: 35, textAlign: "right", flexShrink: 0 }}>{pct}%</div>
+      <div style={{ flex: 1, height: 8, background: T.panel, borderRadius: 4, overflow: "hidden" }}>
+        <motion.div animate={{ width: `${barPct}%` }} transition={{ duration: 0.6, delay: pct * 0.01 }}
+          style={{ height: "100%", background: pct >= 30 ? T.green : T.yellow, borderRadius: 4 }} />
+      </div>
+      <div style={{ display: "flex", gap: "0.5rem", minWidth: 160, flexShrink: 0 }}>
+        <span style={{ color: pct >= 30 ? T.green : T.yellow, fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700 }}>{fmt(savingsAmt)}</span>
+        <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>· {months}mo payback</span>
+      </div>
+    </div>
+  );
+})}
           <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: `1px solid ${T.border}` }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
               <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>Investment Cost:</span>
@@ -3749,6 +3769,7 @@ function SPCCharts() {
   }));
 
   const inControl = totalViolations === 0;
+  const tooFewPoints = n > 0 && n < 7;
 
   // ── Handlers ──
   const addPoint = () => {
@@ -3962,6 +3983,12 @@ function SPCCharts() {
           <div style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.75rem" }}>
             ⚠ Add at least 2 data points to generate control limits. 5+ recommended for reliable limits.
           </div>
+        </div>
+      )}
+
+      {tooFewPoints && n >= 2 && (
+        <div style={{ background: `${T.yellow}0C`, border: `1px solid ${T.yellow}44`, borderRadius: 6, padding: "0.65rem 1rem", marginBottom: "1rem", display: "flex", gap: "0.6rem", alignItems: "center" }}>
+          <span style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.7rem" }}>⚠ Only {n} data point(s) — SPC control limits require minimum 7 points to be statistically reliable. Add more data for valid results.</span>
         </div>
       )}
 
@@ -5925,18 +5952,33 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
     setBulkPhase("analyzing");
     setBulkResults([]);
     const results = [];
+    let liveTechs = [...technicians];
     for (let i = 0; i < lines.length; i++) {
       const text = lines[i];
       const complex = isComplexComplaint(text);
       const classification = complex ? await classifyViaGemini(text) : classifyComplaint(text);
-      const { tech, overloaded } = routeToTechnician(classification.category);
+      // Route pakai liveTechs yang sudah diupdate per-ticket
+      const eligible = liveTechs.filter(t => t.skills.includes(classification.category) && t.load < t.maxLoad);
+      const tech = eligible.length > 0
+        ? eligible.sort((a, b) => {
+            const lvl = (t) => t.level.includes("Senior") ? 3 : t.level.includes("Mid") ? 2 : 1;
+            return lvl(b) - lvl(a) || a.load - b.load;
+          })[0]
+        : [...liveTechs].sort((a, b) => a.load - b.load)[0];
+      const overloaded = eligible.length === 0;
       const estHrs = estimateResolution(classification.category, tech);
+      const slaTarget = company?.slaTarget || 48;
       results.push({
         input: text, ...classification, technician: tech,
-        estimatedHrs: estHrs, sla: estHrs <= (company?.slaTarget || 48) ? "ON TRACK" : estHrs <= (company?.slaTarget || 48) * 1.5 ? "AT RISK" : "BREACH",
+        estimatedHrs: estHrs,
+        sla: estHrs <= slaTarget ? "ON TRACK" : estHrs <= slaTarget * 1.5 ? "AT RISK" : "BREACH",
         overloaded, needsManualReview: classification.confidence < 75,
         id: Date.now() + i,
       });
+      // Update load di liveTechs langsung (bukan tunggu state)
+      liveTechs = liveTechs.map(t =>
+        t.name === tech.name ? { ...t, load: Math.min(t.load + 1, t.maxLoad) } : t
+      );
       setBulkResults([...results]);
       await new Promise(r => setTimeout(r, 200));
     }
@@ -7929,6 +7971,7 @@ export default function App() {
         />
 
         <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
           * { box-sizing: border-box; }
           body { margin: 0; background: ${T.bg}; color: ${T.text}; }
           ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -7942,8 +7985,12 @@ export default function App() {
             nav { padding: 0 0.5rem !important; }
           }
           @media print {
-            nav, footer, button { display: none !important; }
-            body { background: #fff !important; color: #000 !important; }
+            nav, footer, button, .no-print { display: none !important; }
+            body { background: #fff !important; color: #111 !important; font-size: 11pt; }
+            * { color: #111 !important; border-color: #ccc !important; background: #fff !important; box-shadow: none !important; text-shadow: none !important; }
+            h1, h2, h3 { color: #000 !important; }
+            .print-break { page-break-before: always; }
+            @page { margin: 2cm; size: A4; }
           }
         `}</style>
 
