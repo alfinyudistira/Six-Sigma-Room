@@ -7761,7 +7761,7 @@ function UniversalCOPQ() {
 }
 
 // ─── HERO PAGE ────────────────────────────────────────────────────────────────
-// ─── GLOBAL RESET + EXPORT HELPERS ──────────────────────────────────────────
+// ─── GLOBAL RESET + EXPORT HELPERS ────
 function getAllModuleData() {
   const keys = {
     company:    "ss_company",
@@ -8143,9 +8143,6 @@ export default function App() {
                 DEMO
               </span>
             )}
-            <button onClick={() => window.print()} style={{ background: "transparent", border: `1px solid ${T.border}`, borderRadius: 4, color: T.textDim, padding: "0.35rem 0.7rem", fontFamily: T.mono, fontSize: "0.62rem", cursor: "pointer" }}>
-              🖨 Print
-            </button>
             <button onClick={() => setShowApp(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, borderRadius: 4, color: T.textDim, padding: "0.35rem 0.7rem", fontFamily: T.mono, fontSize: "0.62rem", cursor: "pointer" }}>
               ← EXIT
             </button>
