@@ -7831,7 +7831,7 @@ function Hero({ onEnter }) {
         </motion.button>
 
         <div style={{ marginTop: "1.5rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", letterSpacing: "0.1em" }}>
-          by Alfin Maulana Yudistira · Six Sigma Black Belt · 2025
+          by Alfin Maulana Yudistira · Six Sigma Black Belt ·
         </div>
       </motion.div>
 
@@ -7968,7 +7968,7 @@ export default function App() {
         {/* Footer */}
         <div style={{ borderTop: `1px solid ${T.border}`, padding: "0.5rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, flexWrap: "wrap", gap: "0.5rem" }}>
           <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>
-            © 2025 Alfin Maulana Yudistira · Six Sigma Black Belt · Technical Support Efficiency Transformation
+            © {new Date().getFullYear()} Alfin Maulana Yudistira · Six Sigma Black Belt · Technical Support Efficiency Transformation
           </span>
           <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
             {company.isPulseDigital ? "Demo Mode: Pulse Digital" : `Company Mode: ${company.name}`}
@@ -7977,7 +7977,7 @@ export default function App() {
 
         {/* Keyboard hints */}
         <div style={{ background: "#030709", borderTop: `1px solid ${T.border}`, padding: "0.3rem 1.5rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-          {[["1-9","Switch modules"],["- (minus)","Live Ops"],["ESC","Back / Exit"],["Click badge","Switch company"]].map(kb => (
+          {[["1-9","Switch modules"],["0","Universal COPQ"],["- (minus)","Live Ops"],["ESC","Back / Exit"],["Click badge","Switch company"]].map(kb => (
             <span key={kb[0]} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
               <span style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 2, padding: "0.05rem 0.3rem", color: T.textMid, marginRight: "0.3rem" }}>{kb[0]}</span>
               {kb[1]}
