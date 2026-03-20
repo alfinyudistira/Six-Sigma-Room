@@ -150,7 +150,11 @@ function CompanySetup({ company, onChange, onClose, isOpen }) {
     if (draft.baselineStdDev <= 0) errs.push("Baseline Std Dev must be greater than 0");
     if (draft.usl <= draft.lsl) errs.push("USL must be greater than LSL");
     if (draft.target > draft.usl || draft.target < draft.lsl)
-      errs.push("Target must be between LSL and USL");
+      errs.push("Target must be within spec limits (between LSL and USL)");
+    if (draft.baselineMean > 0 && draft.target >= draft.baselineMean)
+      errs.push("Target should be lower than Baseline Mean — target represents the improvement goal");
+    if (draft.laborRate <= 0) errs.push("Staff Hourly Cost must be greater than 0");
+    if (draft.monthlyVolume <= 0) errs.push("Monthly Volume must be greater than 0");
     if (errs.length > 0) { setValidationErrors(errs); return; }
     setValidationErrors([]);
     onChange({ ...draft });
@@ -252,6 +256,16 @@ function CompanySetup({ company, onChange, onClose, isOpen }) {
                     reader.onload = (ev) => {
                       try {
                         const parsed = JSON.parse(ev.target.result);
+                        // Validasi: pastikan field numerik kritis adalah angka valid
+                        const criticalNumericFields = ["baselineMean","baselineStdDev","usl","lsl","target","laborRate","monthlyVolume","customerLTV","teamSize"];
+                        const invalidFields = criticalNumericFields.filter(f => {
+                          const v = parsed[f];
+                          return v !== undefined && (typeof v !== "number" || isNaN(v));
+                        });
+                        if (invalidFields.length > 0) {
+                          alert(`JSON contains invalid numeric values for: ${invalidFields.join(", ")}.\nPlease export from this app first.`);
+                          return;
+                        }
                         const merged = { ...COMPANY_DEFAULTS, ...parsed };
                         setDraft(merged);
                         setStrVals(Object.fromEntries(numKeys.map(k => [k, String(merged[k] ?? "")])));
@@ -713,7 +727,7 @@ function SmartTooltip({ id, children }) {
       <AnimatePresence>
         {open && (
           <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            style={{ position: "absolute", bottom: "calc(100% + 8px)", left: 0, zIndex: 9999, background: T.panel, border: `1px solid ${T.cyan}44`, borderRadius: 8, padding: "0.85rem 1rem", width: 280, boxShadow: `0 8px 32px rgba(0,0,0,0.6), 0 0 20px ${T.cyan}11`, pointerEvents: "none" }}>
+            style={{ position: "fixed", bottom: "auto", zIndex: 9999, background: T.panel, border: `1px solid ${T.cyan}44`, borderRadius: 8, padding: "0.85rem 1rem", width: 280, maxWidth: "calc(100vw - 2rem)", boxShadow: `0 8px 32px rgba(0,0,0,0.6), 0 0 20px ${T.cyan}11`, pointerEvents: "none", transform: "translateY(-110%)" }}>
             <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.6rem", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.4rem" }}>{tip.title}</div>
             <div style={{ color: T.text, fontSize: "0.8rem", lineHeight: 1.6, fontFamily: T.mono }}>{tip.plain}</div>
           </motion.div>
@@ -736,7 +750,11 @@ function useLocalState(key, initial) {
   const set = useCallback((v) => {
     setVal(prev => {
       const newVal = typeof v === "function" ? v(prev) : v;
-      try { localStorage.setItem(key, JSON.stringify(newVal)); } catch {}
+      try {
+        localStorage.setItem(key, JSON.stringify(newVal));
+        // Dispatch custom event agar LiveOpsCenter bisa detect same-tab changes
+        window.dispatchEvent(new Event("lsupdate"));
+      } catch {}
       return newVal;
     });
   }, [key]);
@@ -853,9 +871,11 @@ function ScenarioBadge({ label, color, active, onClick }) {
 
 // ── Delta Pill ────────────────────────────────────────────────────────────────
 function DeltaPill({ a, b, invert = false, fmtFn = v => v }) {
-  if (a === 0 || b === 0) return null;
+  if (!a || !b || Math.abs(a) < 0.0001) return null;
   const diff = b - a;
-  const pct = Math.abs(((b - a) / a) * 100).toFixed(1);
+  const rawPct = Math.abs(((b - a) / a) * 100);
+  // Cap di 9999% supaya tidak tampil absurd
+  const pct = Math.min(rawPct, 9999).toFixed(1);
   const better = invert ? diff < 0 : diff > 0;
   const arrow = diff > 0 ? "↑" : "↓";
   const color = better ? T.green : T.red;
@@ -1495,17 +1515,26 @@ ${compareMode ? `Comparison (Baseline):
       <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
         <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", alignSelf: "center" }}>PRESETS:</span>
         {PRESETS.map(p => (
-          <button key={p.label} onClick={() => {
-            setMode(p.mode);
-            if (p.mode === "dpmo") { setDefects(p.dpmo); setOpportunities(1000000); }
-            if (p.mode === "ppk" && p.mean) { setMean(p.mean); setStdDev(p.std); setUsl(p.usl); setLsl(p.lsl); }
-          }} style={{
-            background: (p.mode === mode && (p.mode === "dpmo" ? res.dpmo === p.dpmo : p.mean === mean && p.std === stdDev)) ? `${T.cyan}18` : T.panel,
-            border: `1px solid ${(p.mode === mode && (p.mode === "dpmo" ? res.dpmo === p.dpmo : p.mean === mean && p.std === stdDev)) ? T.cyan : T.border}`,
-            color: (p.mode === mode && (p.mode === "dpmo" ? res.dpmo === p.dpmo : p.mean === mean && p.std === stdDev)) ? T.cyan : T.textDim,
-            padding: "0.3rem 0.7rem", borderRadius: 20, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
-            transition: "all 0.2s",
-          }}>{p.label}</button>
+          {(() => {
+            const isActive = p.mode === mode && (
+              p.mode === "dpmo"
+                ? res.dpmo === Math.round((p.dpmo / 1000000) * 1000000)
+                : (p.mean === mean && p.std === stdDev)
+            );
+            return (
+              <button key={p.label} onClick={() => {
+                setMode(p.mode);
+                if (p.mode === "dpmo") { setDefects(p.dpmo); setOpportunities(1000000); }
+                if (p.mode === "ppk" && p.mean) { setMean(p.mean); setStdDev(p.std); setUsl(p.usl); setLsl(p.lsl); }
+              }} style={{
+                background: isActive ? `${T.cyan}18` : T.panel,
+                border: `1px solid ${isActive ? T.cyan : T.border}`,
+                color: isActive ? T.cyan : T.textDim,
+                padding: "0.3rem 0.7rem", borderRadius: 20, cursor: "pointer",
+                fontFamily: T.mono, fontSize: "0.62rem", transition: "all 0.2s",
+              }}>{p.label}</button>
+            );
+          })()}
         ))}
       </div>
 
@@ -1686,8 +1715,9 @@ ${compareMode ? `Comparison (Baseline):
             <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.75rem" }}>Sigma Reference Table</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "0" }}>
               {[["σ", "DPMO", "Yield", "Ppk"], ["1σ","691,462","30.9%","0.33"], ["2σ","308,537","69.1%","0.67"], ["3σ","66,807","93.3%","1.00"], ["4σ","6,210","99.4%","1.33"], ["5σ","233","99.98%","1.67"], ["6σ","3.4","99.9997%","2.00"]].map((row, i) => {
-                const sigRow = parseFloat(row[0]);
-                const isActive = Math.round(res.sigma) === sigRow;
+                const isHeader = i === 0;
+                const sigRow = isHeader ? null : parseFloat(row[0]);
+                const isActive = !isHeader && sigRow !== null && !isNaN(sigRow) && Math.round(res.sigma) === sigRow;
                 return row.map((cell, j) => (
                   <div key={`${i}-${j}`} style={{
                     color: i === 0 ? T.textDim : (isActive ? (j === 0 ? sc : T.text) : T.textMid),
@@ -6495,12 +6525,19 @@ function LiveOpsCenter() {
   const [shiftReport, setShiftReport] = useState("");
 
   // ── Pull data from every module via shared localStorage ──────────────────
-  const [overviewData]    = useLocalState("overview_data",    OVERVIEW_DEFAULTS);
-  const [dmaicPhases]     = useLocalState("dmaic_phases",     DMAIC_DEFAULTS);
-  const [fmeaItems]       = useLocalState("fmea_items",       FMEA_DEFAULTS);
-  const [copqScenarios]   = useLocalState("copq_scenarios",   COPQ_DEFAULTS);
-  const [paretoItems]     = useLocalState("pareto_items",     PARETO_DEFAULTS);
-  const [rcItems]         = useLocalState("rc_items",         RC_DEFAULTS);
+  const readLS = useCallback((key, fallback) => {
+    try {
+      const v = localStorage.getItem(key);
+      return v ? JSON.parse(v) : fallback;
+    } catch { return fallback; }
+  }, [lsRevision]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const overviewData   = readLS("overview_data",   OVERVIEW_DEFAULTS);
+  const dmaicPhases    = readLS("dmaic_phases",    DMAIC_DEFAULTS);
+  const fmeaItems      = readLS("fmea_items",      FMEA_DEFAULTS);
+  const copqScenarios  = readLS("copq_scenarios",  COPQ_DEFAULTS);
+  const paretoItems    = readLS("pareto_items",    PARETO_DEFAULTS);
+  const rcItems        = readLS("rc_items",        RC_DEFAULTS);
   const triageHistory = (() => {
     try {
       const a = JSON.parse(localStorage.getItem("triage_history") || "[]");
@@ -6525,8 +6562,13 @@ function LiveOpsCenter() {
   const [opsTab, setOpsTab] = useState("queue");
   useEffect(() => {
     const handler = () => setLsRevision(r => r + 1);
+    // "storage" event hanya trigger di tab lain — untuk same-tab kita dispatch manual
     window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
+    window.addEventListener("lsupdate", handler);
+    return () => {
+      window.removeEventListener("storage", handler);
+      window.removeEventListener("lsupdate", handler);
+    };
   }, []);
 
   // ── Derived: OVERVIEW ────────────────────────────────────────────────────
@@ -7947,6 +7989,11 @@ export default function App() {
 
             {/* KPI chips — show company data if available, else Pulse Digital */}
             <AppKPIChips company={company} />
+            {company.isPulseDigital && (
+              <span style={{ background: `${T.yellow}18`, border: `1px solid ${T.yellow}44`, borderRadius: 3, color: T.yellow, fontFamily: T.mono, fontSize: "0.52rem", padding: "0.2rem 0.5rem", letterSpacing: "0.1em", alignSelf: "center" }}>
+                DEMO
+              </span>
+            )}
             <button onClick={() => setShowApp(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, borderRadius: 4, color: T.textDim, padding: "0.35rem 0.7rem", fontFamily: T.mono, fontSize: "0.62rem", cursor: "pointer" }}>
               ← EXIT
             </button>
