@@ -7761,6 +7761,120 @@ function UniversalCOPQ() {
 }
 
 // ─── HERO PAGE ────────────────────────────────────────────────────────────────
+// ─── GLOBAL RESET + EXPORT HELPERS ──────────────────────────────────────────
+function getAllModuleData() {
+  const keys = {
+    company:    "ss_company",
+    overview:   "overview_data",
+    dmaic:      "dmaic_phases",
+    fmea:       "fmea_items",
+    copq:       "copq_scenarios",
+    spc:        "spc_data",
+    pareto:     "pareto_items",
+    rootcause:  "rc_items",
+    triage:     "triage_history",
+    triageTeam: "triage_team_pd",
+    universal:  "universal_data",
+    ops:        "ops_data",
+  };
+  const result = {};
+  for (const [name, key] of Object.entries(keys)) {
+    try {
+      const raw = localStorage.getItem(key);
+      result[name] = raw ? JSON.parse(raw) : null;
+    } catch { result[name] = null; }
+  }
+  return result;
+}
+
+function nuclearReset() {
+  const prefixes = ["ss_","sigma_","dmaic_","fmea_","copq_","spc_","pareto_","rc_","triage_","overview_","universal_","ops_"];
+  Object.keys(localStorage).forEach(k => {
+    if (prefixes.some(p => k.startsWith(p))) localStorage.removeItem(k);
+  });
+}
+
+function exportJSON() {
+  const data = {
+    exportedAt: new Date().toISOString(),
+    exportedBy: "DMAIC Intelligence Platform — Alfin Maulana Yudistira",
+    version: "1.0",
+    modules: getAllModuleData(),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `dmaic_platform_backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportCSV() {
+  const d = getAllModuleData();
+  const co = d.company || {};
+  const rows = [
+    ["Module", "Metric", "Value"],
+    ["Company", "Name",            co.name || "—"],
+    ["Company", "Department",      co.dept || "—"],
+    ["Company", "Industry",        co.industry || "—"],
+    ["Company", "Currency",        co.currency || "—"],
+    ["Company", "Team Size",       co.teamSize || "—"],
+    ["Company", "Baseline Mean",   co.baselineMean || "—"],
+    ["Company", "Baseline StdDev", co.baselineStdDev || "—"],
+    ["Company", "Target",          co.target || "—"],
+    ["Company", "USL",             co.usl || "—"],
+    ["Company", "LSL",             co.lsl || "—"],
+    ["Company", "Monthly Volume",  co.monthlyVolume || "—"],
+    ["Company", "Labor Rate",      co.laborRate || "—"],
+  ];
+
+  // DMAIC phases
+  const ph = d.dmaic || {};
+  ["D","M","A","I","C"].forEach(k => {
+    if (ph[k]) {
+      rows.push(["DMAIC", `Phase ${k} - Progress`, ph[k].progress ?? "—"]);
+      rows.push(["DMAIC", `Phase ${k} - Status`,   ph[k].status  || "—"]);
+    }
+  });
+
+  // FMEA
+  const fmea = Array.isArray(d.fmea) ? d.fmea : [];
+  fmea.forEach((item, i) => {
+    const rpn = (item.S||0) * (item.O||0) * (item.D||0);
+    rows.push(["FMEA", `Item ${i+1} - Failure`,  item.failure  || "—"]);
+    rows.push(["FMEA", `Item ${i+1} - RPN`,       rpn]);
+    rows.push(["FMEA", `Item ${i+1} - Fixed`,     item.fixed ? "Yes" : "No"]);
+  });
+
+  // Pareto
+  const pareto = Array.isArray(d.pareto) ? d.pareto : [];
+  pareto.forEach((item, i) => {
+    rows.push(["Pareto", `Item ${i+1} - Category`, item.category || "—"]);
+    rows.push(["Pareto", `Item ${i+1} - Cases`,    item.cases    || "—"]);
+    rows.push(["Pareto", `Item ${i+1} - Avg Hrs`,  item.avgHrs   || "—"]);
+  });
+
+  // Triage history summary
+  const th = Array.isArray(d.triage) ? d.triage : [];
+  const onTrack = th.filter(h => h.sla === "ON TRACK").length;
+  const atRisk  = th.filter(h => h.sla === "AT RISK").length;
+  const breach  = th.filter(h => h.sla === "BREACH").length;
+  rows.push(["Triage", "Total Tickets",    th.length]);
+  rows.push(["Triage", "SLA On Track",     onTrack]);
+  rows.push(["Triage", "SLA At Risk",      atRisk]);
+  rows.push(["Triage", "SLA Breach",       breach]);
+  rows.push(["Triage", "SLA Rate (%)",     th.length > 0 ? Math.round((onTrack/th.length)*100) : "—"]);
+
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `dmaic_platform_export_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 function Hero({ onEnter }) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -7877,6 +7991,38 @@ function Hero({ onEnter }) {
 
         <div style={{ marginTop: "1.5rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", letterSpacing: "0.1em" }}>
           by Alfin Maulana Yudistira · Six Sigma Black Belt ·
+        </div>
+
+        {/* ── Data Management Tools ── */}
+        <div style={{ marginTop: "2rem", display: "flex", gap: "0.6rem", justifyContent: "center", flexWrap: "wrap" }}>
+          <button onClick={exportJSON} style={{
+            background: `${T.green}12`, border: `1px solid ${T.green}44`,
+            color: T.green, padding: "0.5rem 1rem", borderRadius: 6,
+            cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
+            letterSpacing: "0.05em",
+          }}>
+            ↓ Backup JSON
+          </button>
+          <button onClick={exportCSV} style={{
+            background: `${T.cyan}12`, border: `1px solid ${T.cyan}44`,
+            color: T.cyan, padding: "0.5rem 1rem", borderRadius: 6,
+            cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
+            letterSpacing: "0.05em",
+          }}>
+            ↓ Export CSV
+          </button>
+          <button onClick={() => {
+            if (!window.confirm("⚠ NUCLEAR RESET\n\nIni akan hapus SEMUA data dari semua modul.\nTidak bisa di-undo.\n\nLanjut?")) return;
+            nuclearReset();
+            window.location.reload();
+          }} style={{
+            background: `${T.red}12`, border: `1px solid ${T.red}44`,
+            color: T.red, padding: "0.5rem 1rem", borderRadius: 6,
+            cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
+            letterSpacing: "0.05em",
+          }}>
+            ✕ Reset All Data
+          </button>
         </div>
       </motion.div>
 
@@ -7997,6 +8143,9 @@ export default function App() {
                 DEMO
               </span>
             )}
+            <button onClick={() => window.print()} style={{ background: "transparent", border: `1px solid ${T.border}`, borderRadius: 4, color: T.textDim, padding: "0.35rem 0.7rem", fontFamily: T.mono, fontSize: "0.62rem", cursor: "pointer" }}>
+              🖨 Print
+            </button>
             <button onClick={() => setShowApp(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, borderRadius: 4, color: T.textDim, padding: "0.35rem 0.7rem", fontFamily: T.mono, fontSize: "0.62rem", cursor: "pointer" }}>
               ← EXIT
             </button>
