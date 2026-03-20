@@ -92,7 +92,8 @@ function useCurrencyFmt() {
     } else {
       if (abs >= 1e9) result = `${(abs/1e9).toFixed(2)}B`;
       else if (abs >= 1e6) result = `${(abs/1e6).toFixed(2)}M`;
-      else result = `${(abs/1e3).toFixed(0)}K`;
+      else if (abs >= 1e3) result = `${(abs/1e3).toFixed(0)}K`;
+      else result = `${Math.round(abs).toLocaleString()}`;
     }
     return neg ? `-${s}${result}` : `${s}${result}`;
   };
@@ -364,11 +365,20 @@ function CompanySetup({ company, onChange, onClose, isOpen }) {
             {/* Process Health Score — NEW FEATURE */}
             {(() => {
               const ppk = draft.baselineStdDev > 0 ? Math.min((draft.usl - draft.baselineMean) / (3 * draft.baselineStdDev), (draft.baselineMean - draft.lsl) / (3 * draft.baselineStdDev)) : 0;
-              const ppkScore = Math.min(ppk / 1.67 * 35, 35);
-              const gap = draft.baselineMean > 0 ? Math.max(0, 1 - Math.abs(draft.baselineMean - draft.target) / draft.baselineMean) * 35 : 0;
-              const teamScore = Math.min(draft.teamSize / 50 * 15, 15);
+              // Ppk score: Six Sigma standard — 1.67 = world class (max 40pts)
+              const ppkScore = Math.min(ppk / 1.67 * 40, 40);
+              // Gap-to-target score: seberapa dekat mean ke target (max 40pts)
+              const targetRange = draft.usl - draft.lsl;
+              const gap = (draft.baselineMean > 0 && targetRange > 0)
+                ? Math.max(0, (1 - Math.abs(draft.baselineMean - draft.target) / targetRange)) * 40
+                : 0;
+          const teamScore = Math.min(draft.teamSize / 50 * 15, 15);
               const volScore = draft.monthlyVolume > 0 ? Math.min(draft.monthlyVolume / 300 * 15, 15) : 0;
-              const health = Math.round(ppkScore + gap + teamScore + volScore);
+              // Spec width score: USL-LSL yang reasonable vs mean (max 20pts)
+              const specRatio = draft.baselineStdDev > 0 && targetRange > 0
+                ? Math.min(targetRange / (6 * draft.baselineStdDev) / 2, 1) * 20
+                : 0;
+              const health = Math.round(ppkScore + gap + specRatio);
               const hColor = health >= 80 ? T.green : health >= 55 ? T.yellow : health >= 35 ? T.orange : T.red;
               const hLabel = health >= 80 ? "EXCELLENT" : health >= 55 ? "MODERATE" : health >= 35 ? "AT RISK" : "CRITICAL";
               return (
@@ -386,16 +396,20 @@ function CompanySetup({ company, onChange, onClose, isOpen }) {
                   </div>
                   <div style={{ display: "flex", gap: "1rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
                     {[
-                      { l: "Ppk Score", v: ppkScore.toFixed(0), m: 35 },
-                      { l: "Gap Score", v: gap.toFixed(0), m: 35 },
+                      { l: "Ppk Score", v: ppkScore.toFixed(0), m: 40 },
+                      { l: "Gap Score", v: gap.toFixed(0), m: 40 },
                       { l: "Team Score", v: teamScore.toFixed(0), m: 15 },
                       { l: "Volume Score", v: volScore.toFixed(0), m: 15 },
+                  { l: "Spec Width", v: specRatio.toFixed(0), m: 20 },
                     ].map(sc => (
                       <div key={sc.l} style={{ textAlign: "center", flex: "1 1 60px" }}>
                         <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.5rem", textTransform: "uppercase" }}>{sc.l}</div>
                         <div style={{ color: hColor, fontFamily: T.mono, fontSize: "0.82rem", fontWeight: 700 }}>{sc.v}<span style={{ color: T.textDim, fontSize: "0.5rem" }}>/{sc.m}</span></div>
                       </div>
                     ))}
+                  </div>
+                <div style={{ marginTop: "0.5rem", color: T.textDim, fontFamily: T.mono, fontSize: "0.5rem", fontStyle: "italic" }}>
+                    * Indicative score based on process capability parameters — not a certified Six Sigma metric.
                   </div>
                 </div>
               );
@@ -748,7 +762,7 @@ function useCopyClipboard() {
 }
 
 // ── Screenshot/Export utility ─────────────────────────────────────────────────
-function ExportButton({ targetId, filename = "dmaic-export", label = "↓ Export PNG" }) {
+function ExportButton({ targetId, filename = "dmaic-export", label = "🖨 Print / Save PDF" }) {
   const [loading, setLoading] = useState(false);
   const handle = async () => {
     setLoading(true);
@@ -799,6 +813,9 @@ function CopyReportButton({ data, label = "⎘ Copy Report" }) {
 function EditableLabel({ value, onChange, style: s = {} }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
   if (editing) return (
     <input
       autoFocus
