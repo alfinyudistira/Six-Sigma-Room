@@ -1011,8 +1011,8 @@ function Overview() {
 
   const fmt = fmtCur;
   const roi = data.financials.investment > 0
-    ? ((data.financials.savings / data.financials.investment) * 100).toFixed(1)
-    : "0";
+  ? Math.round(((data.financials.savings - data.financials.investment) / data.financials.investment) * 100)
+  : 0;
 
   const timelineData = [
     { phase: "Define",  week: 4,  resolution: data.metrics.find(m=>m.id==="resolution")?.before || 72, milestone: "Charter approved" },
@@ -1177,7 +1177,7 @@ FINANCIAL IMPACT:
           { key: "savings",    label: "Annual Savings Realized", color: T.green },
           { key: "copq",       label: "Total COPQ Identified",   color: T.red },
           { key: "investment", label: "Total Investment",         color: T.cyan },
-          { label: "ROI Year 1", color: T.yellow, val: roi + "%" },
+          { label: "ROI Year 1", color: roi >= 0 ? T.yellow : T.red, val: (roi >= 0 ? "+" : "") + roi + "%" },
         ].map(k => (
           <motion.div key={k.label} whileHover={{ scale: 1.02 }}
             style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.5rem", textAlign: "center", position: "relative", overflow: "hidden" }}>
@@ -1295,6 +1295,7 @@ FINANCIAL IMPACT:
 // ─── 02: SIGMA CALCULATOR ────────────────────────────────────────────────────
 function SigmaCalculator() {
   const company = useCompany();
+  const { sym, s, fmt, fmtFull } = useCurrencyFmt();
   const [mode, setMode] = useLocalState("sigma_mode", "dpmo");
   const [defects, setDefects] = useLocalState("sigma_defects", 382000);
   const [opportunities, setOpportunities] = useLocalState("sigma_opps", 1000000);
@@ -2075,7 +2076,7 @@ function DMAICTracker() {
 
     // Pull dari SPC Charts
     try {
-      const spcRaw = localStorage.getItem("spc_data") || localStorage.getItem("spc_points") || "[]";
+      const spcRaw = localStorage.getItem("spc_custom_points") || "[]";
       const spcData = JSON.parse(spcRaw);
       if (spcData.length > 0) {
         const vals = spcData.map(d => d.value || d.v || d).filter(v => typeof v === "number");
@@ -2172,7 +2173,7 @@ function DMAICTracker() {
 
     // Pull dari Root Cause
     try {
-      const rcRaw = localStorage.getItem("rootcauses") || "[]";
+      const rcRaw = localStorage.getItem("rc_items") || "[]";
       const rcItems = JSON.parse(rcRaw);
       if (rcItems.length > 0) {
         const validated = rcItems.filter(r => r.validated);
@@ -3686,10 +3687,10 @@ function SPCCharts() {
 
   const [mode, setMode] = useState("demo"); // "demo" | "custom"
   const [selectedDemo, setSelectedDemo] = useState("resolution");
-  const [customLabel, setCustomLabel] = useState("My Process Metric");
-  const [customUnit, setCustomUnit] = useState("");
-  const [customTarget, setCustomTarget] = useState("");
-  const [customPoints, setCustomPoints] = useState([]);
+  const [customLabel, setCustomLabel] = useLocalState("spc_custom_label", "My Process Metric");
+  const [customUnit, setCustomUnit] = useLocalState("spc_custom_unit", "");
+  const [customTarget, setCustomTarget] = useLocalState("spc_custom_target", "");
+  const [customPoints, setCustomPoints] = useLocalState("spc_custom_points", []);
   const [newPoint, setNewPoint] = useState("");
   const [bulkInput, setBulkInput] = useState("");
   const [showBulk, setShowBulk] = useState(false);
@@ -6451,7 +6452,7 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
       {/* ── Explainer ── */}
       <div style={{ background: T.panel, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", marginTop: "1.5rem", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "1rem" }}>
         {[
-          { icon: "🤖", title: "Hybrid AI Engine", desc: "Short/clear complaints → instant keyword classification. Long, ambiguous, or multi-category complaints → Gemini AI for deep NLP analysis." },
+          { icon: "🤖", title: "Hybrid AI Engine", desc: "Short/clear complaints → instant keyword classification. Long, ambiguous, or multi-category complaints → AI semantic engine for deep NLP analysis." },
           { icon: "🎯", title: "Skills-Based Routing", desc: "Matches category to your team's skill matrix. Warns if all technicians are at capacity and falls back to least-loaded." },
           { icon: "⚠️", title: "Confidence Gating", desc: "Confidence <75% triggers a mandatory manual review flag — Tier 2 supervisor must validate before assignment proceeds." },
           { icon: "📋", title: "Audit Trail", desc: "Every triage result is logged to history (up to 20 entries). Click any history item to reload the full result." },
@@ -6483,7 +6484,12 @@ function LiveOpsCenter() {
   const [copqScenarios]   = useLocalState("copq_scenarios",   COPQ_DEFAULTS);
   const [paretoItems]     = useLocalState("pareto_items",     PARETO_DEFAULTS);
   const [rcItems]         = useLocalState("rc_items",         RC_DEFAULTS);
-  const [triageHistory]   = useLocalState("triage_history",   []);
+  const triageHistory = (() => {
+    try {
+      const a = JSON.parse(localStorage.getItem("triage_history") || "[]");
+      return a;
+    } catch { return []; }
+  })();
   const [technicians]     = useLocalState(
     company?.isPulseDigital !== false ? "triage_team_pd" : `triage_team_${company?.name || "custom"}`,
     DEFAULT_TECHNICIANS
@@ -7513,9 +7519,9 @@ const INDUSTRY_PRESETS = {
 function UniversalCOPQ() {
   const { fmt, s } = useCurrencyFmt();
   const company = useCompany();
-  const [industry, setIndustry] = useState("techsupport");
-  const [improvement, setImprovement] = useState(25);
-  const [fieldVals, setFieldVals] = useState({});
+  const [industry, setIndustry] = useLocalState("ucalc_industry", "techsupport");
+  const [improvement, setImprovement] = useLocalState("ucalc_improvement", 25);
+  const [fieldVals, setFieldVals] = useLocalState("ucalc_fieldvals", {});
   const [importedFromCompany, setImportedFromCompany] = useState(false);
 
   const preset = INDUSTRY_PRESETS[industry];
@@ -7769,10 +7775,10 @@ function Hero({ onEnter }) {
             { val: "0.43→1.41", label: "Ppk Index" },
             { val: "$300K", label: "Annual Savings" },
             { val: "73%", label: "FMEA Risk ↓" },
-          ].map(s => (
-            <div key={s.label} style={{ textAlign: "center" }}>
-              <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "1.2rem", fontWeight: 700, textShadow: `0 0 15px ${T.cyan}66` }}>{s.val}</div>
-              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginTop: "0.2rem" }}>{s.label}</div>
+          ].map(stat => (
+            <div key={stat.label} style={{ textAlign: "center" }}>
+              <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "1.2rem", fontWeight: 700, textShadow: `0 0 15px ${T.cyan}66` }}>{stat.val}</div>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginTop: "0.2rem" }}>{stat.label}</div>
             </div>
           ))}
         </div>
@@ -7954,10 +7960,10 @@ export default function App() {
 
         {/* Keyboard hints */}
         <div style={{ background: "#030709", borderTop: `1px solid ${T.border}`, padding: "0.3rem 1.5rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-          {[["1-9","Switch modules"],["- (minus)","Live Ops"],["ESC","Back / Exit"],["Click badge","Switch company"]].map(s => (
-            <span key={s[0]} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
-              <span style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 2, padding: "0.05rem 0.3rem", color: T.textMid, marginRight: "0.3rem" }}>{s[0]}</span>
-              {s[1]}
+          {[["1-9","Switch modules"],["- (minus)","Live Ops"],["ESC","Back / Exit"],["Click badge","Switch company"]].map(kb => (
+            <span key={kb[0]} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
+              <span style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 2, padding: "0.05rem 0.3rem", color: T.textMid, marginRight: "0.3rem" }}>{kb[0]}</span>
+              {kb[1]}
             </span>
           ))}
         </div>
