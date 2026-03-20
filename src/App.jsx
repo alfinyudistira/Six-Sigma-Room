@@ -1514,13 +1514,12 @@ ${compareMode ? `Comparison (Baseline):
       {/* Preset quick buttons */}
       <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
         <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", alignSelf: "center" }}>PRESETS:</span>
-        {PRESETS.map(p => (
-          {(() => {
-            const isActive = p.mode === mode && (
-              p.mode === "dpmo"
-                ? res.dpmo === Math.round((p.dpmo / 1000000) * 1000000)
-                : (p.mean === mean && p.std === stdDev)
-            );
+        {PRESETS.map(p => {
+  const isActive = p.mode === mode && (
+    p.mode === "dpmo"
+      ? res.dpmo === Math.round((p.dpmo / 1000000) * 1000000)
+      : (p.mean === mean && p.std === stdDev)
+  );
             return (
               <button key={p.label} onClick={() => {
                 setMode(p.mode);
@@ -1532,10 +1531,12 @@ ${compareMode ? `Comparison (Baseline):
                 color: isActive ? T.cyan : T.textDim,
                 padding: "0.3rem 0.7rem", borderRadius: 20, cursor: "pointer",
                 fontFamily: T.mono, fontSize: "0.62rem", transition: "all 0.2s",
-              }}>{p.label}</button>
-            );
-          })()}
-        ))}
+    }}>
+      {p.label}
+    </button>
+  );
+})}
+
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem" }}>
