@@ -1139,21 +1139,22 @@ FINANCIAL IMPACT:
 
         <button onClick={() => {
   const label = window.prompt("Metric name? (e.g. First Call Resolution Rate)");
-  if (!label) return;
-  const unit = window.prompt("Unit? (e.g. %, hrs, score) — leave blank if none") || "";
-  setData(prev => ({
-    ...prev,
-    metrics: [...prev.metrics, {
-      id: `custom_${Date.now()}`,
-      label,
-      before: 0,
-      after: 0,
-      target: 0,
-      unit,
-      invert: false,
-      description: "Custom metric",
-    }]
-  }));
+if (!label) return;
+const unit = window.prompt("Unit? (e.g. %, hrs, score) — leave blank if none") || "";
+const invertChoice = window.confirm("Is LOWER better for this metric?\n\nOK = Yes (e.g. error rate, resolution time)\nCancel = No (e.g. CSAT score, sigma level)");
+setData(prev => ({
+  ...prev,
+  metrics: [...prev.metrics, {
+    id: `custom_${Date.now()}`,
+    label,
+    before: 0,
+    after: 0,
+    target: 0,
+    unit,
+    invert: invertChoice,
+    description: "Custom metric",
+  }]
+}));
 }} style={{
   background: `${T.green}12`, border: `1px solid ${T.green}44`,
   color: T.green, padding: "0.35rem 0.8rem", borderRadius: 4,
@@ -1246,7 +1247,17 @@ FINANCIAL IMPACT:
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ height: 4, background: T.panel, borderRadius: 2, overflow: "hidden", flex: 1, marginRight: "0.75rem" }}>
                   <motion.div
-                    animate={{ width: `${(() => { const raw = m.invert ? (m.before - m.after) / (m.before - m.target || 1) : (m.after - m.before) / (m.target - m.before || 1); return Math.min(Math.max(isNaN(raw) ? 0 : raw * 100, 0), 100); })()}%` }}
+                    animate={{ width: `${(() => {
+  if (m.invert) {
+    if (m.before <= m.target) return 100;
+    const raw = (m.before - m.after) / (m.before - m.target);
+    return Math.min(Math.max(isNaN(raw) ? 0 : raw * 100, 0), 100);
+  } else {
+    if (m.before >= m.target) return 100;
+    const raw = (m.after - m.before) / (m.target - m.before);
+    return Math.min(Math.max(isNaN(raw) ? 0 : raw * 100, 0), 100);
+  }
+})()}%` }}
                     transition={{ duration: 0.6 }}
                     style={{ height: "100%", background: onTarget ? T.green : T.yellow, borderRadius: 2 }}
                   />
@@ -1384,11 +1395,16 @@ FINANCIAL IMPACT:
             [ BEFORE vs AFTER — ALL METRICS ]
           </div>
           <ResponsiveContainer width="100%" height={280}>
-  <RadarChart outerRadius={85} data={data.metrics.map(m => ({
-              metric: m.label.split(" ").slice(0,2).join(" "),
-              Before: Math.round((m.invert ? (1 - m.before / (m.before * 1.2)) : m.before / (m.target * 1.5)) * 100),
-              After: Math.round((m.invert ? (1 - m.after / (m.before * 1.2)) : m.after / (m.target * 1.5)) * 100),
-            }))} margin={{ top: 10, right: 30, left: 30, bottom: 10 }}>
+  <RadarChart outerRadius={85} data={data.metrics.map(m => {
+    const maxVal = Math.max(m.before, m.after, m.target, 1);
+    const normBefore = Math.round((m.before / maxVal) * 100);
+    const normAfter = Math.round((m.after / maxVal) * 100);
+    return {
+      metric: m.label.length > 12 ? m.label.slice(0, 12) + "…" : m.label,
+      Before: isNaN(normBefore) ? 0 : normBefore,
+      After: isNaN(normAfter) ? 0 : normAfter,
+    };
+  })}>
               <PolarGrid stroke={T.border} />
               <PolarAngleAxis dataKey="metric" tick={{ fill: T.textDim, fontSize: 9, fontFamily: T.mono }} />
               <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
