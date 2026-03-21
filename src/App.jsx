@@ -5157,19 +5157,22 @@ const RC_DEFAULTS = [
 
 function RootCauseAnalyzer() {
   const [rootCauses, setRootCauses] = useLocalState("rc_items", RC_DEFAULTS);
-  const updateWhyField = (rcId, whyIdx, field, val) => {
-  setRootCauses(prev => prev.map(r =>
-    r.id === rcId
-      ? { ...r, whys: r.whys.map((w, i) => i === whyIdx ? { ...w, [field]: val } : w) }
-      : r
-  ));
-};
 
-const updateRCField = (rcId, field, val) => {
-  setRootCauses(prev => prev.map(r =>
-    r.id === rcId ? { ...r, [field]: val } : r
-  ));
-};
+  const updateWhyField = (rcId, whyIdx, field, val) => {
+    setRootCauses(prev => prev.map(r =>
+      r.id === rcId
+        ? { ...r, whys: r.whys.map((w, i) => i === whyIdx ? { ...w, [field]: val } : w) }
+        : r
+    ));
+  };
+
+  const updateRCField = (rcId, field, val) => {
+    setRootCauses(prev => prev.map(r =>
+      r.id === rcId ? { ...r, [field]: val } : r
+    ));
+  };
+
+  const [activeRC, setActiveRC] = useLocalState("rc_active", 0);
   const [activeRC, setActiveRC] = useLocalState("rc_active", 0);
   const [activeWhy, setActiveWhy] = useState(null);
   const [viewMode, setViewMode] = useLocalState("rc_view", "whys"); // whys | fishbone | matrix | custom
