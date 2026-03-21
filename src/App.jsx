@@ -712,20 +712,50 @@ const TOOLTIPS = {
 
 function SmartTooltip({ id, children }) {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const [tipPos, setTipPos] = useState({ top: 0, left: 0 });
   const tip = TOOLTIPS[id];
   if (!tip) return children;
+
+  const handleOpen = () => {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setTipPos({
+        top: rect.top + window.scrollY - 8,
+        left: Math.min(rect.left + window.scrollX, window.innerWidth - 300),
+      });
+    }
+    setOpen(true);
+  };
+
   return (
     <span style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
       {children}
       <button
-        onClick={() => setOpen(p => !p)}
-        onMouseEnter={() => setOpen(true)}
+        ref={btnRef}
+        onClick={() => open ? setOpen(false) : handleOpen()}
+        onMouseEnter={handleOpen}
         onMouseLeave={() => setOpen(false)}
         style={{ background: `${T.cyan}22`, border: `1px solid ${T.cyan}44`, borderRadius: "50%", width: 16, height: 16, color: T.cyan, cursor: "pointer", fontFamily: T.mono, fontSize: "0.55rem", fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, lineHeight: 1 }}>?</button>
       <AnimatePresence>
         {open && (
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            style={{ position: "fixed", bottom: "auto", zIndex: 9999, background: T.panel, border: `1px solid ${T.cyan}44`, borderRadius: 8, padding: "0.85rem 1rem", width: 280, maxWidth: "calc(100vw - 2rem)", boxShadow: `0 8px 32px rgba(0,0,0,0.6), 0 0 20px ${T.cyan}11`, pointerEvents: "none", transform: "translateY(-110%)" }}>
+          <motion.div
+            initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            style={{
+              position: "fixed",
+              top: tipPos.top,
+              left: tipPos.left,
+              transform: "translateY(-100%)",
+              zIndex: 9999,
+              background: T.panel,
+              border: `1px solid ${T.cyan}44`,
+              borderRadius: 8,
+              padding: "0.85rem 1rem",
+              width: 280,
+              maxWidth: "calc(100vw - 2rem)",
+              boxShadow: `0 8px 32px rgba(0,0,0,0.6), 0 0 20px ${T.cyan}11`,
+              pointerEvents: "none",
+            }}>
             <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.6rem", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.4rem" }}>{tip.title}</div>
             <div style={{ color: T.text, fontSize: "0.8rem", lineHeight: 1.6, fontFamily: T.mono }}>{tip.plain}</div>
           </motion.div>
@@ -784,10 +814,14 @@ function ExportButton({ targetId, filename = "dmaic-export", label = "🖨 Print
     setLoading(true);
     try {
       const el = document.getElementById(targetId);
-      if (!el) return;
-      // Use browser print as fallback since html2canvas not available
+      if (!el) { setLoading(false); return; }
       const printContent = el.innerHTML;
       const win = window.open("", "_blank");
+      if (!win) {
+        alert("Pop-up blocked by browser.\nPlease allow pop-ups for this site, then try again.");
+        setLoading(false);
+        return;
+      }
       win.document.write(`
         <html><head><title>${filename}</title>
         <style>
@@ -798,6 +832,9 @@ function ExportButton({ targetId, filename = "dmaic-export", label = "🖨 Print
       `);
       win.document.close();
       win.print();
+    } catch (err) {
+      console.error("Export error:", err);
+      alert("Export failed. Please try again.");
     } finally { setLoading(false); }
   };
   return (
@@ -999,8 +1036,8 @@ function NavBar({ active, setActive }) {
       padding: "0 1.5rem", display: "flex", gap: "0", overflowX: "auto", flexShrink: 0,
       position: "relative", scrollbarWidth: "none", WebkitOverflowScrolling: "touch",
     }}>
-      {tabs.map(t => (
-        <button key={t.id} onClick={() => setActive(t.id)} style={{
+      {{tabs.map(t => (
+        <button key={t.id} data-tab={t.id} onClick={() => setActive(t.id)} style={{
           background: active === t.id ? (t.highlight ? `${T.green}15` : "#0a1520") : "transparent",
           borderTop: "none", borderLeft: "none", borderRight: "none",
           borderBottom: active === t.id ? `2px solid ${t.highlight ? T.green : T.cyan}` : `2px solid ${t.highlight ? T.green + "44" : "transparent"}`,
@@ -3162,15 +3199,15 @@ ${sorted.map(i => `[${rpnLabel(rpn(i))}] RPN ${rpn(i)} | ${i.process}: ${i.failu
       {/* ── TABLE VIEW ── */}
       {viewMode === "table" && (
         <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", marginBottom: "1.5rem" }}>
-          <div style={{ padding: "0.85rem 1.25rem", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ padding: "0.85rem 1.25rem", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
             <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase" }}>[ FAILURE MODE REGISTER — {sorted.length} items ]</span>
             <button onClick={() => setShowAdd(!showAdd)} style={{
               background: `${T.cyan}18`, border: `1px solid ${T.cyan}`, color: T.cyan,
               padding: "0.4rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
             }}>+ Add Failure Mode</button>
           </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.mono, fontSize: "0.72rem" }}>
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+            <table style={{ width: "100%", minWidth: 820, borderCollapse: "collapse", fontFamily: T.mono, fontSize: "0.72rem" }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${T.border}` }}>
                   {["✓", "Process Step", "Failure Mode / Effect", "Cause", "S", "O", "D", "RPN", "Level", "Action", "Owner", "Due", "🗑"].map(h => (
@@ -3434,6 +3471,14 @@ function calcCOPQ(p) {
   const total    = rework + escalation + wastedCap + churn + reputation + appraisal;
   return { rework, escalation, wastedCap, churn, reputation, appraisal, total };
 }
+const COPQ_CATEGORY_DEFAULTS = {
+  wastedCap:  "Wasted Labor Capacity",
+  churn:      "Customer Churn",
+  reputation: "Reputation Damage",
+  escalation: "Escalation Premium",
+  rework:     "Rework / Reopened Cases",
+  appraisal:  "Quality Appraisal",
+};
 
 function COPQEngine() {
   const { sym, s, fmt, fmtFull } = useCurrencyFmt();
@@ -3441,10 +3486,11 @@ function COPQEngine() {
   const [showExecDeck, setShowExecDeck] = useState(false);
   const [activeScenario, setActiveScenario] = useLocalState("copq_activeScenario", "A");
   const [scenarios, setScenarios] = useLocalState("copq_scenarios", COPQ_DEFAULTS);
-  const [viewMode, setViewMode] = useLocalState("copq_viewMode", "single"); // "single" | "compare"
+  const [viewMode, setViewMode] = useLocalState("copq_viewMode", "single");
   const [scenarioNames, setScenarioNames] = useLocalState("copq_scenarioNames", { A: COPQ_DEFAULTS.A.name, B: COPQ_DEFAULTS.B.name });
   const [investment, setInvestment] = useLocalState("copq_investment", 180000);
-
+  const [catLabels, setCatLabels] = useLocalState("copq_catLabels", COPQ_CATEGORY_DEFAULTS);
+  const [showCatEditor, setShowCatEditor] = useState(false);
   // Auto-sync company params when company changes
   useEffect(() => {
     if (company && !company.isPulseDigital) {
@@ -3468,12 +3514,12 @@ function COPQEngine() {
   const roiPct = investment > 0 ? Math.round((savings / investment) * 100) : 0;
 
   const categories = [
-    { key: "wastedCap",   name: "Wasted Labor Capacity",    color: T.red,    type: "Internal" },
-    { key: "churn",       name: "Customer Churn",           color: T.orange, type: "External" },
-    { key: "reputation",  name: "Reputation Damage",        color: "#FF6B9D",type: "External" },
-    { key: "escalation",  name: "Escalation Premium",       color: T.yellow, type: "Internal" },
-    { key: "rework",      name: "Rework / Reopened Cases",  color: T.cyan,   type: "Internal" },
-    { key: "appraisal",   name: "Quality Appraisal",        color: T.green,  type: "Appraisal" },
+    { key: "wastedCap",   name: catLabels.wastedCap  || COPQ_CATEGORY_DEFAULTS.wastedCap,   color: T.red,    type: "Internal" },
+    { key: "churn",       name: catLabels.churn       || COPQ_CATEGORY_DEFAULTS.churn,       color: T.orange, type: "External" },
+    { key: "reputation",  name: catLabels.reputation  || COPQ_CATEGORY_DEFAULTS.reputation,  color: "#FF6B9D",type: "External" },
+    { key: "escalation",  name: catLabels.escalation  || COPQ_CATEGORY_DEFAULTS.escalation,  color: T.yellow, type: "Internal" },
+    { key: "rework",      name: catLabels.rework      || COPQ_CATEGORY_DEFAULTS.rework,      color: T.cyan,   type: "Internal" },
+    { key: "appraisal",   name: catLabels.appraisal   || COPQ_CATEGORY_DEFAULTS.appraisal,   color: T.green,  type: "Appraisal" },
   ];
 
   const PARAMS = [
@@ -3696,6 +3742,41 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
         sub="Cost of Poor Quality with full scenario comparison. Edit any value directly. All data auto-saved."
       />
 
+{/* Category Label Editor — Company Mode only */}
+      {!company?.isPulseDigital && (
+        <AnimatePresence>
+          {showCatEditor && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+              style={{ background: T.surface, border: `1px solid ${T.cyan}33`, borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
+              <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "0.85rem" }}>
+                ✎ Rename Cost Categories — sesuaikan dengan terminologi industri kamu
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.65rem" }}>
+                {Object.entries(COPQ_CATEGORY_DEFAULTS).map(([key, defaultLabel]) => (
+                  <div key={key}>
+                    <label style={{ display: "block", color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem", textTransform: "uppercase", marginBottom: "0.25rem" }}>{defaultLabel}</label>
+                    <input
+                      value={catLabels[key] || defaultLabel}
+                      onChange={e => setCatLabels(prev => ({ ...prev, [key]: e.target.value || defaultLabel }))}
+                      placeholder={defaultLabel}
+                      style={{ width: "100%", background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.5rem 0.65rem", fontFamily: T.mono, fontSize: "0.75rem", boxSizing: "border-box" }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.85rem" }}>
+                <button onClick={() => setCatLabels(COPQ_CATEGORY_DEFAULTS)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem" }}>
+                  ↺ Reset to Default
+                </button>
+                <button onClick={() => setShowCatEditor(false)} style={{ background: `${T.green}18`, border: `1px solid ${T.green}44`, color: T.green, padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem" }}>
+                  ✓ Done
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
+      
       {/* Toolbar */}
       <ModuleToolbar
         onReset={() => { 
@@ -3703,6 +3784,14 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
         copyData={reportText}
         saved={true}
       >
+        {!company?.isPulseDigital && (
+          <button onClick={() => setShowCatEditor(p => !p)} style={{
+            background: showCatEditor ? `${T.cyan}15` : "transparent",
+            border: `1px solid ${showCatEditor ? T.cyan : T.border}`,
+            color: showCatEditor ? T.cyan : T.textDim,
+            padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+          }}>✎ Rename Categories</button>
+        )}
         <button onClick={() => setShowExecDeck(true)} style={{
           background: `${T.yellow}18`, border: `1px solid ${T.yellow}55`,
           color: T.yellow, padding: "0.35rem 0.85rem", borderRadius: 4,
@@ -3831,7 +3920,9 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
           </div>
           {[10, 25, 33, 50, 75].map(pct => {
   const savingsAmt = Math.round(copqA.total * pct / 100);
-  const months = savingsAmt > 0 ? Math.max(Math.round((investment / savingsAmt) * 12), 1) : "∞";
+  const months = (investment <= 0 || savingsAmt <= 0)
+    ? "—"
+    : Math.max(Math.round((investment / savingsAmt) * 12), 1);
   const barPct = copqA.total > 0 ? Math.min((savingsAmt / copqA.total) * 100, 100) : 0;
   return (
     <div key={pct} style={{ marginBottom: "0.65rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
@@ -3941,35 +4032,35 @@ const [customLSL, setCustomLSL] = useLocalState("spc_custom_lsl", "");
     const sigma = (ucl - mean) / 3;
     return points.map((v, i) => {
       const rules = [];
-      // Rule 1: Point beyond 3σ
+      // Rule 1: Point beyond 3σ (outside control limits)
       if (v > ucl || v < lcl) rules.push("R1: Beyond 3σ");
-      // Rule 2: 2 of 3 beyond 2σ (same side)
+      // Rule 2: 2 of 3 consecutive points beyond 2σ on the SAME side
       if (i >= 2) {
-        const window = [points[i-2], points[i-1], v];
-        const aboveTwoSig = window.filter(p => p > mean + 2 * sigma).length;
-        const belowTwoSig = window.filter(p => p < mean - 2 * sigma).length;
+        const w2 = [points[i - 2], points[i - 1], v];
+        const aboveTwoSig = w2.filter(p => p > mean + 2 * sigma).length;
+        const belowTwoSig = w2.filter(p => p < mean - 2 * sigma).length;
         if (aboveTwoSig >= 2 || belowTwoSig >= 2) rules.push("R2: 2/3 beyond 2σ");
       }
-      // Rule 3: 4 of 5 beyond 1σ (same side)
+      // Rule 3: 4 of 5 consecutive points beyond 1σ on the SAME side
       if (i >= 4) {
-        const window = points.slice(i-4, i+1);
-        const aboveOneSig = window.filter(p => p > mean + sigma).length;
-        const belowOneSig = window.filter(p => p < mean - sigma).length;
+        const w3 = points.slice(i - 4, i + 1);
+        const aboveOneSig = w3.filter(p => p > mean + sigma).length;
+        const belowOneSig = w3.filter(p => p < mean - sigma).length;
         if (aboveOneSig >= 4 || belowOneSig >= 4) rules.push("R3: 4/5 beyond 1σ");
       }
-      // Rule 4: 8 consecutive same side of mean
-if (i >= 7) {
-  const window = points.slice(i - 7, i + 1);
-  if (window.length === 8 && (window.every(p => p > mean) || window.every(p => p < mean))) {
-    rules.push("R4: 8pts same side");
-  }
-}
-      // Rule 5: 6 consecutive trending
+      // Rule 4: 8 consecutive points all on the same side of the mean
+      if (i >= 7) {
+        const w4 = points.slice(i - 7, i + 1);
+        if (w4.every(p => p > mean) || w4.every(p => p < mean)) {
+          rules.push("R4: 8pts same side");
+        }
+      }
+      // Rule 5: 6 consecutive points steadily increasing or decreasing (trend)
       if (i >= 5) {
-        const window = points.slice(i-5, i+1);
-        const trending = window.every((v, j) => j === 0 || v > window[j-1]) ||
-                         window.every((v, j) => j === 0 || v < window[j-1]);
-        if (trending) rules.push("R5: 6pts trending");
+        const w5 = points.slice(i - 5, i + 1);
+        const trendUp   = w5.every((p, j) => j === 0 || p > w5[j - 1]);
+        const trendDown = w5.every((p, j) => j === 0 || p < w5[j - 1]);
+        if (trendUp || trendDown) rules.push("R5: 6pts trending");
       }
       return { signal: rules.length > 0, rules };
     });
@@ -5508,7 +5599,8 @@ const y = Math.max(5, 80 - (Math.min(r.impact, 25) / 25) * 65);
 
       {/* Summary table */}
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.mono, fontSize: "0.72rem" }}>
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <table style={{ width: "100%", minWidth: 680, borderCollapse: "collapse", fontFamily: T.mono, fontSize: "0.72rem" }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${T.border}` }}>
               {["Root Cause", "Category", "Contribution", "Impact (hrs)", "Status", "Solution"].map(h => (
@@ -5541,6 +5633,7 @@ const y = Math.max(5, 80 - (Math.min(r.impact, 25) / 25) * 65);
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -5558,7 +5651,7 @@ const y = Math.max(5, 80 - (Math.min(r.impact, 25) / 25) * 65);
         {[
           { label: "Root Causes", val: rootCauses.length, color: T.cyan },
           { label: "Gap Explained", val: `${totalContrib.toFixed(1)}h / ${totalGap}h`, color: T.yellow },
-          { label: "% Solved", val: `${Math.round((rootCauses.filter(r=>r.status==="SOLVED").length/rootCauses.length)*100)}%`, color: T.green },
+          { label: "% Solved", val: rootCauses.length === 0 ? "—" : `${Math.round((rootCauses.filter(r=>r.status==="SOLVED").length/rootCauses.length)*100)}%`, color: T.green },
           { label: "Validated (p<0.001)", val: rootCauses.filter(r=>r.validated).length, color: T.cyan },
           { label: "Total Impact", val: `−${totalContrib.toFixed(1)}h`, color: T.green },
         ].map(k => (
@@ -6047,10 +6140,20 @@ function AITriageSimulator() {
   const [showHistory, setShowHistory] = useState(false);
   const [showTeamEditor, setShowTeamEditor] = useState(false);
   const industry = company?.industry || "IT / Tech Support";
+  const techKey = isPD ? "triage_team_pd" : `triage_team_${(company?.name || "custom").replace(/\s+/g, "_").toLowerCase()}`;
   const [technicians, setTechnicians] = useLocalState(
-    isPD ? "triage_team_pd" : `triage_team_${company?.name || "custom"}`,
+    techKey,
     getDefaultTechnicians(industry)
   );
+
+  // Reset technician team ke default industri baru saat industry berubah
+  const prevIndustryRef = useRef(industry);
+  useEffect(() => {
+    if (prevIndustryRef.current !== industry && !isPD) {
+      setTechnicians(getDefaultTechnicians(industry));
+    }
+    prevIndustryRef.current = industry;
+  }, [industry]);
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkResults, setBulkResults] = useState([]);
   const [bulkPhase, setBulkPhase] = useState("idle");
@@ -7208,7 +7311,29 @@ Alfin Yudistira · Pulse Digital`;
           </div>
         </div>
 
-
+{/* ── EMPTY STATE BANNER — tampil kalau belum ada triage data ── */}
+        {triageHistory.length === 0 && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+            style={{ background: `${T.yellow}0A`, border: `1px solid ${T.yellow}33`, borderRadius: 8, padding: "0.9rem 1.25rem", marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "1.2rem" }}>💡</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.68rem", fontWeight: 700, marginBottom: "0.2rem" }}>Live Ops aktif — menunggu data</div>
+              <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.62rem", lineHeight: 1.5 }}>
+                Modul ini menampilkan data real-time dari semua modul lain. Untuk melihat Live Ops beraksi, buka <strong style={{ color: T.cyan }}>Smart Triage (Modul 9)</strong> dan submit beberapa keluhan dulu.
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                const el = document.querySelector('[data-tab="triage"]');
+                if (el) el.click();
+              }}
+              style={{ background: `${T.cyan}18`, border: `1px solid ${T.cyan}44`, color: T.cyan, padding: "0.4rem 0.85rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem", whiteSpace: "nowrap" }}
+            >
+              → Buka Smart Triage
+            </button>
+          </motion.div>
+        )}
+        
       {/* ══ ROW 1: PROJECT HEALTH BANNER ══════════════════════════════════════ */}
       <div style={{
         background: T.panel,
@@ -7797,7 +7922,7 @@ Alfin Yudistira · Pulse Digital`;
 const INDUSTRY_PRESETS = {
   techsupport: {
     label: "🖥️ IT / Tech Support",
-    desc: "Based on real Project 02 data — 547 cases, 30-week initiative",
+    desc: "Based on data — 547 cases, 30-week initiative",
     fields: [
       { key: "volume", label: "Monthly Case/Ticket Volume", unit: "cases", val: 295, min: 50, max: 5000, step: 10 },
       { key: "reopenRate", label: "Case Reopen / Rework Rate", unit: "%", val: 28, min: 0, max: 60, step: 1 },
@@ -8056,7 +8181,7 @@ function UniversalCOPQ() {
         </div>
         <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.78rem", lineHeight: 1.7, maxWidth: 600, margin: "0 auto" }}>
           Finding the hidden cost → quantifying it precisely → building the business case → executing the DMAIC cycle → locking in gains permanently.
-          In Project 02, this methodology identified <strong style={{ color: T.yellow }}>$9M</strong> in COPQ and delivered <strong style={{ color: T.green }}>$300K</strong> in realized annual savings.
+          This methodology identified <strong style={{ color: T.yellow }}>$9M</strong> in COPQ and delivered <strong style={{ color: T.green }}>$300K</strong> in realized annual savings.
         </div>
       </div>
     </motion.div>
@@ -8222,7 +8347,7 @@ function Hero({ onEnter }) {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
           style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.75rem" }}>
           <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: T.green, boxShadow: `0 0 10px ${T.green}`, animation: "pulse 1.5s infinite" }} />
-          PROJECT 02 / 14 · DMAIC FULL CYCLE · STATUS: COMPLETE
+          DMAIC FULL CYCLE · STATUS: COMPLETE
           <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: T.green, boxShadow: `0 0 10px ${T.green}`, animation: "pulse 1.5s infinite" }} />
         </motion.div>
 
@@ -8376,12 +8501,22 @@ function Hero({ onEnter }) {
 // Inner component so it can use the currency hook inside CompanyCtx.Provider
 function AppKPIChips({ company }) {
   const { s, fmt } = useCurrencyFmt();
+  // Baca live data dari Overview localStorage kalau ada, fallback ke PROJECT constant
+  const liveOverview = (() => {
+    try {
+      const saved = localStorage.getItem("overview_data");
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  })();
+  const livePpk = liveOverview?.metrics?.find(m => m.id === "ppk")?.after ?? PROJECT.final.ppk;
+  const liveSigma = liveOverview?.metrics?.find(m => m.id === "sigma")?.after ?? PROJECT.final.sigma;
+  const liveSavings = liveOverview?.financials?.savings ?? PROJECT.savings;
   return (
     <div style={{ display: "flex", gap: "0.5rem" }}>
       {(company.isPulseDigital ? [
-        { label: `${PROJECT.final.ppk}`, sub: "Ppk", color: T.green },
-        { label: `${PROJECT.final.sigma}σ`, sub: "Level", color: T.cyan },
-        { label: `${s}${(PROJECT.savings / 1000).toFixed(0)}K`, sub: "Saved", color: T.yellow },
+        { label: `${livePpk}`, sub: "Ppk", color: T.green },
+        { label: `${liveSigma}σ`, sub: "Level", color: T.cyan },
+        { label: `${s}${(liveSavings / 1000).toFixed(0)}K`, sub: "Saved", color: T.yellow },
       ] : [
         {
           label: (() => {
@@ -8424,7 +8559,12 @@ export default function App() {
 
   useEffect(() => {
     const handler = (e) => {
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+      // Jangan intercept kalau user sedang fokus di input/textarea/select/contenteditable
+      const tag = e.target.tagName;
+      const isEditing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || e.target.isContentEditable;
+      if (isEditing) return;
+      // Jangan intercept modifier keys (Ctrl+Z, Alt+-, dll)
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
       const tabs = ["overview","sigma","dmaic","fmea","copq","spc","pareto","rootcause","triage","universal","ops"];
       if (e.key >= "1" && e.key <= "9") setActiveTab(tabs[parseInt(e.key) - 1]);
       if (e.key === "0") setActiveTab("universal");
@@ -8460,7 +8600,7 @@ export default function App() {
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: T.green, boxShadow: `0 0 8px ${T.green}` }} />
             <div>
               <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.58rem", letterSpacing: "0.2em", textTransform: "uppercase" }}>
-                Six Sigma Black Belt · Project 02/14
+                Six Sigma Black Belt ·
               </div>
               <div style={{ color: T.text, fontFamily: T.display, fontSize: "1rem", fontWeight: 700, lineHeight: 1 }}>
                 DMAIC Intelligence Platform
@@ -8538,6 +8678,8 @@ export default function App() {
           @media (max-width: 600px) {
             main { padding: 1.25rem 1rem !important; }
             nav { padding: 0 0.5rem !important; }
+            table { font-size: 0.65rem !important; }
+            th, td { padding: 0.45rem 0.5rem !important; }
           }
           @media print {
             nav, footer, button, .no-print { display: none !important; }
