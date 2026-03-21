@@ -5107,7 +5107,6 @@ ${showWhatIf ? `WHAT-IF SCENARIO:
     </motion.div>
   );
 }
-}
 
 // ─── 08: ROOT CAUSE ANALYZER ─────────────────────────────────────────────────
 
