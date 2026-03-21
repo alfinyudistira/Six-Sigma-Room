@@ -5106,6 +5106,19 @@ const RC_DEFAULTS = [
 
 function RootCauseAnalyzer() {
   const [rootCauses, setRootCauses] = useLocalState("rc_items", RC_DEFAULTS);
+  const updateWhyField = (rcId, whyIdx, field, val) => {
+  setRootCauses(prev => prev.map(r =>
+    r.id === rcId
+      ? { ...r, whys: r.whys.map((w, i) => i === whyIdx ? { ...w, [field]: val } : w) }
+      : r
+  ));
+};
+
+const updateRCField = (rcId, field, val) => {
+  setRootCauses(prev => prev.map(r =>
+    r.id === rcId ? { ...r, [field]: val } : r
+  ));
+};
   const [activeRC, setActiveRC] = useLocalState("rc_active", 0);
   const [activeWhy, setActiveWhy] = useState(null);
   const [viewMode, setViewMode] = useLocalState("rc_view", "whys"); // whys | fishbone | matrix | custom
@@ -5118,7 +5131,10 @@ function RootCauseAnalyzer() {
   const CATEGORIES = ["MAN", "METHOD", "MACHINE", "MATERIAL", "MEASUREMENT", "ENVIRONMENT"];
   const catColor = (c) => ({ MAN: T.red, METHOD: T.orange, MACHINE: T.yellow, MATERIAL: T.cyan, MEASUREMENT: "#9B8EC4", ENVIRONMENT: T.green }[c] || T.textDim);
 
-  const totalGap = 24.1;
+  const company = useCompany();
+const totalGap = company && !company.isPulseDigital && company.baselineMean > 0 && company.target > 0
+  ? Math.abs(company.baselineMean - company.target)
+  : 24.1;
   const totalContrib = rootCauses.reduce((acc, r) => acc + r.impact, 0);
 
   const copyReport = `ROOT CAUSE ANALYSIS REPORT
@@ -5208,8 +5224,8 @@ ${rootCauses.map((r, i) => `${i+1}. ${r.title} [${r.category}]
           <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: T.border, opacity: 0.5 }} />
           {/* Bubbles */}
           {rootCauses.map((r, i) => {
-            const x = 10 + (r.contribution / 100) * 75;
-            const y = 80 - (r.impact / 10) * 65;
+            const x = 10 + (Math.min(r.contribution, 100) / 100) * 75;
+const y = Math.max(5, 80 - (Math.min(r.impact, 25) / 25) * 65);
             const size = Math.max(30, r.contribution * 0.8);
             const c = catColor(r.category);
             return (
@@ -5450,13 +5466,13 @@ ${rootCauses.map((r, i) => `${i+1}. ${r.title} [${r.category}]
                         </motion.div>
                         <div style={{ flex: 1 }}>
                           <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.7rem", marginBottom: "0.25rem", fontStyle: "italic" }}>
-                            Why {i + 1}: {w.q}
+                            Why {i + 1}: <EditableLabel value={w.q} onChange={v => setRootCauses(prev => prev.map(r => r.id === rc.id ? { ...r, whys: r.whys.map((x, j) => j === i ? { ...x, q: v } : x) } : r))} style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.7rem" }} />
                           </div>
                           <motion.div
                             animate={{ opacity: 1, height: "auto" }}
-                            style={{ background: isActive ? `${T.cyan}10` : T.panel, border: `1px solid ${isActive ? T.cyan + "44" : T.border}`, borderRadius: 6, padding: "0.75rem 1rem", color: T.text, fontSize: "0.83rem", lineHeight: 1.6, cursor: "pointer", transition: "all 0.2s" }}
+                            style={{ background: isActive ? `${T.cyan}10` : T.panel, border: `1px solid ${isActive ? T.cyan + "44" : T.border}`, borderRadius: 6, padding: "0.75rem 1rem", color: T.text, fontSize: "0.83rem", lineHeight: 1.6, transition: "all 0.2s" }}
                             onClick={() => setActiveWhy(isActive ? null : i)}>
-                            {w.a}
+                            <EditableLabel value={w.a} onChange={v => setRootCauses(prev => prev.map(r => r.id === rc.id ? { ...r, whys: r.whys.map((x, j) => j === i ? { ...x, a: v } : x) } : r))} style={{ color: T.text, fontFamily: T.mono, fontSize: "0.83rem" }} />
                           </motion.div>
                         </div>
                       </div>
@@ -5765,8 +5781,7 @@ const TECH_COLORS = [T.green, T.cyan, T.yellow, T.orange, "#9B8EC4", T.red, T.te
 
 function AITriageSimulator() {
   const company = useCompany();
-  const isPD = company?.isPulseDigital !== false;
-
+  const isPD = !company || company.isPulseDigital === true;
   // ── State ──
   const [input, setInput] = useState("");
   const [bulkInput, setBulkInput] = useState("");
@@ -6588,13 +6603,23 @@ function LiveOpsCenter() {
   // ── Listen for localStorage changes from other modules ───────────────────
   const [opsTab, setOpsTab] = useState("queue");
   useEffect(() => {
+    if (warRoomMode) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [warRoomMode]);
+  useEffect(() => {
     const handler = () => setLsRevision(r => r + 1);
-    // "storage" event hanya trigger di tab lain — untuk same-tab kita dispatch manual
     window.addEventListener("storage", handler);
     window.addEventListener("lsupdate", handler);
+    // Fallback refresh setiap 3 detik untuk same-tab changes
+    const interval = setInterval(() => setLsRevision(r => r + 1), 3000);
     return () => {
       window.removeEventListener("storage", handler);
       window.removeEventListener("lsupdate", handler);
+      clearInterval(interval);
     };
   }, []);
 
@@ -6630,7 +6655,7 @@ function LiveOpsCenter() {
   const copqDailyBurnB = Math.round(copqB.total / 365);
 
   // ── Derived: PARETO ──────────────────────────────────────────────────────
-  const activePareto = (paretoItems || []).filter(i => !i.hidden);
+  const activePareto = (paretoItems || []).filter(i => i.active !== false);
   const totalCases = activePareto.reduce((a, i) => a + i.cases, 0);
   const totalHrs = activePareto.reduce((a, i) => a + i.cases * i.avgHrs, 0);
   const sortedPareto = [...activePareto].sort((a, b) => b.cases * b.avgHrs - a.cases * a.avgHrs);
