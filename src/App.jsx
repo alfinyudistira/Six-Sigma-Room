@@ -5106,6 +5106,7 @@ ${showWhatIf ? `WHAT-IF SCENARIO:
     </motion.div>
   );
 }
+}
 
 // ─── 08: ROOT CAUSE ANALYZER ─────────────────────────────────────────────────
 
@@ -5172,7 +5173,6 @@ function RootCauseAnalyzer() {
     ));
   };
 
-  const [activeRC, setActiveRC] = useLocalState("rc_active", 0);
   const [activeRC, setActiveRC] = useLocalState("rc_active", 0);
   const [activeWhy, setActiveWhy] = useState(null);
   const [viewMode, setViewMode] = useLocalState("rc_view", "whys"); // whys | fishbone | matrix | custom
