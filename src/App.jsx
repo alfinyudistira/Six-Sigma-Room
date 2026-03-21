@@ -4431,6 +4431,7 @@ function ParetoBuilder() {
   setCsvText("");
   setShowImport(false);
 }
+  };
 
   const exportCSV = () => {
     const header = "Category,Cases,Avg Hrs,Group,Total Hrs,% of Total,Priority\n";
