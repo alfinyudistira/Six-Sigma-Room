@@ -8062,18 +8062,41 @@ function Hero({ onEnter }) {
           ))}
         </div>
 
-        {/* Live Demo badges */}
-        <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap", marginBottom: "2rem" }}>
-          {[
-            { icon: "▶", label: "Smart Triage Simulator", sub: "Type any complaint → AI routes it to the right team" },
-            { icon: "⚡", label: "Universal — Any Industry", sub: "Configure your company once → all 10 modules adapt" },
-          ].map(f => (
-            <div key={f.label} style={{ background: `${T.green}10`, border: `1px solid ${T.green}44`, borderRadius: 8, padding: "0.75rem 1.25rem", textAlign: "center" }}>
-              <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.05em" }}>{f.icon} {f.label}</div>
-              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", marginTop: "0.2rem" }}>{f.sub}</div>
-            </div>
-          ))}
+        {/* Module Preview Cards */}
+<div style={{ maxWidth: 780, margin: "0 auto 2.5rem", textAlign: "left" }}>
+  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.2em", textAlign: "center", marginBottom: "1rem" }}>
+    — 11 Modules Inside —
+  </div>
+  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.6rem" }}>
+    {[
+      { icon: "◈", label: "Mission Status", teaser: "Ingin lihat kondisi proyek kamu dalam 1 halaman? Semua KPI, sigma level, dan progress DMAIC langsung keliatan." },
+      { icon: "σ", label: "Sigma Calculator", teaser: "Berapa banyak kesalahan proses kamu? Masukkan data → langsung dapat Sigma Level, DPMO, dan posisi vs industri." },
+      { icon: "⬡", label: "DMAIC Tracker", teaser: "Punya proyek perbaikan? Pantau 5 fase DMAIC-mu, isi task, deadline, dan lihat progresnya real-time." },
+      { icon: "⚠", label: "FMEA Risk Scorer", teaser: "Mau tau risiko apa yang paling bahaya di proses kamu? Skor S×O×D → dapat prioritas tindakan otomatis." },
+      { icon: "$", label: "COPQ Engine", teaser: "Berapa uang yang terbuang sia-sia karena proses buruk? Hitung COPQ-mu dan lihat potensi penghematan nyata." },
+      { icon: "~", label: "SPC Charts", teaser: "Proses kamu stabil atau lagi bermasalah? Chart I-MR dengan Western Electric Rules langsung deteksi anomali." },
+      { icon: "▮", label: "Pareto Builder", teaser: "80% masalah dari 20% penyebab — mana yang harus diserang duluan? Pareto Builder kasih jawabannya visual." },
+      { icon: "⟳", label: "Root Cause 5-Whys", teaser: "Sudah tau masalahnya tapi bingung akar penyebabnya? Drill-down 5 Whys + Fishbone interaktif." },
+      { icon: "✦", label: "AI Triage Simulator", teaser: "Punya keluhan masuk? Ketik complaint apapun → AI langsung klasifikasi dan routing ke teknisi yang tepat." },
+      { icon: "∑", label: "Universal COPQ", teaser: "Ingin hitung biaya kerugian untuk industri apapun? Template COPQ yang bisa dikustomisasi penuh." },
+      { icon: "⬤", label: "Live Ops Center", teaser: "Mau pantau semua tiket aktif, beban tim, dan SLA secara real-time? War room operasional kamu ada di sini." },
+    ].map((m, i) => (
+      <motion.div key={m.label} whileHover={{ scale: 1.02, borderColor: T.cyan }}
+        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+        style={{
+          background: T.surface, border: `1px solid ${T.border}`,
+          borderRadius: 8, padding: "0.85rem 1rem", cursor: "default",
+          transition: "border-color 0.2s",
+        }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.35rem" }}>
+          <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.9rem", fontWeight: 700, width: 20, textAlign: "center" }}>{m.icon}</span>
+          <span style={{ color: T.text, fontFamily: T.display, fontSize: "0.8rem", fontWeight: 700 }}>{m.label}</span>
         </div>
+        <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", lineHeight: 1.55, paddingLeft: "1.6rem" }}>{m.teaser}</div>
+      </motion.div>
+    ))}
+  </div>
+</div>
 
         <motion.button
           whileHover={{ scale: 1.05, boxShadow: `0 0 40px ${T.cyan}55` }}
@@ -8106,14 +8129,24 @@ function Hero({ onEnter }) {
           }}>
             ↓ Backup JSON
           </button>
-          <button onClick={exportCSV} style={{
-            background: `${T.cyan}12`, border: `1px solid ${T.cyan}44`,
-            color: T.cyan, padding: "0.5rem 1rem", borderRadius: 6,
-            cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
-            letterSpacing: "0.05em",
-          }}>
-            ↓ Export CSV
-          </button>
+          <button onClick={() => {
+  try {
+    const raw = localStorage.getItem("triage_history") || "[]";
+    const history = JSON.parse(raw);
+    if (history.length === 0) {
+      alert("No triage data to export yet. Submit some complaints in Smart Triage first.");
+      return;
+    }
+    exportCSV();
+  } catch { exportCSV(); }
+}} style={{
+  background: `${T.cyan}12`, border: `1px solid ${T.cyan}44`,
+  color: T.cyan, padding: "0.5rem 1rem", borderRadius: 6,
+  cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
+  letterSpacing: "0.05em",
+}}>
+  ↓ Export Triage CSV
+</button>
           <button onClick={() => {
             if (!window.confirm("⚠ NUCLEAR RESET\n\nIni akan hapus SEMUA data dari semua modul.\nTidak bisa di-undo.\n\nLanjut?")) return;
             nuclearReset();
