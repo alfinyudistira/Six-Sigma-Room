@@ -1361,10 +1361,10 @@ function SigmaCalculator() {
   const [defects, setDefects] = useLocalState("sigma_defects", 382000);
   const [opportunities, setOpportunities] = useLocalState("sigma_opps", 1000000);
   const [yieldPct, setYieldPct] = useLocalState("sigma_yield", 61.8);
-  const [mean, setMean] = useLocalState("sigma_mean", company?.isPulseDigital ? 72.1 : (company?.baselineMean || 72.1));
-  const [stdDev, setStdDev] = useLocalState("sigma_std", company?.isPulseDigital ? 17.4 : (company?.baselineStdDev || 17.4));
-  const [usl, setUsl] = useLocalState("sigma_usl", company?.isPulseDigital ? 96 : (company?.usl || 96));
-  const [lsl, setLsl] = useLocalState("sigma_lsl", company?.isPulseDigital ? 0 : (company?.lsl || 0));
+  const [mean, setMean] = useLocalState("sigma_mean", 72.1);
+  const [stdDev, setStdDev] = useLocalState("sigma_std", 17.4);
+  const [usl, setUsl] = useLocalState("sigma_usl", 96);
+  const [lsl, setLsl] = useLocalState("sigma_lsl", 0);
   const [history, setHistory] = useLocalState("sigma_history", []);
   const [showHistory, setShowHistory] = useState(false);
   const [showDistribution, setShowDistribution] = useState(true);
@@ -1384,7 +1384,7 @@ function SigmaCalculator() {
   };
 
   const res = calcAll(defects, opportunities, yieldPct, mean, stdDev, usl, lsl, mode);
-  const resB = calcAll(compareB.defects, compareB.opportunities, 50, 72, 17, 96, 0, "dpmo");
+  const resB = calcAll(compareB.defects, compareB.opportunities, 50, 72, 17, 96, 0, "mode");
   const sc = sigmaColor(res.sigma);
   const ps = ppkStatus(res.ppk);
 
@@ -2492,6 +2492,23 @@ ${phaseKeys.map(k => {
     <div>
       <div style={{ background: `${T.green}0C`, border: `1px solid ${T.green}33`, borderRadius: 8, padding: "1.25rem", marginBottom: "1.5rem" }}>
         <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700, marginBottom: "0.75rem" }}>⚡ YOUR DMAIC PROJECT TRACKER</div>
+        {!company.isPulseDigital && (
+          <button onClick={() => setCustomProject(p => ({
+            ...p,
+            name: company.processName || p.name,
+            dept: company.dept || p.dept,
+            metric: company.processUnit || p.metric,
+            baseline: String(company.baselineMean) || p.baseline,
+            target: String(company.target) || p.target,
+          }))} style={{
+            background: `${T.cyan}12`, border: `1px solid ${T.cyan}44`,
+            color: T.cyan, padding: "0.4rem 0.85rem", borderRadius: 4,
+            cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+            marginBottom: "0.75rem", display: "block",
+          }}>
+            ⟳ Auto-fill from Company Profile
+          </button>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
           {[
             { label: "Project Name", key: "name", ph: "e.g. Reduce Defect Rate" },
@@ -2928,7 +2945,10 @@ function FMEAScorer() {
     setNewItem({ process: "", failure: "", cause: "", effect: "", S: 5, O: 5, D: 5, action: "", owner: "", dueWeek: 0 });
     setShowAdd(false);
   };
-  const deleteItem = (id) => setItems(prev => prev.filter(i => i.id !== id));
+  const deleteItem = (id) => {
+  if (!window.confirm("Hapus failure mode ini?")) return;
+  setItems(prev => prev.filter(i => i.id !== id));
+};
 
   const sorted = [...items]
     .filter(i => rpn(i) >= filterMin)
@@ -3321,7 +3341,7 @@ function COPQEngine() {
   const activeParams = scenarios[activeScenario];
 
   const savings = copqA.total - copqB.total;
-  const roiPct = scenarios.B.techCost > 0 ? Math.round((savings / investment) * 100) : 0;
+  const roiPct = investment > 0 ? Math.round((savings / investment) * 100) : 0;
 
   const categories = [
     { key: "wastedCap",   name: "Wasted Labor Capacity",    color: T.red,    type: "Internal" },
@@ -3533,7 +3553,7 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
               <div style={{ background: `${T.green}0A`, border: `1px solid ${T.green}33`, borderRadius: 8, padding: "1.25rem", marginBottom: "1.25rem" }}>
                 <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.6rem" }}>Strategic Recommendation</div>
                 <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.75rem", lineHeight: 1.7 }}>
-                  Based on COPQ analysis, implementing the proposed DMAIC improvement initiative for <strong style={{ color: T.cyan }}>{company?.processName || "this process"}</strong> is projected to reduce annual Cost of Poor Quality from <strong style={{ color: T.red }}>{fmtFull(copqA.total * 12)}</strong> to <strong style={{ color: T.green }}>{fmtFull(copqB.total * 12)}</strong>, delivering a net saving of <strong style={{ color: T.cyan }}>{fmtFull(Math.max(0, (copqA.total - copqB.total) * 12))}</strong> per year. Recommend immediate prioritization of the top COPQ driver: <strong style={{ color: T.yellow }}>Wasted Labor Capacity</strong>.
+                  Based on COPQ analysis, implementing the proposed DMAIC improvement initiative for <strong style={{ color: T.cyan }}>{company?.processName || "this process"}</strong> is projected to reduce annual Cost of Poor Quality from <strong style={{ color: T.red }}>{fmtFull(copqA.total * 12)}</strong> to <strong style={{ color: T.green }}>{fmtFull(copqB.total * 12)}</strong>, delivering a net saving of <strong style={{ color: T.cyan }}>{fmtFull(Math.max(0, (copqA.total - copqB.total) * 12))}</strong> per year. Recommend immediate prioritization of the top COPQ driver: <strong style={{ color: T.yellow }}>{categories.sort((a,b) => copqA[b.key] - copqA[a.key])[0]?.name || "Wasted Labor Capacity"}</strong>.
                 </div>
               </div>
               {/* Footer */}
@@ -3769,7 +3789,7 @@ function SPCCharts() {
   const [editingLabel, setEditingLabel] = useState(false);
   const [weRulesEnabled, setWeRulesEnabled] = useState(true);
   const [showTable, setShowTable] = useState(false);
-  const [startWeek, setStartWeek] = useState(1);
+  const [startWeek, setStartWeek] = useLocalState("spc_start_week", 1);
 
   const activeDataset = mode === "demo"
     ? DEMO_DATASETS[selectedDemo]
@@ -3783,7 +3803,7 @@ function SPCCharts() {
   const movingRanges = pts.slice(1).map((v, i) => Math.abs(v - pts[i]));
   const avgMR = movingRanges.length > 0 ? movingRanges.reduce((a, b) => a + b, 0) / movingRanges.length : 0;
   const ucl = mean + 2.66 * avgMR;
-  const lcl = mean - 2.66 * avgMR;
+  const lcl = Math.max(0, mean - 2.66 * avgMR);
   const mrUcl = 3.267 * avgMR;
   const stdDev = n > 1 ? Math.sqrt(pts.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / (n - 1)) : 0;
 
@@ -3860,7 +3880,17 @@ function SPCCharts() {
   const loadBulk = () => {
     const vals = bulkInput.split(/[\n,\s]+/).map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
     if (vals.length > 0) {
-      if (mode === "custom") setCustomPoints(vals);
+      if (mode === "custom") {
+  if (customPoints.length > 0) {
+    if (window.confirm(`Replace ${customPoints.length} existing points with ${vals.length} new points? Or cancel to append instead.`)) {
+      setCustomPoints(vals);
+    } else {
+      setCustomPoints(p => [...p, ...vals]);
+    }
+  } else {
+    setCustomPoints(vals);
+  }
+}
       setBulkInput("");
       setShowBulk(false);
     }
@@ -4365,7 +4395,12 @@ function ParetoBuilder() {
     setItems(p => p.map(i => ({ ...i, active: !allActive })));
   };
   const updateItem = (id, field, val) => setItems(p => p.map(i => i.id === id ? { ...i, [field]: field === "cases" || field === "avgHrs" ? parseFloat(val) || 0 : val } : i));
-  const deleteItem = (id) => { setItems(p => p.filter(i => i.id !== id)); setEditingId(null); };
+  const deleteItem = (id) => {
+  const item = items.find(i => i.id === id);
+  if (!window.confirm(`Hapus kategori "${item?.category}"?`)) return;
+  setItems(p => p.filter(i => i.id !== id));
+  setEditingId(null);
+};
   const addItem = () => {
     if (!newItem.category) return;
     const colorIdx = items.length % COLORS_POOL.length;
@@ -4381,8 +4416,17 @@ function ParetoBuilder() {
       const colorIdx = (items.length + i) % COLORS_POOL.length;
       return { id: Date.now() + i, category: parts[0] || `Item ${i+1}`, cases: parseInt(parts[1]) || 0, avgHrs: parseFloat(parts[2]) || 0, color: COLORS_POOL[colorIdx], active: true, group: parts[3] || "Other" };
     }).filter(p => p.category);
-    if (parsed.length > 0) { setItems(p => [...p, ...parsed]); setCsvText(""); setShowImport(false); }
-  };
+    if (parsed.length > 0) {
+  setItems(p => {
+    const existingNames = p.map(i => i.category.toLowerCase());
+    const newItems = parsed.filter(i => !existingNames.includes(i.category.toLowerCase()));
+    const dupes = parsed.length - newItems.length;
+    if (dupes > 0) alert(`${dupes} duplicate category(ies) skipped.`);
+    return [...p, ...newItems];
+  });
+  setCsvText("");
+  setShowImport(false);
+}
 
   const exportCSV = () => {
     const header = "Category,Cases,Avg Hrs,Group,Total Hrs,% of Total,Priority\n";
@@ -4920,6 +4964,9 @@ ${showWhatIf ? `WHAT-IF SCENARIO:
                   </div>
                   <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem" }}>
                     Drag sliders to simulate case volume reduction per category
+                  </div>
+                  <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", marginTop: "0.2rem", fontStyle: "italic" }}>
+                    * Avg resolution time reduces at 30% of case reduction rate (complexity assumed partially independent)
                   </div>
                 </div>
                 <div style={{ background: `${T.green}18`, border: `1px solid ${T.green}44`, borderRadius: 8, padding: "0.75rem 1.25rem", textAlign: "center" }}>
