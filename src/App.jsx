@@ -3080,10 +3080,56 @@ ${sorted.map(i => `[${rpnLabel(rpn(i))}] RPN ${rpn(i)} | ${i.process}: ${i.failu
 
       {/* Toolbar */}
       <ModuleToolbar
-        onReset={() => { setItems(FMEA_DEFAULTS); setSortBy("rpn"); setFilterMin(0); }}
-        copyData={copyReport}
-        saved={true}
-      >
+  onReset={() => { setItems(FMEA_DEFAULTS); setSortBy("rpn"); setFilterMin(0); }}
+  copyData={copyReport}
+  saved={true}
+>
+  {/* CSV Export */}
+  <button onClick={() => {
+    const header = "Process,Failure,Cause,Effect,S,O,D,RPN,Status,Action,Owner,DueWeek\n";
+    const rows = items.map(i =>
+      `"${i.process}","${i.failure}","${i.cause}","${i.effect}",${i.S},${i.O},${i.D},${rpn(i)},${i.fixed?"CONTROLLED":"OPEN"},"${i.action}","${i.owner}",${i.dueWeek}`
+    ).join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "FMEA_Register.csv"; a.click();
+    URL.revokeObjectURL(url);
+  }} style={{
+    background: `${T.green}12`, border: `1px solid ${T.green}44`,
+    color: T.green, padding: "0.35rem 0.8rem", borderRadius: 4,
+    cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+  }}>↓ CSV</button>
+
+  {/* CSV Import */}
+  <label style={{
+    background: `${T.yellow}12`, border: `1px solid ${T.yellow}44`,
+    color: T.yellow, padding: "0.35rem 0.8rem", borderRadius: 4,
+    cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+  }}>
+    ↑ Import
+    <input type="file" accept=".csv" style={{ display: "none" }} onChange={e => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const lines = ev.target.result.split("\n").slice(1).filter(l => l.trim());
+        const parsed = lines.map((line, idx) => {
+          const cols = line.match(/(".*?"|[^,]+)(?=,|$)/g)?.map(c => c.replace(/^"|"$/g, "")) || [];
+          return {
+            id: Date.now() + idx,
+            process: cols[0] || "", failure: cols[1] || "", cause: cols[2] || "",
+            effect: cols[3] || "", S: Math.min(10, Math.max(1, +cols[4] || 5)),
+            O: Math.min(10, Math.max(1, +cols[5] || 5)), D: Math.min(10, Math.max(1, +cols[6] || 5)),
+            fixed: cols[8] === "CONTROLLED", action: cols[9] || "", owner: cols[10] || "",
+            dueWeek: Math.max(0, +cols[11] || 0),
+          };
+        }).filter(i => i.process && i.failure);
+        if (parsed.length === 0) { alert("No valid rows found. Use the CSV export format."); return; }
+        if (window.confirm(`Import ${parsed.length} items? This will REPLACE current data.`)) setItems(parsed);
+      };
+      reader.readAsText(file);
+      e.target.value = "";
+    }} />
+  </label>
         {[
           { id: "table", label: "≡ Register" },
           { id: "matrix", label: "◫ Matrix" },
@@ -3177,11 +3223,11 @@ ${sorted.map(i => `[${rpnLabel(rpn(i))}] RPN ${rpn(i)} | ${i.process}: ${i.failu
                       <td style={{ padding: "0.65rem 0.75rem" }}>
                         <EditableLabel value={item.owner || "—"} onChange={v => update(item.id, "owner", v)} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem" }} />
                       </td>
-                      <td style={{ padding: "0.65rem 0.75rem" }}>
-                        <span style={{ color: item.dueWeek > 0 ? T.yellow : T.textDim, fontFamily: T.mono, fontSize: "0.62rem", fontWeight: item.dueWeek > 0 ? 700 : 400 }}>
-                          {item.dueWeek > 0 ? `Wk ${item.dueWeek}` : "—"}
-                        </span>
-                      </td>
+                      <td style={{ padding: "0.65rem 0.5rem" }}>
+  <input type="number" min={0} max={99} value={item.dueWeek}
+    onChange={e => update(item.id, "dueWeek", Math.max(0, +e.target.value))}
+    style={{ width: 42, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: item.dueWeek > 0 ? T.yellow : T.textDim, fontFamily: T.mono, fontSize: "0.62rem", padding: "0.2rem 0.25rem", textAlign: "center" }} />
+</td>
                       <td style={{ padding: "0.65rem 0.5rem" }}>
                         <button onClick={() => deleteItem(item.id)} style={{ background: "transparent", border: "none", color: T.textDim, cursor: "pointer", fontFamily: T.mono, fontSize: "0.75rem", padding: "0.1rem 0.3rem" }}>✕</button>
                       </td>
@@ -3237,7 +3283,14 @@ ${sorted.map(i => `[${rpnLabel(rpn(i))}] RPN ${rpn(i)} | ${i.process}: ${i.failu
                   }}
                   onClick={() => toggle(item.id)}
                 >
-                  <span style={{ color: rc, fontFamily: T.mono, fontSize: `${Math.max(8, size * 0.35)}px`, fontWeight: 700 }}>{r}</span>
+                  <span style={{ color: rc, fontFamily: T.mono, fontSize: `${Math.max(8, size * 0.35)}px`, fontWeight: 700, textAlign: "center", lineHeight: 1 }}>
+  {r}
+  {items.filter(i2 => i2.S === item.S && i2.O === item.O).length > 1 && (
+    <span style={{ display: "block", fontSize: "0.45rem", opacity: 0.8 }}>
+      +{items.filter(i2 => i2.S === item.S && i2.O === item.O).length - 1}
+    </span>
+  )}
+</span>
                 </motion.div>
               );
             })}
@@ -3367,8 +3420,8 @@ ${sorted.map(i => `[${rpnLabel(rpn(i))}] RPN ${rpn(i)} | ${i.process}: ${i.failu
 // ─── 05: COPQ ENGINE ─────────────────────────────────────────────────────────
 
 const COPQ_DEFAULTS = {
-  A: { name: "Scenario A — Baseline", caseVol: 3543, reopenRate: 28, escalRate: 58, wasteHrs: 33.5, techCost: 45, churnRate: 35, slaBreachPct: 38, ltv: 3200, annualRevenue: 28000000 },
-  B: { name: "Scenario B — Post-DMAIC", caseVol: 3543, reopenRate: 11, escalRate: 28, wasteHrs: 18, techCost: 45, churnRate: 15, slaBreachPct: 10, ltv: 3200, annualRevenue: 28000000 },
+  A: { name: "Scenario A — Baseline", caseVol: 3543, reopenRate: 28, escalRate: 58, wasteHrs: 33.5, techCost: 45, churnRate: 35, slaBreachPct: 38, ltv: 3200, annualRevenue: 28000000, reputationPct: 5 },
+  B: { name: "Scenario B — Post-DMAIC", caseVol: 3543, reopenRate: 11, escalRate: 28, wasteHrs: 18, techCost: 45, churnRate: 15, slaBreachPct: 10, ltv: 3200, annualRevenue: 28000000, reputationPct: 2 },
 };
 
 function calcCOPQ(p) {
@@ -3376,7 +3429,7 @@ function calcCOPQ(p) {
   const escalation = Math.round(p.caseVol * (p.escalRate / 100) * 175);
   const wastedCap  = Math.round(p.caseVol * p.wasteHrs * p.techCost);
   const churn    = Math.round(p.caseVol * (p.slaBreachPct / 100) * (p.churnRate / 100) * p.ltv);
-  const reputation = Math.round(p.annualRevenue * 0.05);
+  const reputation = Math.round(p.annualRevenue * ((p.reputationPct || 5) / 100));
   const appraisal  = Math.round(p.caseVol * 0.1 * (20 / 60) * p.techCost);
   const total    = rework + escalation + wastedCap + churn + reputation + appraisal;
   return { rework, escalation, wastedCap, churn, reputation, appraisal, total };
@@ -3433,6 +3486,7 @@ function COPQEngine() {
     { key: "slaBreachPct", label: "SLA Breach Rate",           min: 0,    max: 80,    step: 1,   fmt: v => `${v}%`,            unit: "%" },
     { key: "ltv",          label: "Customer LTV",              min: 100,  max: 20000, step: 100, fmt: v => `${s}${v.toLocaleString()}`, unit: s },
     { key: "annualRevenue",label: "Annual Revenue",            min: 1e6,  max: 500e6, step: 1e6, fmt: v => fmt(v),             unit: s },
+    { key: "reputationPct", label: "Reputation Cost (% Revenue)", min: 0, max: 15, step: 0.5, fmt: v => `${v}%`, unit: "%" },
   ];
 
   // Radar data for comparison
@@ -3624,7 +3678,8 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
               <div style={{ background: `${T.green}0A`, border: `1px solid ${T.green}33`, borderRadius: 8, padding: "1.25rem", marginBottom: "1.25rem" }}>
                 <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.6rem" }}>Strategic Recommendation</div>
                 <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.75rem", lineHeight: 1.7 }}>
-                  Based on COPQ analysis, implementing the proposed DMAIC improvement initiative for <strong style={{ color: T.cyan }}>{company?.processName || "this process"}</strong> is projected to reduce annual Cost of Poor Quality from <strong style={{ color: T.red }}>{fmtFull(copqA.total)}</strong> to <strong style={{ color: T.green }}>{fmtFull(copqB.total)}</strong>, delivering a net saving of <strong style={{ color: T.cyan }}>{fmtFull(Math.max(0, copqA.total - copqB.total))}</strong> per year. Recommend immediate prioritization of the top COPQ driver: <strong style={{ color: T.yellow }}>{categories.sort((a,b) => copqA[b.key] - copqA[a.key])[0]?.name || "Wasted Labor Capacity"}</strong>.
+                  Based on COPQ analysis, implementing the proposed DMAIC improvement initiative for <strong style={{ color: T.cyan }}>{company?.processName || "this process"}</strong> is projected to reduce annual Cost of Poor Quality from <strong style={{ color: T.red }}>{fmtFull(copqA.total)}</strong> to <strong style={{ color: T.green }}>{fmtFull(copqB.total)}</strong>, delivering a net saving of <strong style={{ color: T.cyan }}>{fmtFull(Math.max(0, copqA.total - copqB.total))}</strong> per year. Recommend immediate prioritization of the top COPQ driver: <strong style={{ color: T.yellow }}>
+                    {[...categories].sort((a,b) => copqA[b.key] - copqA[a.key])[0]?.name || "Wasted Labor Capacity"}</strong>.
                 </div>
               </div>
               {/* Footer */}
@@ -3861,6 +3916,8 @@ function SPCCharts() {
   const [weRulesEnabled, setWeRulesEnabled] = useState(true);
   const [showTable, setShowTable] = useState(false);
   const [startWeek, setStartWeek] = useLocalState("spc_start_week", 1);
+  const [customUSL, setCustomUSL] = useLocalState("spc_custom_usl", "");
+const [customLSL, setCustomLSL] = useLocalState("spc_custom_lsl", "");
 
   const activeDataset = mode === "demo"
     ? DEMO_DATASETS[selectedDemo]
@@ -3900,11 +3957,13 @@ function SPCCharts() {
         const belowOneSig = window.filter(p => p < mean - sigma).length;
         if (aboveOneSig >= 4 || belowOneSig >= 4) rules.push("R3: 4/5 beyond 1σ");
       }
-      // Rule 4: 8 consecutive same side
-      if (i >= 7) {
-        const window = points.slice(i-7, i+1);
-        if (window.every(p => p > mean) || window.every(p => p < mean)) rules.push("R4: 8pts same side");
-      }
+      // Rule 4: 8 consecutive same side of mean
+if (i >= 7) {
+  const window = points.slice(i - 7, i + 1);
+  if (window.length === 8 && (window.every(p => p > mean) || window.every(p => p < mean))) {
+    rules.push("R4: 8pts same side");
+  }
+}
       // Rule 5: 6 consecutive trending
       if (i >= 5) {
         const window = points.slice(i-5, i+1);
@@ -4063,6 +4122,8 @@ function SPCCharts() {
               { label: "Metric Name", val: customLabel, set: setCustomLabel, ph: "e.g. Resolution Time" },
               { label: "Unit", val: customUnit, set: setCustomUnit, ph: "e.g. hrs, %, /10" },
               { label: "Target Value", val: customTarget, set: setCustomTarget, ph: "e.g. 48" },
+{ label: "USL (Upper Spec)", val: customUSL, set: setCustomUSL, ph: "e.g. 96" },
+{ label: "LSL (Lower Spec)", val: customLSL, set: setCustomLSL, ph: "e.g. 0" },
               { label: "Starting Week #", val: startWeek, set: v => setStartWeek(parseInt(v)||1), ph: "e.g. 1", type: "number" },
             ].map(f => (
               <div key={f.label}>
@@ -4112,15 +4173,25 @@ function SPCCharts() {
           {customPoints.length > 0 && (
             <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
               {customPoints.map((v, i) => (
-                <span key={i} onClick={() => removePoint(i)} style={{
-                  background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3,
-                  padding: "0.2rem 0.5rem", color: T.textMid, fontFamily: T.mono,
-                  fontSize: "0.68rem", cursor: "pointer",
-                  transition: "all 0.15s",
-                }} title="Click to remove">
-                  W{startWeek + i}: {v}{customUnit}
-                </span>
-              ))}
+  <span key={i} style={{
+    background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3,
+    padding: "0.15rem 0.4rem", color: T.textMid, fontFamily: T.mono,
+    fontSize: "0.68rem", display: "inline-flex", alignItems: "center", gap: "0.3rem",
+  }}>
+    <span style={{ color: T.textDim, fontSize: "0.58rem" }}>W{startWeek + i}:</span>
+    <input
+      type="number"
+      value={v}
+      onChange={e => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val)) setCustomPoints(prev => prev.map((p, idx) => idx === i ? val : p));
+      }}
+      style={{ width: 52, background: "transparent", border: "none", color: T.cyan, fontFamily: T.mono, fontSize: "0.68rem", fontWeight: 700, textAlign: "center", padding: 0 }}
+    />
+    <span style={{ color: T.textDim, fontSize: "0.6rem" }}>{customUnit}</span>
+    <button onClick={() => removePoint(i)} style={{ background: "transparent", border: "none", color: T.red, cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem", padding: "0 0.1rem", lineHeight: 1 }}>✕</button>
+  </span>
+))}
             </div>
           )}
           {customPoints.length === 0 && (
@@ -4175,6 +4246,14 @@ function SPCCharts() {
                 [ INDIVIDUALS CHART — {ds.label.toUpperCase()} ]
               </div>
               <div style={{ display: "flex", gap: "0.5rem" }}>
+                <SyncFromCompanyButton onSync={(c) => {
+  setMode("custom");
+  setCustomLabel(c.processName || "Process Metric");
+  setCustomUnit(c.processUnit || "");
+  setCustomTarget(String(c.target || ""));
+  setCustomUSL(String(c.usl || ""));
+  setCustomLSL(String(c.lsl || ""));
+}} />
                 <button onClick={() => setWeRulesEnabled(p => !p)} style={{
                   background: weRulesEnabled ? `${T.cyan}15` : "transparent",
                   border: `1px solid ${weRulesEnabled ? T.cyan : T.border}`,
@@ -4375,7 +4454,32 @@ function SPCCharts() {
                   ...(ds.target !== null && ds.target !== undefined ? [
                     { label: "vs Target", val: `${mean > ds.target ? "+" : ""}${fmt2(mean - ds.target)}${ds.unit}`, note: mean <= ds.target ? "✓ At or below target" : "↑ Above target", valColor: mean <= ds.target ? T.green : T.yellow },
                     { label: "% At/Below Target", val: `${Math.round(pts.filter(v => v <= ds.target).length / n * 100)}%`, note: `of ${n} data points` },
-                  ] : []),
+                  (customUSL !== "" && customLSL !== "" && stdDev > 0 && mode === "custom" ? [
+  {
+    label: "Ppk (Capability)",
+    val: (() => {
+      const usl = parseFloat(customUSL);
+      const lsl = parseFloat(customLSL);
+      if (isNaN(usl) || isNaN(lsl)) return "—";
+      const ppk = Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev));
+      return ppk.toFixed(3);
+    })(),
+    note: (() => {
+      const usl = parseFloat(customUSL);
+      const lsl = parseFloat(customLSL);
+      if (isNaN(usl) || isNaN(lsl)) return "Enter USL & LSL";
+      const ppk = Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev));
+      return ppk >= 1.33 ? "✓ Capable" : ppk >= 1.0 ? "⚠ Marginal" : "✕ Incapable";
+    })(),
+    valColor: (() => {
+      const usl = parseFloat(customUSL);
+      const lsl = parseFloat(customLSL);
+      if (isNaN(usl) || isNaN(lsl) || stdDev === 0) return T.textDim;
+      const ppk = Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev));
+      return ppk >= 1.33 ? T.green : ppk >= 1.0 ? T.yellow : T.red;
+    })(),
+  }
+] : []),
                 ].map(k => (
                   <div key={k.label} style={{ background: T.panel, borderRadius: 6, padding: "0.85rem 1rem" }}>
                     <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{k.label}</div>
@@ -4421,6 +4525,7 @@ function ParetoBuilder() {
   const [showImport, setShowImport] = useState(false);
   const [activeItem, setActiveItem] = useState(null);
   const [metricWeights, setMetricWeights] = useLocalState("pareto_weights", { cases: 0.5, avgHrs: 0.5 });
+  const [hrsReductionFactor, setHrsReductionFactor] = useLocalState("pareto_hrsfactor", 30);
   const [showWeighted, setShowWeighted] = useState(false);
 
   // ── Core calculations ──────────────────────────────────────────────────
@@ -4444,7 +4549,7 @@ function ParetoBuilder() {
     const totalHrs = i.cases * i.avgHrs;
     const reduction = reductions[i.id] || 0;
     const whatIfCases = Math.round(i.cases * (1 - reduction / 100));
-    const whatIfHrs = i.avgHrs * (1 - reduction * 0.3 / 100);
+    const whatIfHrs = i.avgHrs * (1 - reduction * (hrsReductionFactor / 100) / 100);
     return { ...i, val, cumPct, totalHrs, whatIfCases, whatIfHrs, reduction };
   });
 
@@ -4959,6 +5064,16 @@ ${showWhatIf ? `WHAT-IF SCENARIO:
             <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
               <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.65rem" }}>[ IMPORT CSV — Format: Category, Cases, Avg Hrs, Group ]</div>
               <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", marginBottom: "0.65rem" }}>Example: Software Bug, 120, 85.5, Cognitive</div>
+             <div style={{ background: T.panel, borderRadius: 4, padding: "0.6rem 0.85rem", marginBottom: "0.75rem", fontFamily: T.mono, fontSize: "0.6rem" }}>
+  <div style={{ color: T.textDim, marginBottom: "0.3rem", textTransform: "uppercase", fontSize: "0.55rem" }}>Format (one row per line):</div>
+  <div style={{ color: T.cyan }}>Category Name, Cases, Avg Hrs, Group</div>
+  <div style={{ color: T.textMid, marginTop: "0.2rem" }}>Software Bug, 153, 89.2, Cognitive</div>
+  <div style={{ color: T.textMid }}>Network Issue, 120, 78.5, Technical</div>
+  <button onClick={() => setCsvText("Software Bug,153,89.2,Cognitive\nNetwork Issue,120,78.5,Technical\nHardware Fail,98,52.3,Technical")}
+    style={{ marginTop: "0.4rem", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.2rem 0.6rem", borderRadius: 3, cursor: "pointer", fontFamily: T.mono, fontSize: "0.55rem" }}>
+    Load Example
+  </button>
+</div>
               <textarea value={csvText} onChange={e => setCsvText(e.target.value)}
                 placeholder={"Login Error, 45, 67.2, Transactional\nPayment Fail, 38, 92.1, Cognitive"}
                 style={{ width: "100%", minHeight: 80, background: T.panel, border: `1px solid ${T.borderHi}`, borderRadius: 4, color: T.text, padding: "0.65rem", fontFamily: T.mono, fontSize: "0.75rem", resize: "vertical", boxSizing: "border-box" }} />
@@ -5038,7 +5153,20 @@ ${showWhatIf ? `WHAT-IF SCENARIO:
                     Drag sliders to simulate case volume reduction per category
                   </div>
                   <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", marginTop: "0.2rem", fontStyle: "italic" }}>
-                    * Avg resolution time reduces at 30% of case reduction rate (complexity assumed partially independent)
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>
+    Hrs reduction sensitivity:
+  </span>
+  <input type="range" min={10} max={100} step={10} value={hrsReductionFactor}
+    onChange={e => setHrsReductionFactor(+e.target.value)}
+    style={{ width: 100, accentColor: T.yellow }} />
+  <span style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700 }}>
+    {hrsReductionFactor}% coupling
+  </span>
+  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
+    (how much avg hrs drops per % case reduction)
+  </span>
+</div>
                   </div>
                 </div>
                 <div style={{ background: `${T.green}18`, border: `1px solid ${T.green}44`, borderRadius: 8, padding: "0.75rem 1.25rem", textAlign: "center" }}>
@@ -5128,6 +5256,10 @@ ${showWhatIf ? `WHAT-IF SCENARIO:
                     onClick={() => setActiveItem(activeItem === row.id ? null : row.id)}>
                     <td style={{ padding: "0.65rem 0.85rem" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <button onClick={e => { e.stopPropagation(); toggleItem(row.id); }}
+      style={{ width: 14, height: 14, borderRadius: 2, background: row.active ? row.color : "transparent", border: `1.5px solid ${row.color}`, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {row.active && <span style={{ color: T.bg, fontSize: "0.5rem", fontWeight: 900 }}>✓</span>}
+    </button>
                         <div style={{ width: 8, height: 8, borderRadius: "50%", background: row.color, flexShrink: 0, boxShadow: isVital ? `0 0 6px ${row.color}` : "none" }} />
                         <span style={{ color: row.color, fontWeight: isVital ? 700 : 400 }}>{row.category}</span>
                       </div>
