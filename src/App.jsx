@@ -8269,17 +8269,17 @@ function Hero({ onEnter }) {
   </div>
   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.6rem" }}>
     {[
-      { icon: "◈", label: "Mission Status", teaser: "Ingin lihat kondisi proyek kamu dalam 1 halaman? Semua KPI, sigma level, dan progress DMAIC langsung keliatan." },
-      { icon: "σ", label: "Sigma Calculator", teaser: "Berapa banyak kesalahan proses kamu? Masukkan data → langsung dapat Sigma Level, DPMO, dan posisi vs industri." },
-      { icon: "⬡", label: "DMAIC Tracker", teaser: "Punya proyek perbaikan? Pantau 5 fase DMAIC-mu, isi task, deadline, dan lihat progresnya real-time." },
-      { icon: "⚠", label: "FMEA Risk Scorer", teaser: "Mau tau risiko apa yang paling bahaya di proses kamu? Skor S×O×D → dapat prioritas tindakan otomatis." },
-      { icon: "$", label: "COPQ Engine", teaser: "Berapa uang yang terbuang sia-sia karena proses buruk? Hitung COPQ-mu dan lihat potensi penghematan nyata." },
-      { icon: "~", label: "SPC Charts", teaser: "Proses kamu stabil atau lagi bermasalah? Chart I-MR dengan Western Electric Rules langsung deteksi anomali." },
-      { icon: "▮", label: "Pareto Builder", teaser: "80% masalah dari 20% penyebab — mana yang harus diserang duluan? Pareto Builder kasih jawabannya visual." },
-      { icon: "⟳", label: "Root Cause 5-Whys", teaser: "Sudah tau masalahnya tapi bingung akar penyebabnya? Drill-down 5 Whys + Fishbone interaktif." },
-      { icon: "✦", label: "AI Triage Simulator", teaser: "Punya keluhan masuk? Ketik complaint apapun → AI langsung klasifikasi dan routing ke teknisi yang tepat." },
-      { icon: "∑", label: "Universal COPQ", teaser: "Ingin hitung biaya kerugian untuk industri apapun? Template COPQ yang bisa dikustomisasi penuh." },
-      { icon: "⬤", label: "Live Ops Center", teaser: "Mau pantau semua tiket aktif, beban tim, dan SLA secara real-time? War room operasional kamu ada di sini." },
+      { icon: "◈", label: "Mission Status", teaser: "Want to see your project status on a single page? Get instant visibility of all KPIs, sigma levels, and DMAIC progress." },
+      { icon: "σ", label: "Sigma Calculator", teaser: "How many errors are in your process? Input your data → instantly get your Sigma Level, DPMO, and industry benchmark position." },
+      { icon: "⬡", label: "DMAIC Tracker", teaser: "Got an improvement project? Track your 5 DMAIC phases, log tasks, set deadlines, and monitor your progress in real-time." },
+      { icon: "⚠", label: "FMEA Risk Scorer", teaser: "Want to know the most critical risks in your process? Calculate your S×O×D score → get automated action priorities." },
+      { icon: "$", label: "COPQ Engine", teaser: "How much money is wasted due to poor processes? Calculate your COPQ and uncover real savings potential." },
+      { icon: "~", label: "SPC Charts", teaser: "Is your process stable or acting up? I-MR charts with Western Electric Rules instantly detect anomalies." },
+      { icon: "▮", label: "Pareto Builder", teaser: "80% of problems come from 20% of causes—which one should you tackle first? The Pareto Builder gives you the answer visually." },
+      { icon: "⟳", label: "Root Cause 5-Whys", teaser: "Know the problem but struggling to find the root cause? Drill down with an interactive 5 Whys + Fishbone diagram." },
+      { icon: "✦", label: "AI Triage Simulator", teaser: "Got incoming complaints? Type any complaint → AI instantly classifies and routes it to the right technician." },
+      { icon: "∑", label: "Universal COPQ", teaser: "Want to calculate the cost of poor quality for any industry? Use this fully customizable COPQ template." },
+      { icon: "⬤", label: "Live Ops Center", teaser: "Want to monitor all active tickets, team workload, and SLAs in real-time? Your operational war room is right here." }
     ].map((m, i) => (
       <motion.div key={m.label} whileHover={{ scale: 1.02, borderColor: T.cyan }}
         initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
