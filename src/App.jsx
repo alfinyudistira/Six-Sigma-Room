@@ -765,6 +765,114 @@ function SmartTooltip({ id, children }) {
   );
 }
 
+// ── Platform Event Bus — cross-module data flow ──────────────────────────────
+// Modul bisa "publish" update dan modul lain bisa "subscribe" ke perubahan
+const PlatformBus = {
+  publish(event, data) {
+    try {
+      // Simpan ke localStorage sebagai bridge antar modul
+      const key = `bus_${event}`;
+      const payload = { data, ts: Date.now() };
+      localStorage.setItem(key, JSON.stringify(payload));
+      window.dispatchEvent(new CustomEvent("platform_bus", { detail: { event, data } }));
+    } catch {}
+  },
+  // Hook untuk subscribe ke event tertentu
+  useSubscribe(event, callback) {
+    useEffect(() => {
+      const handler = (e) => {
+        if (e.detail?.event === event) callback(e.detail.data);
+      };
+      window.addEventListener("platform_bus", handler);
+      return () => window.removeEventListener("platform_bus", handler);
+    }, [event, callback]);
+  },
+  // Baca data terakhir dari event (untuk initial load)
+  getLast(event) {
+    try {
+      const raw = localStorage.getItem(`bus_${event}`);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  },
+};
+
+// Hook: baca summary lintas modul untuk ditampilkan di module lain
+function useCrossModuleSummary() {
+  const [summary, setSummary] = useState(() => buildSummary());
+
+  function buildSummary() {
+    const result = {};
+    // FMEA: ambil critical items (RPN >= 200)
+    try {
+      const items = JSON.parse(localStorage.getItem("fmea_items") || "[]");
+      const withRpn = items.map(i => ({ ...i, rpn: (i.S||1)*(i.O||1)*(i.D||1) }));
+      result.fmea = {
+        total: items.length,
+        critical: withRpn.filter(i => i.rpn >= 200),
+        topRpn: [...withRpn].sort((a,b) => b.rpn - a.rpn).slice(0,3),
+      };
+    } catch { result.fmea = { total: 0, critical: [], topRpn: [] }; }
+
+    // Root Cause: open items
+    try {
+      const rcs = JSON.parse(localStorage.getItem("rc_items") || "[]");
+      result.rootcause = {
+        total: rcs.length,
+        open: rcs.filter(r => r.status === "OPEN"),
+        solved: rcs.filter(r => r.status === "SOLVED"),
+        totalImpact: rcs.reduce((a,r) => a + (r.impact||0), 0),
+      };
+    } catch { result.rootcause = { total: 0, open: [], solved: [], totalImpact: 0 }; }
+
+    // SPC: out-of-control points
+    try {
+      const pts = JSON.parse(localStorage.getItem("spc_custom_points") || "[]");
+      const vals = pts.map(d => d.value || d.v || d).filter(v => typeof v === "number");
+      if (vals.length > 1) {
+        const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
+        const mr = vals.slice(1).map((v,i) => Math.abs(v - vals[i]));
+        const mrBar = mr.reduce((a,b)=>a+b,0)/mr.length;
+        const ucl = mean + 2.66 * mrBar;
+        const lcl = mean - 2.66 * mrBar;
+        result.spc = {
+          dataPoints: vals.length,
+          mean: +mean.toFixed(2),
+          outOfControl: vals.filter(v => v > ucl || v < lcl).length,
+          ucl: +ucl.toFixed(2),
+          lcl: +lcl.toFixed(2),
+        };
+      } else { result.spc = { dataPoints: vals.length, outOfControl: 0 }; }
+    } catch { result.spc = { dataPoints: 0, outOfControl: 0 }; }
+
+    // Triage: breach rate
+    try {
+      const hist = JSON.parse(localStorage.getItem("triage_history") || "[]");
+      result.triage = {
+        total: hist.length,
+        breach: hist.filter(t => t.sla === "BREACH").length,
+        atRisk: hist.filter(t => t.sla === "AT RISK").length,
+        topCategory: hist.length > 0
+          ? Object.entries(hist.reduce((acc,t) => { acc[t.category]=(acc[t.category]||0)+1; return acc; }, {}))
+              .sort((a,b)=>b[1]-a[1])[0]?.[0] || "—"
+          : "—",
+      };
+    } catch { result.triage = { total: 0, breach: 0, atRisk: 0, topCategory: "—" }; }
+
+    return result;
+  }
+
+  useEffect(() => {
+    const handler = () => setSummary(buildSummary());
+    window.addEventListener("lsupdate", handler);
+    window.addEventListener("platform_bus", handler);
+    return () => {
+      window.removeEventListener("lsupdate", handler);
+      window.removeEventListener("platform_bus", handler);
+    };
+  }, []);
+
+  return summary;
+}
 
 // ── Universal localStorage hook ─────────────
 function useLocalState(key, initial) {
@@ -1030,30 +1138,84 @@ function NavBar({ active, setActive }) {
     { id: "universal",  label: "Try Your Data",   icon: "⚡", highlight: true },
     { id: "ops",        label: "Live Ops",        icon: "⚡", highlight: true },
   ];
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const activeTab = tabs.find(t => t.id === active);
+
   return (
-    <nav style={{
-      background: T.panel, borderBottom: `1px solid ${T.border}`,
-      padding: "0 1.5rem", display: "flex", gap: "0", overflowX: "auto", flexShrink: 0,
-      position: "relative", scrollbarWidth: "none", WebkitOverflowScrolling: "touch",
-    }}>
-      {tabs.map(t => (
-        <button key={t.id} data-tab={t.id} onClick={() => setActive(t.id)} style={{
-          background: active === t.id ? (t.highlight ? `${T.green}15` : "#0a1520") : "transparent",
-          borderTop: "none", borderLeft: "none", borderRight: "none",
-          borderBottom: active === t.id ? `2px solid ${t.highlight ? T.green : T.cyan}` : `2px solid ${t.highlight ? T.green + "44" : "transparent"}`,
-          color: active === t.id ? (t.highlight ? T.green : T.cyan) : (t.highlight ? T.green : T.textDim),
-          padding: "0.85rem 1rem",
-          cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
-          letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap",
-          transition: "all 0.2s",
-          textShadow: active === t.id ? `0 0 12px ${t.highlight ? T.green : T.cyan}` : "none",
-        }}>
-          <span style={{ marginRight: "0.4rem", opacity: 0.7 }}>{t.icon}</span>
-          {t.label}
-          {t.highlight && <span style={{ marginLeft: "0.3rem", background: `${T.green}22`, border: `1px solid ${T.green}44`, borderRadius: 3, padding: "0.05rem 0.3rem", fontSize: "0.5rem", color: T.green }}>LIVE</span>}
+    <>
+      {/* Desktop nav — hidden on mobile */}
+      <nav style={{
+        background: T.panel, borderBottom: `1px solid ${T.border}`,
+        padding: "0 1.5rem", display: "flex", gap: "0", overflowX: "auto", flexShrink: 0,
+        position: "relative", scrollbarWidth: "none", WebkitOverflowScrolling: "touch",
+      }}
+        className="desktop-nav"
+      >
+        {tabs.map(t => (
+          <button key={t.id} data-tab={t.id} onClick={() => setActive(t.id)} style={{
+            background: active === t.id ? (t.highlight ? `${T.green}15` : "#0a1520") : "transparent",
+            borderTop: "none", borderLeft: "none", borderRight: "none",
+            borderBottom: active === t.id ? `2px solid ${t.highlight ? T.green : T.cyan}` : `2px solid ${t.highlight ? T.green + "44" : "transparent"}`,
+            color: active === t.id ? (t.highlight ? T.green : T.cyan) : (t.highlight ? T.green : T.textDim),
+            padding: "0.85rem 1rem",
+            cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
+            letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap",
+            transition: "all 0.2s",
+            textShadow: active === t.id ? `0 0 12px ${t.highlight ? T.green : T.cyan}` : "none",
+          }}>
+            <span style={{ marginRight: "0.4rem", opacity: 0.7 }}>{t.icon}</span>
+            {t.label}
+            {t.highlight && <span style={{ marginLeft: "0.3rem", background: `${T.green}22`, border: `1px solid ${T.green}44`, borderRadius: 3, padding: "0.05rem 0.3rem", fontSize: "0.5rem", color: T.green }}>LIVE</span>}
+          </button>
+        ))}
+      </nav>
+
+      {/* Mobile nav — shown on small screens */}
+      <div className="mobile-nav" style={{ background: T.panel, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+        <button
+          onClick={() => setMobileMenuOpen(o => !o)}
+          style={{
+            width: "100%", background: "transparent", border: "none",
+            padding: "0.75rem 1rem", display: "flex", justifyContent: "space-between", alignItems: "center",
+            cursor: "pointer",
+          }}
+        >
+          <span style={{ color: activeTab?.highlight ? T.green : T.cyan, fontFamily: T.mono, fontSize: "0.7rem", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            <span style={{ opacity: 0.7, marginRight: "0.4rem" }}>{activeTab?.icon}</span>
+            {activeTab?.label}
+            {activeTab?.highlight && <span style={{ marginLeft: "0.4rem", background: `${T.green}22`, border: `1px solid ${T.green}44`, borderRadius: 3, padding: "0.05rem 0.3rem", fontSize: "0.5rem", color: T.green }}>LIVE</span>}
+          </span>
+          <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.9rem", transition: "transform 0.2s", display: "inline-block", transform: mobileMenuOpen ? "rotate(180deg)" : "none" }}>▾</span>
         </button>
-      ))}
-    </nav>
+
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              style={{ overflow: "hidden", borderTop: `1px solid ${T.border}` }}
+            >
+              {tabs.map(t => (
+                <button key={t.id} onClick={() => { setActive(t.id); setMobileMenuOpen(false); }} style={{
+                  width: "100%", background: active === t.id ? (t.highlight ? `${T.green}12` : `${T.cyan}0A`) : "transparent",
+                  border: "none", borderBottom: `1px solid ${T.border}`,
+                  color: active === t.id ? (t.highlight ? T.green : T.cyan) : (t.highlight ? T.green : T.textDim),
+                  padding: "0.75rem 1.25rem", cursor: "pointer",
+                  fontFamily: T.mono, fontSize: "0.68rem",
+                  letterSpacing: "0.08em", textTransform: "uppercase",
+                  display: "flex", alignItems: "center", gap: "0.6rem", textAlign: "left",
+                }}>
+                  <span style={{ opacity: 0.7 }}>{t.icon}</span>
+                  {t.label}
+                  {t.highlight && <span style={{ background: `${T.green}22`, border: `1px solid ${T.green}44`, borderRadius: 3, padding: "0.05rem 0.3rem", fontSize: "0.5rem", color: T.green }}>LIVE</span>}
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </>
   );
 }
 
@@ -3029,6 +3191,9 @@ const FMEA_DEFAULTS = [
 ];
 
 function FMEAScorer() {
+  const crossModule = useCrossModuleSummary();
+  const spcAlert = (crossModule.spc?.outOfControl || 0) > 0;
+  const triageBreachAlert = (crossModule.triage?.breach || 0) >= 3;
   const [items, setItems] = useLocalState("fmea_items", FMEA_DEFAULTS);
   const [newItem, setNewItem] = useState({ process: "", failure: "", cause: "", effect: "", S: 5, O: 5, D: 5, action: "", owner: "", dueWeek: 0 });
   const [showAdd, setShowAdd] = useState(false);
@@ -3094,6 +3259,24 @@ ${sorted.map(i => `[${rpnLabel(rpn(i))}] RPN ${rpn(i)} | ${i.process}: ${i.failu
         sub="Live editable risk register. Heat map, matrix view, and scenario modelling. Click any S/O/D value to edit live."
       />
 
+{/* Cross-Module Alert Banner */}
+      {(spcAlert || triageBreachAlert) && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          style={{ background: `${T.red}0C`, border: `1px solid ${T.red}44`, borderRadius: 8, padding: "0.85rem 1.25rem", marginBottom: "1.5rem", display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ color: T.red, fontFamily: T.mono, fontSize: "0.65rem", fontWeight: 700 }}>⚠ CROSS-MODULE ALERT</span>
+          {spcAlert && (
+            <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.62rem" }}>
+              SPC: <span style={{ color: T.red }}>{crossModule.spc.outOfControl} titik out-of-control</span> terdeteksi — cek failure mode terkait
+            </span>
+          )}
+          {triageBreachAlert && (
+            <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.62rem" }}>
+              Triage: <span style={{ color: T.orange }}>{crossModule.triage.breach} SLA breach</span> — kategori terbanyak: {crossModule.triage.topCategory}
+            </span>
+          )}
+        </motion.div>
+      )}
+        
       {/* KPI Row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
         {[
@@ -5448,6 +5631,9 @@ const RC_DEFAULTS = [
 ];
 
 function RootCauseAnalyzer() {
+  const crossModule = useCrossModuleSummary();
+  const fmeaCritical = crossModule.fmea?.critical || [];
+  const spcOOC = crossModule.spc?.outOfControl || 0;
   const [rootCauses, setRootCauses] = useLocalState("rc_items", RC_DEFAULTS);
 
   const updateWhyField = (rcId, whyIdx, field, val) => {
@@ -5646,6 +5832,28 @@ const y = Math.max(5, 80 - (Math.min(r.impact, 25) / 25) * 65);
         sub="5 Whys drill-down, Fishbone diagram, Impact matrix. Add your own root causes. All statistically validated."
       />
 
+{/* FMEA Import Suggestion */}
+      {fmeaCritical.length > 0 && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          style={{ background: `${T.orange}08`, border: `1px solid ${T.orange}33`, borderRadius: 8, padding: "0.85rem 1.25rem", marginBottom: "1.5rem" }}>
+          <div style={{ color: T.orange, fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700, marginBottom: "0.5rem" }}>
+            💡 DARI FMEA — {fmeaCritical.length} failure mode kritis mungkin butuh investigasi root cause:
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+            {fmeaCritical.slice(0, 4).map((item, i) => (
+              <span key={i} style={{ background: `${T.red}18`, border: `1px solid ${T.red}44`, borderRadius: 4, color: T.red, fontFamily: T.mono, fontSize: "0.6rem", padding: "0.2rem 0.6rem" }}>
+                {item.failure || "Unnamed"} · RPN {item.rpn}
+              </span>
+            ))}
+          </div>
+          {spcOOC > 0 && (
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", marginTop: "0.5rem" }}>
+              + SPC mendeteksi {spcOOC} titik out-of-control yang mungkin punya root cause yang sama
+            </div>
+          )}
+        </motion.div>
+      )}
+      
       {/* Summary KPIs */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
         {[
@@ -6145,6 +6353,11 @@ function AITriageSimulator() {
     techKey,
     getDefaultTechnicians(industry)
   );
+
+  // Reset workload semua technician ke nilai awal
+  const resetWorkloads = () => {
+    setTechnicians(prev => prev.map(t => ({ ...t, load: getDefaultTechnicians(industry).find(d => d.name === t.name)?.load ?? 0 })));
+  };
 
   // Reset technician team ke default industri baru saat industry berubah
   const prevIndustryRef = useRef(industry);
@@ -8595,7 +8808,7 @@ export default function App() {
         <Scanlines />
 
         {/* Header */}
-        <div style={{ background: T.panel, borderBottom: `1px solid ${T.border}`, padding: "0.75rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "1rem", flexWrap: "wrap" }}>
+        <div style={{ background: T.panel, borderBottom: `1px solid ${T.border}`, padding: "0.75rem 1rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "0.75rem", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: T.green, boxShadow: `0 0 8px ${T.green}` }} />
             <div>
@@ -8675,11 +8888,18 @@ export default function App() {
           input:focus, textarea:focus, select:focus { outline: 1px solid ${T.cyan}44; }
           button:hover { opacity: 0.85; }
           select option { background: ${T.surface}; color: ${T.text}; }
-          @media (max-width: 600px) {
-            main { padding: 1.25rem 1rem !important; }
-            nav { padding: 0 0.5rem !important; }
-            table { font-size: 0.65rem !important; }
-            th, td { padding: 0.45rem 0.5rem !important; }
+          .desktop-nav { display: flex !important; }
+          .mobile-nav { display: none !important; }
+          @media (max-width: 768px) {
+            .desktop-nav { display: none !important; }
+            .mobile-nav { display: block !important; }
+            main { padding: 1rem 0.75rem !important; }
+            table { font-size: 0.62rem !important; display: block; overflow-x: auto; }
+            th, td { padding: 0.4rem 0.5rem !important; white-space: nowrap; }
+            input[type="range"] { width: 100% !important; }
+          }
+          @media (max-width: 480px) {
+            main { padding: 0.75rem 0.5rem !important; }
           }
           @media print {
             nav, footer, button, .no-print { display: none !important; }
