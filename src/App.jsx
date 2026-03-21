@@ -1069,7 +1069,10 @@ function Overview() {
     { phase: "Define",  week: 4,  resolution: data.metrics.find(m=>m.id==="resolution")?.before || 72, milestone: "Charter approved" },
     { phase: "Measure", week: 12, resolution: data.metrics.find(m=>m.id==="resolution")?.before || 72, milestone: "Data collected" },
     { phase: "Analyze", week: 17, resolution: data.metrics.find(m=>m.id==="resolution")?.before || 72, milestone: "Root causes validated" },
-    { phase: "Improve", week: 22, resolution: +(((data.metrics.find(m=>m.id==="resolution")?.before||72) + (data.metrics.find(m=>m.id==="resolution")?.after||49)) / 2).toFixed(1), milestone: "Pilot: improvement" },
+    { phase: "Improve", week: 22, resolution: +(
+  (data.metrics.find(m=>m.id==="resolution")?.before||72) * 0.6 +
+  (data.metrics.find(m=>m.id==="resolution")?.after||49) * 0.4
+).toFixed(1), milestone: "Pilot: improvement — 40% gains locked" },
     { phase: "Control", week: 29, resolution: data.metrics.find(m=>m.id==="resolution")?.after || 49, milestone: "Gains locked in" },
   ];
 
@@ -1108,10 +1111,11 @@ FINANCIAL IMPACT:
 
       {/* Toolbar */}
       <ModuleToolbar
-        onReset={() => setData(OVERVIEW_DEFAULTS)}
-        copyData={copyReport}
-        saved={true}
-      >
+  onReset={() => setData(OVERVIEW_DEFAULTS)}
+  copyData={copyReport}
+  exportId="overview-export"
+  saved={true}
+>
         <SyncFromCompanyButton onSync={(company) => setData(p => ({
           ...p,
           dept: company.dept || p.dept,
@@ -1132,8 +1136,49 @@ FINANCIAL IMPACT:
         }}>
           {editMode ? "✓ Done Editing" : "✎ Edit All Values"}
         </button>
+
+        <button onClick={() => {
+  const label = window.prompt("Metric name? (e.g. First Call Resolution Rate)");
+  if (!label) return;
+  const unit = window.prompt("Unit? (e.g. %, hrs, score) — leave blank if none") || "";
+  setData(prev => ({
+    ...prev,
+    metrics: [...prev.metrics, {
+      id: `custom_${Date.now()}`,
+      label,
+      before: 0,
+      after: 0,
+      target: 0,
+      unit,
+      invert: false,
+      description: "Custom metric",
+    }]
+  }));
+}} style={{
+  background: `${T.green}12`, border: `1px solid ${T.green}44`,
+  color: T.green, padding: "0.35rem 0.8rem", borderRadius: 4,
+  cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+}}>+ Add Metric</button>
       </ModuleToolbar>
 
+{/* Overall Progress Bar */}
+      {(() => {
+        const metMet = data.metrics.filter(m => m.invert ? m.after <= m.target : m.after >= m.target).length;
+        const total = data.metrics.length;
+        const pct = Math.round((metMet / total) * 100);
+        const color = pct === 100 ? T.green : pct >= 66 ? T.cyan : T.yellow;
+        return (
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "0.85rem 1.25rem", marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "1.25rem" }}>
+            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", whiteSpace: "nowrap" }}>Project Completion</div>
+            <div style={{ flex: 1, height: 6, background: T.panel, borderRadius: 3, overflow: "hidden" }}>
+              <motion.div animate={{ width: `${pct}%` }} transition={{ duration: 0.8 }}
+                style={{ height: "100%", background: color, borderRadius: 3, boxShadow: `0 0 8px ${color}55` }} />
+            </div>
+            <div style={{ color, fontFamily: T.mono, fontSize: "0.85rem", fontWeight: 700, whiteSpace: "nowrap" }}>{metMet}/{total} targets met · {pct}%</div>
+          </div>
+        );
+      })()}
+      
       {/* Edit Mode Banner */}
       {editMode && (
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
@@ -1177,11 +1222,17 @@ FINANCIAL IMPACT:
               <div style={{ display: "flex", alignItems: "flex-end", gap: "0.75rem", marginBottom: "0.5rem" }}>
                 {editMode ? (
                   <>
-                    <input type="number" value={m.before} onChange={e => setMetricVal(m.id, "before", e.target.value)}
-                      style={{ width: 65, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.textDim, fontFamily: T.mono, fontSize: "0.9rem", padding: "0.2rem 0.3rem", textDecoration: "line-through" }} />
-                    <span style={{ color: T.textDim, fontFamily: T.mono }}>→</span>
-                    <input type="number" value={m.after} onChange={e => setMetricVal(m.id, "after", e.target.value)}
-                      style={{ width: 65, background: T.panel, border: `1px solid ${T.cyan}55`, borderRadius: 3, color: T.text, fontFamily: T.mono, fontSize: "1.3rem", fontWeight: 700, padding: "0.2rem 0.3rem" }} />
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+  <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.5rem", textTransform: "uppercase", marginBottom: "0.1rem" }}>before</span>
+  <input type="number" value={m.before} onChange={e => setMetricVal(m.id, "before", e.target.value)}
+    style={{ width: 65, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 3, color: T.textDim, fontFamily: T.mono, fontSize: "0.9rem", padding: "0.2rem 0.3rem", textDecoration: "line-through", textAlign: "center" }} />
+</div>
+<span style={{ color: T.textDim, fontFamily: T.mono }}>→</span>
+<div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+  <span style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.5rem", textTransform: "uppercase", marginBottom: "0.1rem" }}>after</span>
+  <input type="number" value={m.after} onChange={e => setMetricVal(m.id, "after", e.target.value)}
+    style={{ width: 65, background: T.panel, border: `1px solid ${T.cyan}55`, borderRadius: 3, color: T.text, fontFamily: T.mono, fontSize: "1.3rem", fontWeight: 700, padding: "0.2rem 0.3rem", textAlign: "center" }} />
+</div>
                   </>
                 ) : (
                   <>
@@ -1332,8 +1383,8 @@ FINANCIAL IMPACT:
           <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "1rem" }}>
             [ BEFORE vs AFTER — ALL METRICS ]
           </div>
-          <ResponsiveContainer width="100%" height={250}>
-            <RadarChart data={data.metrics.map(m => ({
+          <ResponsiveContainer width="100%" height={280}>
+  <RadarChart outerRadius={85} data={data.metrics.map(m => ({
               metric: m.label.split(" ").slice(0,2).join(" "),
               Before: Math.round((m.invert ? (1 - m.before / (m.before * 1.2)) : m.before / (m.target * 1.5)) * 100),
               After: Math.round((m.invert ? (1 - m.after / (m.before * 1.2)) : m.after / (m.target * 1.5)) * 100),
@@ -1498,7 +1549,7 @@ ${compareMode ? `Comparison (Baseline):
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1200, margin: "0 auto" }}>
+    <motion.div id="overview-export" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ maxWidth: 1200, margin: "0 auto" }}>
       <SectionHeader
         module="Module 02 — Process Capability"
         title="Sigma Level Calculator"
