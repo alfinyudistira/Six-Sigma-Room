@@ -4454,32 +4454,33 @@ if (i >= 7) {
                   ...(ds.target !== null && ds.target !== undefined ? [
                     { label: "vs Target", val: `${mean > ds.target ? "+" : ""}${fmt2(mean - ds.target)}${ds.unit}`, note: mean <= ds.target ? "✓ At or below target" : "↑ Above target", valColor: mean <= ds.target ? T.green : T.yellow },
                     { label: "% At/Below Target", val: `${Math.round(pts.filter(v => v <= ds.target).length / n * 100)}%`, note: `of ${n} data points` },
-                  (customUSL !== "" && customLSL !== "" && stdDev > 0 && mode === "custom" ? [
-  {
-    label: "Ppk (Capability)",
-    val: (() => {
-      const usl = parseFloat(customUSL);
-      const lsl = parseFloat(customLSL);
-      if (isNaN(usl) || isNaN(lsl)) return "—";
-      const ppk = Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev));
-      return ppk.toFixed(3);
-    })(),
-    note: (() => {
-      const usl = parseFloat(customUSL);
-      const lsl = parseFloat(customLSL);
-      if (isNaN(usl) || isNaN(lsl)) return "Enter USL & LSL";
-      const ppk = Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev));
-      return ppk >= 1.33 ? "✓ Capable" : ppk >= 1.0 ? "⚠ Marginal" : "✕ Incapable";
-    })(),
-    valColor: (() => {
-      const usl = parseFloat(customUSL);
-      const lsl = parseFloat(customLSL);
-      if (isNaN(usl) || isNaN(lsl) || stdDev === 0) return T.textDim;
-      const ppk = Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev));
-      return ppk >= 1.33 ? T.green : ppk >= 1.0 ? T.yellow : T.red;
-    })(),
-  }
-] : []),
+                    ...(customUSL !== "" && customLSL !== "" && stdDev > 0 && mode === "custom" ? [
+                      {
+                        label: "Ppk (Capability)",
+                        val: (() => {
+                          const usl = parseFloat(customUSL);
+                          const lsl = parseFloat(customLSL);
+                          if (isNaN(usl) || isNaN(lsl)) return "—";
+                          const ppk = Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev));
+                          return ppk.toFixed(3);
+                        })(),
+                        note: (() => {
+                          const usl = parseFloat(customUSL);
+                          const lsl = parseFloat(customLSL);
+                          if (isNaN(usl) || isNaN(lsl)) return "Enter USL & LSL";
+                          const ppk = Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev));
+                          return ppk >= 1.33 ? "✓ Capable" : ppk >= 1.0 ? "⚠ Marginal" : "✕ Incapable";
+                        })(),
+                        valColor: (() => {
+                          const usl = parseFloat(customUSL);
+                          const lsl = parseFloat(customLSL);
+                          if (isNaN(usl) || isNaN(lsl) || stdDev === 0) return T.textDim;
+                          const ppk = Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev));
+                          return ppk >= 1.33 ? T.green : ppk >= 1.0 ? T.yellow : T.red;
+                        })(),
+                      }
+                    ] : []),
+                  ] : []),
                 ].map(k => (
                   <div key={k.label} style={{ background: T.panel, borderRadius: 6, padding: "0.85rem 1rem" }}>
                     <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem", textTransform: "uppercase", marginBottom: "0.3rem" }}>{k.label}</div>
