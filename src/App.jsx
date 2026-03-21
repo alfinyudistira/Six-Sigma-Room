@@ -1036,7 +1036,7 @@ function NavBar({ active, setActive }) {
       padding: "0 1.5rem", display: "flex", gap: "0", overflowX: "auto", flexShrink: 0,
       position: "relative", scrollbarWidth: "none", WebkitOverflowScrolling: "touch",
     }}>
-      {{tabs.map(t => (
+      {tabs.map(t => (
         <button key={t.id} data-tab={t.id} onClick={() => setActive(t.id)} style={{
           background: active === t.id ? (t.highlight ? `${T.green}15` : "#0a1520") : "transparent",
           borderTop: "none", borderLeft: "none", borderRight: "none",
