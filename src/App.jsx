@@ -1845,8 +1845,7 @@ ${compareMode ? `Comparison (Baseline):
             "Customer Service": { sigma: 3.7, label: "Customer Svc Avg" },
             "HR / People Ops": { sigma: 3.5, label: "HR Avg" },
           };
-          const companyCtx = useCompany();
-          const industryKey = companyCtx?.industry || "IT / Tech Support";
+          const industryKey = company?.industry || "IT / Tech Support";
           const benchmark = INDUSTRY_BENCHMARKS[industryKey] || INDUSTRY_BENCHMARKS["IT / Tech Support"];
           const milestones = [3, 3.5, 4, 4.5, 5, 5.5, 6];
           const dpmoFromSigma = (s) => {
@@ -3014,7 +3013,7 @@ ${sorted.map(i => `[${rpnLabel(rpn(i))}] RPN ${rpn(i)} | ${i.process}: ${i.failu
 
       {/* Toolbar */}
       <ModuleToolbar
-        onReset={() => setItems(FMEA_DEFAULTS)}
+        onReset={() => { setItems(FMEA_DEFAULTS); setSortBy("rpn"); setFilterMin(0); }}
         copyData={copyReport}
         saved={true}
       >
@@ -3061,7 +3060,7 @@ ${sorted.map(i => `[${rpnLabel(rpn(i))}] RPN ${rpn(i)} | ${i.process}: ${i.failu
             <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.mono, fontSize: "0.72rem" }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                  {["✓", "Process Step", "Failure Mode / Effect", "Cause", "S", "O", "D", "RPN", "Level", "Action", "Owner", "🗑"].map(h => (
+                  {["✓", "Process Step", "Failure Mode / Effect", "Cause", "S", "O", "D", "RPN", "Level", "Action", "Owner", "Due", "🗑"].map(h => (
                     <th key={h} style={{ color: T.textDim, textAlign: "left", padding: "0.65rem 0.75rem", fontSize: "0.58rem", letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -3110,6 +3109,11 @@ ${sorted.map(i => `[${rpnLabel(rpn(i))}] RPN ${rpn(i)} | ${i.process}: ${i.failu
                       </td>
                       <td style={{ padding: "0.65rem 0.75rem" }}>
                         <EditableLabel value={item.owner || "—"} onChange={v => update(item.id, "owner", v)} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.65rem" }} />
+                      </td>
+                      <td style={{ padding: "0.65rem 0.75rem" }}>
+                        <span style={{ color: item.dueWeek > 0 ? T.yellow : T.textDim, fontFamily: T.mono, fontSize: "0.62rem", fontWeight: item.dueWeek > 0 ? 700 : 400 }}>
+                          {item.dueWeek > 0 ? `Wk ${item.dueWeek}` : "—"}
+                        </span>
                       </td>
                       <td style={{ padding: "0.65rem 0.5rem" }}>
                         <button onClick={() => deleteItem(item.id)} style={{ background: "transparent", border: "none", color: T.textDim, cursor: "pointer", fontFamily: T.mono, fontSize: "0.75rem", padding: "0.1rem 0.3rem" }}>✕</button>
@@ -3553,7 +3557,7 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
               <div style={{ background: `${T.green}0A`, border: `1px solid ${T.green}33`, borderRadius: 8, padding: "1.25rem", marginBottom: "1.25rem" }}>
                 <div style={{ color: T.green, fontFamily: T.mono, fontSize: "0.62rem", textTransform: "uppercase", marginBottom: "0.6rem" }}>Strategic Recommendation</div>
                 <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.75rem", lineHeight: 1.7 }}>
-                  Based on COPQ analysis, implementing the proposed DMAIC improvement initiative for <strong style={{ color: T.cyan }}>{company?.processName || "this process"}</strong> is projected to reduce annual Cost of Poor Quality from <strong style={{ color: T.red }}>{fmtFull(copqA.total * 12)}</strong> to <strong style={{ color: T.green }}>{fmtFull(copqB.total * 12)}</strong>, delivering a net saving of <strong style={{ color: T.cyan }}>{fmtFull(Math.max(0, (copqA.total - copqB.total) * 12))}</strong> per year. Recommend immediate prioritization of the top COPQ driver: <strong style={{ color: T.yellow }}>{categories.sort((a,b) => copqA[b.key] - copqA[a.key])[0]?.name || "Wasted Labor Capacity"}</strong>.
+                  Based on COPQ analysis, implementing the proposed DMAIC improvement initiative for <strong style={{ color: T.cyan }}>{company?.processName || "this process"}</strong> is projected to reduce annual Cost of Poor Quality from <strong style={{ color: T.red }}>{fmtFull(copqA.total)}</strong> to <strong style={{ color: T.green }}>{fmtFull(copqB.total)}</strong>, delivering a net saving of <strong style={{ color: T.cyan }}>{fmtFull(Math.max(0, copqA.total - copqB.total))}</strong> per year. Recommend immediate prioritization of the top COPQ driver: <strong style={{ color: T.yellow }}>{categories.sort((a,b) => copqA[b.key] - copqA[a.key])[0]?.name || "Wasted Labor Capacity"}</strong>.
                 </div>
               </div>
               {/* Footer */}
