@@ -9536,7 +9536,7 @@ export default function App() {
         {/* Footer */}
         <div style={{ borderTop: `1px solid ${T.border}`, padding: "0.5rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, flexWrap: "wrap", gap: "0.5rem" }}>
           <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>
-            © {new Date().getFullYear()} Alfin Maulana Yudistira · Six Sigma Black Belt · {company.processName || "Process Efficiency Transformation"}
+            © {new Date().getFullYear()} Alfin Maulana Yudistira · Six Sigma Black Belt · {company.processName || "Process Efficiency Transformation"} · <a href="https://trakteer.id/alvin-maulana-yudis-hcknt" target="_blank" rel="noopener noreferrer" style={{ color: T.red, textDecoration: "none", fontFamily: T.mono }}>☕ Trakteer</a>
           </span>
           <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
             {company.isPulseDigital ? "Demo Mode: Pulse Digital" : `Company Mode: ${company.name}`}
