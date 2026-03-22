@@ -29,7 +29,7 @@ class ErrorBoundary extends React.Component {
               const keys = Object.keys(localStorage).filter(k =>
                 k.startsWith("ss_") || k.startsWith("sigma_") || k.startsWith("dmaic_") ||
                 k.startsWith("fmea_") || k.startsWith("copq_") || k.startsWith("spc_") ||
-                k.startsWith("pareto_") || k.startsWith("rc_") || k.startsWith("triage_")
+                k.startsWith("pareto_") || k.startsWith("rc_") || k.startsWith("triage_") ||
                 k.startsWith("bus_")                              
               );
               keys.forEach(k => localStorage.removeItem(k));
