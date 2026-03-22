@@ -698,17 +698,45 @@ function Badge({ label, color = T.cyan }) {
   );
 }
 
-// Smart Tooltip — bahasa awam
+// Smart Tooltip — Layman's Terms
 const TOOLTIPS = {
-  ppk: { title: "Ppk — Process Capability Index", plain: "Ibarat akurasi tembakan. Skor ≥1.33 = tim Anda menembak tepat sasaran terus-menerus. Skor <1.0 = proses sering meleset dari target." },
-  sigma: { title: "Sigma Level", plain: "Ukuran 'seberapa sedikit kesalahan' proses Anda. 6σ = hampir nol cacat. 1σ = 69% pekerjaan bermasalah. Semakin tinggi, semakin baik." },
-  dpmo: { title: "DPMO — Defects Per Million Opportunities", plain: "Dari 1 juta pekerjaan, berapa yang berakhir salah/cacat. DPMO 1.350 = hanya 0,135% yang gagal. Sangat bagus." },
-  copq: { title: "COPQ — Cost of Poor Quality", plain: "Total uang yang 'terbakar' sia-sia karena proses buruk, kerja dua kali, atau pelanggan kabur. Ini uang nyata yang bisa diselamatkan." },
-  ucl: { title: "UCL — Upper Control Limit", plain: "Batas atas 'normal' proses. Kalau data keluar dari garis ini, ada sesuatu yang tidak beres dan perlu diselidiki segera." },
-  fmea: { title: "FMEA — Failure Mode & Effects Analysis", plain: "Analisis 'apa saja yang bisa salah dan seberapa bahaya'. RPN = tingkat risiko. Makin tinggi RPN, makin urgent diperbaiki." },
-  rpn: { title: "RPN — Risk Priority Number", plain: "RPN = Parahnya × Seberapa sering × Susahnya ketahuan. Misalnya: Parah (8) × Sering (7) × Susah ketahuan (7) = RPN 392. > 100 = harus segera ditangani." },
-  dmaic: { title: "DMAIC Methodology", plain: "Kerangka perbaikan proses 5 fase: Define (tetapkan masalah) → Measure (ukur kondisi awal) → Analyze (cari akar masalah) → Improve (terapkan solusi) → Control (jaga supaya tidak balik lagi)." },
+  // ── Existing ──────────────────────────────────────────────────────────────
+  ppk:      { title: "Ppk — Process Capability Index", plain: "Like shooting accuracy. A score ≥1.33 = your team consistently hits the target. A score <1.0 = the process often misses the mark." },
+  sigma:    { title: "Sigma Level", plain: "A measure of 'how few errors' your process makes. 6σ = almost zero defects. 1σ = 69% of the work has issues. The higher, the better." },
+  dpmo:     { title: "DPMO — Defects Per Million Opportunities", plain: "Out of 1 million jobs, how many end up wrong or defective. A DPMO of 1,350 = only 0.135% fail. Excellent." },
+  copq:     { title: "COPQ — Cost of Poor Quality", plain: "Total money 'burned' and wasted due to bad processes, rework, or lost customers. This is real money that can be saved." },
+  ucl:      { title: "UCL — Upper Control Limit", plain: "The 'normal' upper limit of a process. If data goes above this line, something is wrong and needs to be investigated immediately." },
+  fmea:     { title: "FMEA — Failure Mode & Effects Analysis", plain: "An analysis of 'what can go wrong and how dangerous it is'. RPN = risk level. The higher the RPN, the more urgent it is to fix." },
+  rpn:      { title: "RPN — Risk Priority Number", plain: "RPN = Severity × Occurrence × Detection difficulty. Example: Severe (8) × Frequent (7) × Hard to detect (7) = RPN 392. > 100 = must be addressed immediately." },
+  dmaic:    { title: "DMAIC Methodology", plain: "A 5-phase process improvement framework: Define (set the problem) → Measure (assess current state) → Analyze (find root causes) → Improve (implement solutions) → Control (keep it from reverting back)." },
+  
+  // ── SPC Module ────────────────────────────────────────────────────────────
+  lcl:      { title: "LCL — Lower Control Limit", plain: "The 'normal' lower limit of a process. Data below this line is also abnormal — it could mean a sudden change that needs checking, even if the results look good." },
+  imr:      { title: "I-MR Chart — Individuals & Moving Range", plain: "Two charts at once: the top monitors individual values, the bottom monitors the jumps between data points. Both must be stable for the process to be 'in control'." },
+  weco:     { title: "Western Electric Rules", plain: "A set of rules to detect warning signals on a control chart. Example: 1 point outside UCL/LCL = immediate danger. 8 consecutive points on one side of the centerline = the process has shifted." },
+  mr:       { title: "Moving Range (MR)", plain: "The absolute difference between two consecutive data points. E.g., 5th data = 70, 6th data = 82, MR = |82-70| = 12. A consistently high MR means the process is inconsistent." },
+  
+  // ── Pareto Module ─────────────────────────────────────────────────────────
+  pareto:   { title: "Pareto Principle (80/20 Rule)", plain: "80% of problems usually come from 20% of the causes. A Pareto chart helps you find the 'vital few' — a small group of causes that have the biggest impact when solved." },
+  cumPct:   { title: "Cumulative Percentage Line", plain: "The red line on a Pareto chart. The point where this line hits 80% shows the boundary between major causes (handle these first) and minor ones." },
+  
+  // ── Root Cause Module ─────────────────────────────────────────────────────
+  fiveWhys: { title: "5 Whys Technique", plain: "Ask 'Why?' 5 times in a row to find the true root cause. Example: Machine broke → Why? Not maintained → Why? No schedule → Why? ... and so on." },
+  fishbone: { title: "Fishbone / Ishikawa Diagram", plain: "A diagram to group problem causes into categories: Man, Machine, Method, Material, Measurement, Environment. Helps the team see all factors at once." },
+  impact:   { title: "Impact Score (Root Cause)", plain: "An estimate of how much this root cause contributes to the total problem, in percent. Total impact must be ≤ 100%. Focus on the biggest impact first." },
+  
+  // ── COPQ Categories ───────────────────────────────────────────────────────
+  internalFailure:  { title: "Internal Failure Cost", plain: "Costs from defects or errors found BEFORE the product/service reaches the customer. Example: rework, re-inspection, scrap material. These are visible but often considered normal." },
+  externalFailure:  { title: "External Failure Cost", plain: "Costs from defects found AFTER reaching the customer. Example: warranty claims, refunds, lost customers, ruined reputation. These are the most expensive and dangerous." },
+  appraisal:        { title: "Appraisal Cost", plain: "Costs for checking and inspecting quality. Example: QC inspection, testing, audits. Necessary, but if it's too high, your process isn't good enough and requires too much checking." },
+  prevention:       { title: "Prevention Cost", plain: "Costs to prevent defects from happening in the first place. Example: training, good process design, routine maintenance. This is the best investment — every $1 spent here can save $10 in external failure." },
+  
+  // ── Triage Module ─────────────────────────────────────────────────────────
+  sla:      { title: "SLA — Service Level Agreement", plain: "The agreed time limit to resolve a complaint/ticket. E.g., a 48-hour SLA = all tickets must be closed within 48 hours. Breach = ticket passes the limit, risking fines or lost customers." },
+  triage:   { title: "Triage — Complaint Classification", plain: "The process of sorting and routing complaints to the right person/team as fast as possible. Like a hospital ER: emergency patients get treated first. Bad triage = slow response time = angry customers." },
+  confidence: { title: "AI Confidence Score", plain: "How confident the AI is in its classification, in percent. ≥75% = safe to proceed. <75% = recommends a manual review by a supervisor before routing the ticket to a technician." },
 };
+
 
 function SmartTooltip({ id, children }) {
   const [open, setOpen] = useState(false);
@@ -793,6 +821,22 @@ const PlatformBus = {
       const raw = localStorage.getItem(`bus_${event}`);
       return raw ? JSON.parse(raw) : null;
     } catch { return null; }
+  },
+  // Hapus semua bus_ keys yang sudah lebih dari maxAgeMs (default 24 jam)
+  pruneStale(maxAgeMs = 86400000) {
+    try {
+      const now = Date.now();
+      Object.keys(localStorage)
+        .filter(k => k.startsWith("bus_"))
+        .forEach(k => {
+          try {
+            const payload = JSON.parse(localStorage.getItem(k));
+            if (payload?.ts && (now - payload.ts) > maxAgeMs) {
+              localStorage.removeItem(k);
+            }
+          } catch { localStorage.removeItem(k); }
+        });
+    } catch {}
   },
 };
 
@@ -907,10 +951,37 @@ function useLocalState(key, initial) {
 function useCopyClipboard() {
   const [copied, setCopied] = useState(false);
   const copy = (text) => {
-    navigator.clipboard?.writeText(text).then(() => {
+    const succeed = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(succeed).catch(() => {
+        // fallback jika clipboard permission denied
+        try {
+          const el = document.createElement("textarea");
+          el.value = text;
+          el.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0";
+          document.body.appendChild(el);
+          el.select();
+          document.execCommand("copy");
+          document.body.removeChild(el);
+          succeed();
+        } catch {}
+      });
+    } else {
+      // Clipboard API tidak ada sama sekali (HTTP atau browser lama)
+      try {
+        const el = document.createElement("textarea");
+        el.value = text;
+        el.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0";
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+        succeed();
+      } catch {}
+    }
   };
   return [copied, copy];
 }
@@ -8877,7 +8948,7 @@ function getAllModuleData() {
 }
 
 function nuclearReset() {
-  const prefixes = ["ss_","sigma_","dmaic_","fmea_","copq_","spc_","pareto_","rc_","triage_","overview_","universal_","ops_"];
+  const prefixes = ["ss_","sigma_","dmaic_","fmea_","copq_","spc_","pareto_","rc_","triage_","overview_","universal_","ops_","bus_"];
   Object.keys(localStorage).forEach(k => {
     if (prefixes.some(p => k.startsWith(p))) localStorage.removeItem(k);
   });
@@ -8886,7 +8957,7 @@ function nuclearReset() {
 function exportJSON() {
   const data = {
     exportedAt: new Date().toISOString(),
-    exportedBy: "DMAIC Intelligence Platform — Alfin Maulana Yudistira",
+    exportedBy: `DMAIC Intelligence Platform — ${getAllModuleData().company?.name || "Alfin Maulana Yudistira"}`,
     version: "1.0",
     modules: getAllModuleData(),
   };
@@ -9212,8 +9283,19 @@ export default function App() {
     } catch { return COMPANY_DEFAULTS; }
   });
   const [showCompanySetup, setShowCompanySetup] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  useEffect(() => {
+    const handler = () => {
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1500);
+    };
+    window.addEventListener("lsupdate", handler);
+    return () => window.removeEventListener("lsupdate", handler);
+  }, []);
 
   useEffect(() => { localStorage.setItem("ss_tab", activeTab); }, [activeTab]);
+  useEffect(() => { PlatformBus.pruneStale(); }, []); // cleanup bus_ keys lama saat app load
   useEffect(() => {
     try { localStorage.setItem("ss_company", JSON.stringify(company)); } catch {}
   }, [company]);
@@ -9229,7 +9311,7 @@ export default function App() {
       const tabs = ["overview","sigma","dmaic","fmea","copq","spc","pareto","rootcause","triage","universal","ops"];
       if (e.key >= "1" && e.key <= "9") setActiveTab(tabs[parseInt(e.key) - 1]);
       if (e.key === "0") setActiveTab("universal");
-      if (e.key === "-") setActiveTab("ops");
+      if (e.key === "-" && !e.repeat) setActiveTab("ops");
       if (e.key === "Escape") {
         if (showCompanySetup) setShowCompanySetup(false);
         else setShowApp(false);
@@ -9275,6 +9357,25 @@ export default function App() {
 
             {/* KPI chips — show company data if available, else Pulse Digital */}
             <AppKPIChips company={company} />
+
+            {/* Auto-save indicator */}
+            <AnimatePresence>
+              {savedFlash && (
+                <motion.span
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  style={{
+                    color: T.green, fontFamily: T.mono, fontSize: "0.55rem",
+                    letterSpacing: "0.1em", display: "flex", alignItems: "center",
+                    gap: "0.3rem", alignSelf: "center",
+                  }}
+                >
+                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: T.green, display: "inline-block", boxShadow: `0 0 6px ${T.green}` }} />
+                  SAVED
+                </motion.span>
+              )}
+            </AnimatePresence>
             {company.isPulseDigital && (
               <span style={{ background: `${T.yellow}18`, border: `1px solid ${T.yellow}44`, borderRadius: 3, color: T.yellow, fontFamily: T.mono, fontSize: "0.52rem", padding: "0.2rem 0.5rem", letterSpacing: "0.1em", alignSelf: "center" }}>
                 DEMO
@@ -9301,7 +9402,7 @@ export default function App() {
         {/* Footer */}
         <div style={{ borderTop: `1px solid ${T.border}`, padding: "0.5rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, flexWrap: "wrap", gap: "0.5rem" }}>
           <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.58rem" }}>
-            © {new Date().getFullYear()} Alfin Maulana Yudistira · Six Sigma Black Belt · Technical Support Efficiency Transformation
+            © {new Date().getFullYear()} Alfin Maulana Yudistira · Six Sigma Black Belt · {company.processName || "Process Efficiency Transformation"}
           </span>
           <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
             {company.isPulseDigital ? "Demo Mode: Pulse Digital" : `Company Mode: ${company.name}`}
@@ -9310,7 +9411,7 @@ export default function App() {
 
         {/* Keyboard hints */}
         <div style={{ background: "#030709", borderTop: `1px solid ${T.border}`, padding: "0.3rem 1.5rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-          {[["1-9","Switch modules"],["0","Universal COPQ"],["- (minus)","Live Ops"],["ESC","Back / Exit"],["Click badge","Switch company"]].map(kb => (
+          {[["1-9","Switch modules"],["0","Universal COPQ"],["−","Live Ops (outside inputs)"],["ESC","Back / Exit"],["Click badge","Switch company"]].map(kb => (
             <span key={kb[0]} style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.55rem" }}>
               <span style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 2, padding: "0.05rem 0.3rem", color: T.textMid, marginRight: "0.3rem" }}>{kb[0]}</span>
               {kb[1]}
