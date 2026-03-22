@@ -915,6 +915,85 @@ function useCopyClipboard() {
   return [copied, copy];
 }
 
+// ── PDF Report Generator ──────────────────────────────────────────────────────
+function usePDFExport() {
+  const [exporting, setExporting] = useState(false);
+
+  const exportPDF = async ({ title, subtitle, sections, company, filename = "dmaic-report" }) => {
+    setExporting(true);
+    try {
+      const styles = `
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Space Mono', monospace; background: #fff; color: #111; padding: 2cm; font-size: 10pt; }
+        h1 { font-family: 'Syne', sans-serif; font-size: 22pt; font-weight: 800; color: #0a0a0a; margin-bottom: 4px; }
+        h2 { font-family: 'Syne', sans-serif; font-size: 14pt; font-weight: 700; color: #111; margin: 20px 0 8px; border-bottom: 2px solid #00D4FF; padding-bottom: 4px; }
+        h3 { font-size: 10pt; font-weight: 700; color: #333; margin: 12px 0 4px; }
+        p, li { font-size: 9.5pt; line-height: 1.6; color: #333; }
+        .header { border-bottom: 3px solid #00D4FF; padding-bottom: 12px; margin-bottom: 24px; }
+        .meta { font-size: 8.5pt; color: #666; margin-top: 4px; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 8pt; font-weight: 700; margin: 0 2px; }
+        .badge-green { background: #e6fff5; color: #00875a; border: 1px solid #00875a44; }
+        .badge-red { background: #fff0f0; color: #cc0000; border: 1px solid #cc000044; }
+        .badge-yellow { background: #fffbe6; color: #996600; border: 1px solid #99660044; }
+        .badge-blue { background: #e6f4ff; color: #0066cc; border: 1px solid #0066cc44; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 12px 0; }
+        .kpi-card { border: 1px solid #ddd; border-radius: 6px; padding: 10px 12px; text-align: center; }
+        .kpi-val { font-size: 16pt; font-weight: 800; color: #0a0a0a; }
+        .kpi-label { font-size: 7.5pt; color: #666; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 8.5pt; }
+        th { background: #f0f8ff; color: #333; text-align: left; padding: 6px 8px; border-bottom: 2px solid #00D4FF; font-size: 7.5pt; text-transform: uppercase; }
+        td { padding: 5px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+        tr:nth-child(even) td { background: #fafafa; }
+        .section { margin-bottom: 24px; page-break-inside: avoid; }
+        .insight-box { background: #f0f8ff; border-left: 3px solid #00D4FF; padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+        .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 8pt; color: #888; display: flex; justify-content: space-between; }
+        @page { margin: 1.5cm; size: A4; }
+        @media print { body { padding: 0; } }
+      `;
+
+      const bodyHTML = `
+        <div class="header">
+          <h1>${title}</h1>
+          <div class="meta">
+            ${company?.name ? `<strong>${company.name}</strong> · ` : ""}
+            ${company?.dept ? `${company.dept} · ` : ""}
+            ${subtitle || ""}
+          </div>
+          <div class="meta" style="margin-top:6px;">
+            Generated: ${new Date().toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" })} · 
+            DMAIC Intelligence Platform · Alfin Maulana Yudistira
+          </div>
+        </div>
+
+        ${sections.map(sec => `
+          <div class="section">
+            <h2>${sec.title}</h2>
+            ${sec.content}
+          </div>
+        `).join("")}
+
+        <div class="footer">
+          <span>DMAIC Intelligence Platform · ${company?.name || "Pulse Digital"}</span>
+          <span>Confidential · ${new Date().getFullYear()}</span>
+        </div>
+      `;
+
+      const win = window.open("", "_blank");
+      if (!win) { alert("Pop-up blocked. Allow pop-ups for this site."); setExporting(false); return; }
+      win.document.write(`<!DOCTYPE html><html><head><title>${filename}</title><style>${styles}</style></head><body>${bodyHTML}</body></html>`);
+      win.document.close();
+      setTimeout(() => { win.print(); }, 800);
+    } catch (err) {
+      alert("PDF export failed: " + err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return { exportPDF, exporting };
+}
+
 // ── Screenshot/Export utility ─────────────────────────────────────────────────
 function ExportButton({ targetId, filename = "dmaic-export", label = "🖨 Print / Save PDF" }) {
   const [loading, setLoading] = useState(false);
@@ -3197,6 +3276,7 @@ function FMEAScorer() {
   const company = useCompany();
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
+  const { exportPDF, exporting: pdfExporting } = usePDFExport();
   const [items, setItems] = useLocalState("fmea_items", FMEA_DEFAULTS);
   const [newItem, setNewItem] = useState({ process: "", failure: "", cause: "", effect: "", S: 5, O: 5, D: 5, action: "", owner: "", dueWeek: 0 });
   const [showAdd, setShowAdd] = useState(false);
@@ -3323,6 +3403,52 @@ ${sorted.map(i => `[${rpnLabel(rpn(i))}] RPN ${rpn(i)} | ${i.process}: ${i.failu
     cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
   }}>↓ CSV</button>
 
+<button onClick={() => exportPDF({
+          title: "FMEA Risk Register",
+          subtitle: `${items.length} failure modes · RPN reduction: ${reduction}%`,
+          company,
+          filename: "FMEA_Report",
+          sections: [
+            {
+              title: "Risk Summary",
+              content: `
+                <div class="kpi-grid">
+                  <div class="kpi-card"><div class="kpi-val">${totalBefore}</div><div class="kpi-label">Total RPN Before</div></div>
+                  <div class="kpi-card"><div class="kpi-val">${totalAfter}</div><div class="kpi-label">Total RPN After</div></div>
+                  <div class="kpi-card"><div class="kpi-val">${reduction}%</div><div class="kpi-label">Risk Reduction</div></div>
+                  <div class="kpi-card"><div class="kpi-val">${criticalCount}</div><div class="kpi-label">Critical Items</div></div>
+                </div>`,
+            },
+            {
+              title: "Failure Mode Register",
+              content: `
+                <table>
+                  <thead><tr><th>Process</th><th>Failure Mode</th><th>Cause</th><th>S</th><th>O</th><th>D</th><th>RPN</th><th>Level</th><th>Status</th><th>Action</th><th>Owner</th></tr></thead>
+                  <tbody>
+                    ${[...items].sort((a,b) => rpn(b)-rpn(a)).map(i => `
+                      <tr>
+                        <td>${i.process}</td>
+                        <td>${i.failure}</td>
+                        <td>${i.cause}</td>
+                        <td>${i.S}</td><td>${i.O}</td><td>${i.D}</td>
+                        <td><strong>${rpn(i)}</strong></td>
+                        <td>${rpnLabel(rpn(i))}</td>
+                        <td>${i.fixed ? "CONTROLLED" : "OPEN"}</td>
+                        <td>${i.action}</td>
+                        <td>${i.owner}</td>
+                      </tr>`).join("")}
+                  </tbody>
+                </table>`,
+            },
+          ],
+        })} disabled={pdfExporting} style={{
+          background: `${T.red}12`, border: `1px solid ${T.red}44`,
+          color: pdfExporting ? T.textDim : T.red,
+          padding: "0.35rem 0.8rem", borderRadius: 4,
+          cursor: pdfExporting ? "not-allowed" : "pointer",
+          fontFamily: T.mono, fontSize: "0.62rem",
+        }}>{pdfExporting ? "⏳..." : "📄 PDF"}</button>
+        
   {/* CSV Import */}
   <label style={{
     background: `${T.yellow}12`, border: `1px solid ${T.yellow}44`,
@@ -5799,8 +5925,6 @@ ${showWhatIf ? `WHAT-IF SCENARIO:
 }
 
 // ─── 08: ROOT CAUSE ANALYZER ─────────────────────────────────────────────────
-
-
 const RC_DEFAULTS = [
   {
     id: 1, title: "Technician Experience Gap", category: "MAN", contribution: 84, validated: true,
@@ -5853,6 +5977,7 @@ function RootCauseAnalyzer() {
   const company = useCompany();
   const [aiWhysLoading, setAiWhysLoading] = useState(false);
   const [aiWhysError, setAiWhysError] = useState("");
+  const { exportPDF, exporting: pdfExporting } = usePDFExport();
   const [rootCauses, setRootCauses] = useLocalState("rc_items", RC_DEFAULTS);
 
   const updateWhyField = (rcId, whyIdx, field, val) => {
@@ -6102,6 +6227,47 @@ const y = Math.max(5, 80 - (Math.min(r.impact, 25) / 25) * 65);
             padding: "0.35rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
           }}>{v.label}</button>
         ))}
+
+        <button onClick={() => exportPDF({
+          title: "Root Cause Analysis Report",
+          subtitle: `${rootCauses.length} validated root causes · Total impact: −${totalContrib.toFixed(1)}h`,
+          company,
+          filename: "RootCause_Report",
+          sections: [
+            {
+              title: "Summary",
+              content: `
+                <div class="kpi-grid">
+                  <div class="kpi-card"><div class="kpi-val">${rootCauses.length}</div><div class="kpi-label">Root Causes</div></div>
+                  <div class="kpi-card"><div class="kpi-val">${rootCauses.filter(r=>r.status==="SOLVED").length}</div><div class="kpi-label">Solved</div></div>
+                  <div class="kpi-card"><div class="kpi-val">−${totalContrib.toFixed(1)}h</div><div class="kpi-label">Total Impact</div></div>
+                  <div class="kpi-card"><div class="kpi-val">${rootCauses.filter(r=>r.validated).length}</div><div class="kpi-label">Validated</div></div>
+                </div>`,
+            },
+            {
+              title: "Root Cause Detail",
+              content: rootCauses.map(r => `
+                <div style="margin-bottom:16px; padding:10px; border:1px solid #ddd; border-radius:6px;">
+                  <h3>${r.title} <span class="badge ${r.status==="SOLVED"?"badge-green":r.status==="OPEN"?"badge-red":"badge-yellow"}">${r.status}</span></h3>
+                  <p><strong>Category:</strong> ${r.category} · <strong>Contribution:</strong> ${r.contribution}% · <strong>Impact:</strong> −${r.impact}h</p>
+                  <p><strong>Effect:</strong> ${r.effect || "—"}</p>
+                  <p><strong>Root Cause:</strong> ${r.rootCause}</p>
+                  <p><strong>Solution:</strong> ${r.solution}</p>
+                  ${r.whys?.length ? `
+                    <table style="margin-top:8px;">
+                      <thead><tr><th>#</th><th>Why Question</th><th>Answer</th></tr></thead>
+                      <tbody>${r.whys.map((w,i)=>`<tr><td>${i+1}</td><td>${w.q}</td><td>${w.a||"—"}</td></tr>`).join("")}</tbody>
+                    </table>` : ""}
+                </div>`).join(""),
+            },
+          ],
+        })} disabled={pdfExporting} style={{
+          background: `${T.red}12`, border: `1px solid ${T.red}44`,
+          color: pdfExporting ? T.textDim : T.red,
+          padding: "0.35rem 0.8rem", borderRadius: 4,
+          cursor: pdfExporting ? "not-allowed" : "pointer",
+          fontFamily: T.mono, fontSize: "0.62rem",
+        }}>{pdfExporting ? "⏳..." : "📄 PDF"}</button>
         
         {/* INI TOMBOL ADD ROOT CAUSE YANG LAMA */}
         <button onClick={() => setShowAddRC(p => !p)} style={{
