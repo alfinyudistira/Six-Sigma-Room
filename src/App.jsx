@@ -3194,6 +3194,9 @@ function FMEAScorer() {
   const crossModule = useCrossModuleSummary();
   const spcAlert = (crossModule.spc?.outOfControl || 0) > 0;
   const triageBreachAlert = (crossModule.triage?.breach || 0) >= 3;
+  const company = useCompany();
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
   const [items, setItems] = useLocalState("fmea_items", FMEA_DEFAULTS);
   const [newItem, setNewItem] = useState({ process: "", failure: "", cause: "", effect: "", S: 5, O: 5, D: 5, action: "", owner: "", dueWeek: 0 });
   const [showAdd, setShowAdd] = useState(false);
@@ -3350,6 +3353,76 @@ ${sorted.map(i => `[${rpnLabel(rpn(i))}] RPN ${rpn(i)} | ${i.process}: ${i.failu
       e.target.value = "";
     }} />
   </label>
+        {/* AI Suggest Button */}
+        <button
+          onClick={async () => {
+            setAiLoading(true);
+            setAiError("");
+            const prompt = `You are a Six Sigma Black Belt and FMEA expert. Generate exactly 4 realistic FMEA failure modes for a company with this profile:
+- Company: ${company?.name || "Unknown"}
+- Industry: ${company?.industry || "General"}
+- Department: ${company?.dept || "Operations"}
+- Process being improved: ${company?.processName || "General Process"}
+
+For each failure mode, respond ONLY with valid JSON array. No markdown, no explanation outside JSON:
+[
+  {
+    "process": "<specific process step name>",
+    "failure": "<specific failure mode>",
+    "cause": "<root cause>",
+    "effect": "<effect on customer or business>",
+    "S": <severity 1-10>,
+    "O": <occurrence 1-10>,
+    "D": <detection difficulty 1-10>,
+    "action": "<recommended corrective action>",
+    "owner": "<team or role responsible>",
+    "dueWeek": <week number 1-30>
+  }
+]
+Make it realistic and specific to the industry and process above.`;
+            try {
+              const res = await fetch("/api/claude", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ messages: [{ content: prompt }] }),
+              });
+              const data = await res.json();
+              const raw = data?.content?.[0]?.text || "";
+              const clean = raw.replace(/```json|```/g, "").trim();
+              const parsed = JSON.parse(clean);
+              if (!Array.isArray(parsed)) throw new Error("Invalid response");
+              const newItems = parsed.map((i, idx) => ({
+                ...i,
+                id: Date.now() + idx,
+                fixed: false,
+                S: Math.min(10, Math.max(1, +i.S || 5)),
+                O: Math.min(10, Math.max(1, +i.O || 5)),
+                D: Math.min(10, Math.max(1, +i.D || 5)),
+                dueWeek: +i.dueWeek || 0,
+              }));
+              if (window.confirm(`AI generated ${newItems.length} failure modes for "${company?.processName || "your process"}". Add to existing register?`)) {
+                setItems(prev => [...prev, ...newItems]);
+              }
+            } catch (e) {
+              setAiError("AI gagal generate — coba lagi");
+            } finally {
+              setAiLoading(false);
+            }
+          }}
+          disabled={aiLoading}
+          style={{
+            background: aiLoading ? `${T.cyan}08` : `${T.cyan}15`,
+            border: `1px solid ${T.cyan}55`,
+            color: aiLoading ? T.textDim : T.cyan,
+            padding: "0.35rem 0.8rem", borderRadius: 4,
+            cursor: aiLoading ? "not-allowed" : "pointer",
+            fontFamily: T.mono, fontSize: "0.62rem",
+            display: "flex", alignItems: "center", gap: "0.4rem",
+          }}>
+          {aiLoading ? "⏳ Generating..." : "✦ AI Suggest"}
+        </button>
+        {aiError && <span style={{ color: T.red, fontFamily: T.mono, fontSize: "0.6rem" }}>{aiError}</span>}
+
         {[
           { id: "table", label: "≡ Register" },
           { id: "matrix", label: "◫ Matrix" },
@@ -5634,6 +5707,9 @@ function RootCauseAnalyzer() {
   const crossModule = useCrossModuleSummary();
   const fmeaCritical = crossModule.fmea?.critical || [];
   const spcOOC = crossModule.spc?.outOfControl || 0;
+  const company = useCompany();
+  const [aiWhysLoading, setAiWhysLoading] = useState(false);
+  const [aiWhysError, setAiWhysError] = useState("");
   const [rootCauses, setRootCauses] = useLocalState("rc_items", RC_DEFAULTS);
 
   const updateWhyField = (rcId, whyIdx, field, val) => {
@@ -6115,7 +6191,71 @@ const y = Math.max(5, 80 - (Math.min(r.impact, 25) / 25) * 65);
                   </div>
                 ))}
               </div>
-              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", marginBottom: "0.65rem" }}>5 Whys (fill each level)</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.65rem" }}>
+                <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase" }}>5 Whys (fill each level)</div>
+                <button
+                  onClick={async () => {
+                    if (!newRC.title.trim()) { alert("Isi Title dulu sebelum generate 5 Whys"); return; }
+                    setAiWhysLoading(true);
+                    setAiWhysError("");
+                    const prompt = `You are a Six Sigma Black Belt expert conducting a 5 Whys root cause analysis.
+
+Context:
+- Company: ${company?.name || "Unknown"}
+- Industry: ${company?.industry || "General"}
+- Process: ${company?.processName || "General Process"}
+- Problem/Root Cause Title: "${newRC.title}"
+- Category: ${newRC.category}
+
+Generate a rigorous 5 Whys analysis for this problem. Each "Why" should drill deeper into the systemic root cause, not just repeat the symptom.
+
+Respond ONLY with valid JSON. No markdown, no explanation:
+{
+  "whys": [
+    { "q": "<Why question 1 — about the immediate symptom>", "a": "<Specific answer based on the context>" },
+    { "q": "<Why question 2 — one level deeper>", "a": "<Answer>" },
+    { "q": "<Why question 3>", "a": "<Answer>" },
+    { "q": "<Why question 4>", "a": "<Answer>" },
+    { "q": "<Why question 5 — the true systemic root cause>", "a": "<Answer>" }
+  ],
+  "rootCause": "<One sentence: the true systemic root cause discovered>",
+  "solution": "<One sentence: recommended corrective action>"
+}`;
+                    try {
+                      const res = await fetch("/api/claude", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ messages: [{ content: prompt }] }),
+                      });
+                      const data = await res.json();
+                      const raw = data?.content?.[0]?.text || "";
+                      const clean = raw.replace(/```json|```/g, "").trim();
+                      const parsed = JSON.parse(clean);
+                      setNewRC(p => ({
+                        ...p,
+                        whys: parsed.whys || p.whys,
+                        rootCause: parsed.rootCause || p.rootCause,
+                        solution: parsed.solution || p.solution,
+                      }));
+                    } catch {
+                      setAiWhysError("AI gagal — coba lagi");
+                    } finally {
+                      setAiWhysLoading(false);
+                    }
+                  }}
+                  disabled={aiWhysLoading}
+                  style={{
+                    background: aiWhysLoading ? `${T.cyan}08` : `${T.cyan}15`,
+                    border: `1px solid ${T.cyan}44`,
+                    color: aiWhysLoading ? T.textDim : T.cyan,
+                    padding: "0.25rem 0.65rem", borderRadius: 4,
+                    cursor: aiWhysLoading ? "not-allowed" : "pointer",
+                    fontFamily: T.mono, fontSize: "0.6rem",
+                  }}>
+                  {aiWhysLoading ? "⏳ Generating..." : "✦ AI Draft 5 Whys"}
+                </button>
+              </div>
+              {aiWhysError && <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.6rem", marginBottom: "0.5rem" }}>{aiWhysError}</div>}
               {newRC.whys.map((w, i) => (
                 <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
                   <div style={{ width: 24, height: 24, borderRadius: "50%", background: `${T.cyan}18`, border: `1px solid ${T.cyan}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.cyan, fontFamily: T.mono, fontSize: "0.7rem", fontWeight: 700, flexShrink: 0 }}>{i+1}</div>
