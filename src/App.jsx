@@ -129,6 +129,88 @@ const INDUSTRY_OPTIONS = [
   "Customer Service", "Food & Beverage", "Construction", "Education", "Other",
 ];
 
+// ─── INLINE CONFIRM BUTTONS (mengganti window.confirm/prompt) ────────────────
+function StartFreshButton({ onConfirm }) {
+  const [confirm, setConfirm] = useState(false);
+  if (confirm) return (
+    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: `${T.yellow}10`, border: `1px solid ${T.yellow}44`, borderRadius: 6, padding: "0.4rem 0.75rem" }}>
+      <span style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.62rem" }}>Clear all fields?</span>
+      <button onClick={() => { onConfirm(); setConfirm(false); }}
+        style={{ background: T.yellow, border: "none", color: T.bg, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700 }}>Yes</button>
+      <button onClick={() => setConfirm(false)}
+        style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem" }}>No</button>
+    </div>
+  );
+  return (
+    <button onClick={() => setConfirm(true)} style={{
+      background: `${T.green}12`, border: `1px solid ${T.green}44`,
+      color: T.green, padding: "0.5rem 1rem", borderRadius: 6,
+      cursor: "pointer", fontFamily: T.mono, fontSize: "0.68rem",
+    }}>⚡ Start Fresh (Your Company)</button>
+  );
+}
+
+function AddMetricButton({ onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [unit, setUnit] = useState("");
+  const [invert, setInvert] = useState(false);
+  if (open) return (
+    <div style={{ background: T.surface, border: `1px solid ${T.cyan}44`, borderRadius: 6, padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem", minWidth: 240 }}>
+      <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.1em" }}>New Metric</div>
+      <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Metric name (e.g. First Call Resolution)"
+        style={{ background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.4rem 0.6rem", fontFamily: T.mono, fontSize: "0.72rem" }} />
+      <div style={{ display: "flex", gap: "0.4rem" }}>
+        <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="Unit (%, hrs…)"
+          style={{ flex: 1, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.4rem 0.6rem", fontFamily: T.mono, fontSize: "0.72rem" }} />
+        <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", color: T.textMid, fontFamily: T.mono, fontSize: "0.62rem", cursor: "pointer", whiteSpace: "nowrap" }}>
+          <input type="checkbox" checked={invert} onChange={e => setInvert(e.target.checked)} style={{ accentColor: T.cyan }} />
+          Lower = better
+        </label>
+      </div>
+      <div style={{ display: "flex", gap: "0.4rem" }}>
+        <button onClick={() => {
+          if (!label.trim()) return;
+          onAdd({ id: `custom_${Date.now()}`, label: label.trim(), before: 0, after: 0, target: 0, unit: unit.trim(), invert, description: "Custom metric" });
+          setLabel(""); setUnit(""); setInvert(false); setOpen(false);
+        }} style={{ flex: 1, background: T.cyan, border: "none", color: T.bg, padding: "0.35rem 0.5rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700 }}>+ Add</button>
+        <button onClick={() => { setLabel(""); setUnit(""); setInvert(false); setOpen(false); }}
+          style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.35rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem" }}>Cancel</button>
+      </div>
+    </div>
+  );
+  return (
+    <button onClick={() => setOpen(true)} style={{
+      background: `${T.green}12`, border: `1px solid ${T.green}44`,
+      color: T.green, padding: "0.35rem 0.8rem", borderRadius: 4,
+      cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
+    }}>+ Add Metric</button>
+  );
+}
+
+function NuclearResetButton() {
+  const [confirm, setConfirm] = useState(false);
+  if (confirm) return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.4rem", background: `${T.red}10`, border: `1px solid ${T.red}44`, borderRadius: 6, padding: "0.6rem 0.85rem" }}>
+      <span style={{ color: T.red, fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700 }}>⚠ Hapus SEMUA data? Tidak bisa di-undo.</span>
+      <div style={{ display: "flex", gap: "0.5rem" }}>
+        <button onClick={() => { nuclearReset(); window.location.reload(); }}
+          style={{ background: T.red, border: "none", color: "#fff", padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700 }}>Ya, Reset</button>
+        <button onClick={() => setConfirm(false)}
+          style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem" }}>Batal</button>
+      </div>
+    </div>
+  );
+  return (
+    <button onClick={() => setConfirm(true)} style={{
+      background: `${T.red}12`, border: `1px solid ${T.red}44`,
+      color: T.red, padding: "0.5rem 1rem", borderRadius: 6,
+      cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
+      letterSpacing: "0.05em",
+    }}>✕ Reset All Data</button>
+  );
+}
+
 // ─── COMPANY SETUP MODAL ─────────────────────────────────────────────────────
 function CompanySetup({ company, onChange, onClose, isOpen }) {
   const [draft, setDraft] = useState({ ...company });
@@ -229,30 +311,14 @@ function CompanySetup({ company, onChange, onClose, isOpen }) {
                 }}>
                   ◈ Load Pulse Digital (Demo)
                 </button>
-                {(() => {
-                  const [confirmFresh, setConfirmFresh] = React.useState(false);
-                  return confirmFresh ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: `${T.yellow}10`, border: `1px solid ${T.yellow}44`, borderRadius: 6, padding: "0.4rem 0.75rem" }}>
-                      <span style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.62rem" }}>Clear all fields?</span>
-                      <button onClick={() => {
-                        const blank = { ...COMPANY_DEFAULTS, name: "", dept: "", processName: "", baselineMean: 0, baselineStdDev: 0, target: 0, usl: 0, lsl: 0, laborRate: 0, monthlyVolume: 0, customerLTV: 0, isPulseDigital: false };
-                        setDraft(blank);
-                        setStrVals(Object.fromEntries(numKeys.map(k => [k, String(blank[k] ?? "")])));
-                        setValidationErrors([]);
-                        setConfirmFresh(false);
-                      }} style={{ background: T.yellow, border: "none", color: T.bg, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700 }}>Yes</button>
-                      <button onClick={() => setConfirmFresh(false)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem" }}>No</button>
-                    </div>
-                  ) : (
-                    <button onClick={() => setConfirmFresh(true)} style={{
-                      background: `${T.green}12`, border: `1px solid ${T.green}44`,
-                      color: T.green, padding: "0.5rem 1rem", borderRadius: 6,
-                      cursor: "pointer", fontFamily: T.mono, fontSize: "0.68rem",
-                    }}>
-                      ⚡ Start Fresh (Your Company)
-                    </button>
-                  );
-                })()}
+                <StartFreshButton
+                  onConfirm={() => {
+                    const blank = { ...COMPANY_DEFAULTS, name: "", dept: "", processName: "", baselineMean: 0, baselineStdDev: 0, target: 0, usl: 0, lsl: 0, laborRate: 0, monthlyVolume: 0, customerLTV: 0, isPulseDigital: false };
+                    setDraft(blank);
+                    setStrVals(Object.fromEntries(numKeys.map(k => [k, String(blank[k] ?? "")])));
+                    setValidationErrors([]);
+                  }}
+                />
                 <label style={{
                   background: `${T.yellow}12`, border: `1px solid ${T.yellow}44`,
                   color: T.yellow, padding: "0.5rem 1rem", borderRadius: 6,
@@ -1531,46 +1597,7 @@ FINANCIAL IMPACT:
           {editMode ? "✓ Done Editing" : "✎ Edit All Values"}
         </button>
 
-        {(() => {
-  const [addOpen, setAddOpen] = React.useState(false);
-  const [newLabel, setNewLabel] = React.useState("");
-  const [newUnit, setNewUnit] = React.useState("");
-  const [newInvert, setNewInvert] = React.useState(false);
-  return addOpen ? (
-    <div style={{ background: T.surface, border: `1px solid ${T.cyan}44`, borderRadius: 6, padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem", minWidth: 240 }}>
-      <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.1em" }}>New Metric</div>
-      <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="Metric name (e.g. First Call Resolution)"
-        style={{ background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.4rem 0.6rem", fontFamily: T.mono, fontSize: "0.72rem" }} />
-      <div style={{ display: "flex", gap: "0.4rem" }}>
-        <input value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="Unit (%, hrs…)"
-          style={{ flex: 1, background: T.panel, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, padding: "0.4rem 0.6rem", fontFamily: T.mono, fontSize: "0.72rem" }} />
-        <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", color: T.textMid, fontFamily: T.mono, fontSize: "0.62rem", cursor: "pointer", whiteSpace: "nowrap" }}>
-          <input type="checkbox" checked={newInvert} onChange={e => setNewInvert(e.target.checked)} style={{ accentColor: T.cyan }} />
-          Lower = better
-        </label>
-      </div>
-      <div style={{ display: "flex", gap: "0.4rem" }}>
-        <button onClick={() => {
-          if (!newLabel.trim()) return;
-          setData(prev => ({ ...prev, metrics: [...prev.metrics, { id: `custom_${Date.now()}`, label: newLabel.trim(), before: 0, after: 0, target: 0, unit: newUnit.trim(), invert: newInvert, description: "Custom metric" }] }));
-          setNewLabel(""); setNewUnit(""); setNewInvert(false); setAddOpen(false);
-        }} style={{ flex: 1, background: T.cyan, border: "none", color: T.bg, padding: "0.35rem 0.5rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700 }}>
-          + Add
-        </button>
-        <button onClick={() => { setNewLabel(""); setNewUnit(""); setNewInvert(false); setAddOpen(false); }}
-          style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.35rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem" }}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  ) : (
-    <button onClick={() => setAddOpen(true)} style={{
-      background: `${T.green}12`, border: `1px solid ${T.green}44`,
-      color: T.green, padding: "0.35rem 0.8rem", borderRadius: 4,
-      cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem",
-    }}>+ Add Metric</button>
-  );
-})()}
+        <AddMetricButton onAdd={(metric) => setData(prev => ({ ...prev, metrics: [...prev.metrics, metric] }))} />
       </ModuleToolbar>
 
 {/* Overall Progress Bar */}
@@ -9300,33 +9327,7 @@ function Hero({ onEnter }) {
     </div>
   );
 })()}
-          {(() => {
-            const [confirmReset, setConfirmReset] = React.useState(false);
-            return confirmReset ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.4rem", background: `${T.red}10`, border: `1px solid ${T.red}44`, borderRadius: 6, padding: "0.6rem 0.85rem" }}>
-                <span style={{ color: T.red, fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700 }}>⚠ Hapus SEMUA data? Tidak bisa di-undo.</span>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <button onClick={() => { nuclearReset(); window.location.reload(); }}
-                    style={{ background: T.red, border: "none", color: "#fff", padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700 }}>
-                    Ya, Reset
-                  </button>
-                  <button onClick={() => setConfirmReset(false)}
-                    style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem" }}>
-                    Batal
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button onClick={() => setConfirmReset(true)} style={{
-                background: `${T.red}12`, border: `1px solid ${T.red}44`,
-                color: T.red, padding: "0.5rem 1rem", borderRadius: 6,
-                cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
-                letterSpacing: "0.05em",
-              }}>
-                ✕ Reset All Data
-              </button>
-            );
-          })()}
+          <NuclearResetButton />
         </div>
       </motion.div>
 
