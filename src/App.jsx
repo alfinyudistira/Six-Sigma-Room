@@ -30,6 +30,7 @@ class ErrorBoundary extends React.Component {
                 k.startsWith("ss_") || k.startsWith("sigma_") || k.startsWith("dmaic_") ||
                 k.startsWith("fmea_") || k.startsWith("copq_") || k.startsWith("spc_") ||
                 k.startsWith("pareto_") || k.startsWith("rc_") || k.startsWith("triage_")
+                k.startsWith("bus_")                              
               );
               keys.forEach(k => localStorage.removeItem(k));
             } catch {}
@@ -9104,6 +9105,27 @@ function Hero({ onEnter }) {
           Enter your company data → get instant Sigma Level, COPQ, FMEA Risk, and process insights.
         </p>
 
+{/* Six Sigma explainer — for non-practitioners */}
+        <div style={{
+          maxWidth: 560, margin: "0 auto 2.5rem",
+          background: `${T.cyan}08`, border: `1px solid ${T.cyan}22`,
+          borderRadius: 10, padding: "1rem 1.25rem",
+          display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: "0.75rem",
+          textAlign: "left",
+        }}>
+          {[
+            { icon: "📊", title: "Measure your process", body: "Find out exactly how many errors, delays, or defects are happening right now." },
+            { icon: "💸", title: "See the hidden cost", body: "Quantify how much money is being wasted due to poor quality — most companies are shocked." },
+            { icon: "🎯", title: "Fix the right things", body: "Use data — not guesswork — to prioritize what to improve and prove the results." },
+          ].map(c => (
+            <div key={c.title}>
+              <div style={{ fontSize: "1.1rem", marginBottom: "0.3rem" }}>{c.icon}</div>
+              <div style={{ color: T.text, fontFamily: T.mono, fontSize: "0.68rem", fontWeight: 700, marginBottom: "0.25rem" }}>{c.title}</div>
+              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.6rem", lineHeight: 1.55 }}>{c.body}</div>
+            </div>
+          ))}
+        </div>
+        
         {/* Stats */}
         <div style={{ display: "flex", gap: "2rem", justifyContent: "center", flexWrap: "wrap", marginBottom: "3rem" }}>
           {[
@@ -9186,24 +9208,37 @@ function Hero({ onEnter }) {
           }}>
             ↓ Backup JSON
           </button>
-          <button onClick={() => {
-  try {
-    const raw = localStorage.getItem("triage_history") || "[]";
-    const history = JSON.parse(raw);
-    if (history.length === 0) {
-      alert("No triage data to export yet. Submit some complaints in Smart Triage first.");
-      return;
-    }
-    exportCSV();
-  } catch { exportCSV(); }
-}} style={{
-  background: `${T.cyan}12`, border: `1px solid ${T.cyan}44`,
-  color: T.cyan, padding: "0.5rem 1rem", borderRadius: 6,
-  cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
-  letterSpacing: "0.05em",
-}}>
-  ↓ Export Triage CSV
-</button>
+          {(() => {
+  const [csvMsg, setCsvMsg] = React.useState("");
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.3rem" }}>
+      <button onClick={() => {
+        try {
+          const raw = localStorage.getItem("triage_history") || "[]";
+          const history = JSON.parse(raw);
+          if (history.length === 0) {
+            setCsvMsg("No triage data yet — submit complaints in Smart Triage first.");
+            setTimeout(() => setCsvMsg(""), 3500);
+            return;
+          }
+          exportCSV();
+        } catch { exportCSV(); }
+      }} style={{
+        background: `${T.cyan}12`, border: `1px solid ${T.cyan}44`,
+        color: T.cyan, padding: "0.5rem 1rem", borderRadius: 6,
+        cursor: "pointer", fontFamily: T.mono, fontSize: "0.65rem",
+        letterSpacing: "0.05em",
+      }}>
+        ↓ Export Triage CSV
+      </button>
+      {csvMsg && (
+        <span style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.58rem", maxWidth: 200, textAlign: "center", lineHeight: 1.4 }}>
+          {csvMsg}
+        </span>
+      )}
+    </div>
+  );
+})()}
           <button onClick={() => {
             if (!window.confirm("⚠ NUCLEAR RESET\n\nIni akan hapus SEMUA data dari semua modul.\nTidak bisa di-undo.\n\nLanjut?")) return;
             nuclearReset();
