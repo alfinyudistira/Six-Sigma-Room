@@ -5738,7 +5738,6 @@ function RootCauseAnalyzer() {
   const CATEGORIES = ["MAN", "METHOD", "MACHINE", "MATERIAL", "MEASUREMENT", "ENVIRONMENT"];
   const catColor = (c) => ({ MAN: T.red, METHOD: T.orange, MACHINE: T.yellow, MATERIAL: T.cyan, MEASUREMENT: "#9B8EC4", ENVIRONMENT: T.green }[c] || T.textDim);
 
-  const company = useCompany();
 const totalGap = company && !company.isPulseDigital && company.baselineMean > 0 && company.target > 0
   ? Math.abs(company.baselineMean - company.target)
   : 24.1;
