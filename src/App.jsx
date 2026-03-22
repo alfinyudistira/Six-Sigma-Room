@@ -6979,7 +6979,9 @@ function AITriageSimulator() {
   const [bulkResults, setBulkResults] = useState([]);
   const [bulkPhase, setBulkPhase] = useState("idle");
   const [newTech, setNewTech] = useState({ name: "", level: "Mid (3-5 yr)", skills: [], load: 0, maxLoad: 30 });
-
+const [confirmResetLoads, setConfirmResetLoads] = useState(false);
+  const [confirmResetTeam, setConfirmResetTeam] = useState(false);
+  
   // ── Complexity detector ──
   const isComplexComplaint = (text) => {
     const lower = text.toLowerCase();
@@ -7331,8 +7333,28 @@ Respond ONLY with valid JSON. No markdown backticks, no explanation outside the 
                 [ TEAM CONFIGURATION — {company?.name || "Your Company"} ]
               </div>
               <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button onClick={() => { if (!window.confirm("Reset all loads to 0?")) return; setTechnicians(prev => prev.map(t => ({ ...t, load: 0 }))); }} style={{ background: `${T.yellow}12`, border: `1px solid ${T.yellow}44`, color: T.yellow, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>↺ Reset Loads</button>
-                <button onClick={() => { if (!window.confirm("Reset entire team to default?")) return; setTechnicians(getDefaultTechnicians(company?.industry || "IT / Tech Support")); }} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>↺ Reset to Demo</button>
+                {confirmResetLoads ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", background: `${T.yellow}10`, border: `1px solid ${T.yellow}44`, borderRadius: 4, padding: "0.2rem 0.5rem" }}>
+                    <span style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.6rem" }}>Reset all loads?</span>
+                    <button onClick={() => { setTechnicians(prev => prev.map(t => ({ ...t, load: 0 }))); setConfirmResetLoads(false); }}
+                      style={{ background: T.yellow, border: "none", color: T.bg, padding: "0.15rem 0.45rem", borderRadius: 3, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem", fontWeight: 700 }}>Yes</button>
+                    <button onClick={() => setConfirmResetLoads(false)}
+                      style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.15rem 0.45rem", borderRadius: 3, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>No</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmResetLoads(true)} style={{ background: `${T.yellow}12`, border: `1px solid ${T.yellow}44`, color: T.yellow, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>↺ Reset Loads</button>
+                )}
+                {confirmResetTeam ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", background: `${T.red}10`, border: `1px solid ${T.red}44`, borderRadius: 4, padding: "0.2rem 0.5rem" }}>
+                    <span style={{ color: T.red, fontFamily: T.mono, fontSize: "0.6rem" }}>Reset entire team?</span>
+                    <button onClick={() => { setTechnicians(getDefaultTechnicians(company?.industry || "IT / Tech Support")); setConfirmResetTeam(false); }}
+                      style={{ background: T.red, border: "none", color: "#fff", padding: "0.15rem 0.45rem", borderRadius: 3, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem", fontWeight: 700 }}>Yes</button>
+                    <button onClick={() => setConfirmResetTeam(false)}
+                      style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.15rem 0.45rem", borderRadius: 3, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>No</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmResetTeam(true)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "0.25rem 0.6rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.6rem" }}>↺ Reset to Default</button>
+                )}
               </div>
             </div>
             {/* Existing technicians */}
