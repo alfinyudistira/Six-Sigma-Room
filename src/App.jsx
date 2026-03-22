@@ -4132,7 +4132,7 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.6rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "0.3rem" }}>✦ AI COPQ Advisor</div>
           <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", lineHeight: 1.6 }}>
-            {copqAiResult || "Klik untuk AI analisis COPQ lo — benchmark vs industri dan rekomendasi prioritas pengurangan biaya"}
+            {copqAiResult || "Click for your AI COPQ analysis — benchmark vs industry and cost reduction priority recommendations"}
           </div>
           {copqAiError && <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.6rem", marginTop: "0.3rem" }}>{copqAiError}</div>}
         </div>
@@ -4614,7 +4614,7 @@ const [customLSL, setCustomLSL] = useLocalState("spc_custom_lsl", "");
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.6rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "0.3rem" }}>✦ AI Pattern Analysis</div>
           <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", lineHeight: 1.6 }}>
-            {spcAiResult || "Klik Analyze untuk AI interpretasi pattern di control chart lo"}
+            {spcAiResult || "Click Analyze for AI interpretation of the pattern on your control chart. "}
           </div>
           {spcAiError && <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.6rem", marginTop: "0.3rem" }}>{spcAiError}</div>}
         </div>
@@ -6180,7 +6180,7 @@ const y = Math.max(5, 80 - (Math.min(r.impact, 25) / 25) * 65);
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
           style={{ background: `${T.orange}08`, border: `1px solid ${T.orange}33`, borderRadius: 8, padding: "0.85rem 1.25rem", marginBottom: "1.5rem" }}>
           <div style={{ color: T.orange, fontFamily: T.mono, fontSize: "0.62rem", fontWeight: 700, marginBottom: "0.5rem" }}>
-            💡 DARI FMEA — {fmeaCritical.length} failure mode kritis mungkin butuh investigasi root cause:
+            💡 FROM FMEA — {fmeaCritical.length} critical failure mode may require root cause investigation:
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
             {fmeaCritical.slice(0, 4).map((item, i) => (
@@ -7978,9 +7978,9 @@ Alfin Yudistira · Pulse Digital`;
             style={{ background: `${T.yellow}0A`, border: `1px solid ${T.yellow}33`, borderRadius: 8, padding: "0.9rem 1.25rem", marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
             <span style={{ fontSize: "1.2rem" }}>💡</span>
             <div style={{ flex: 1 }}>
-              <div style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.68rem", fontWeight: 700, marginBottom: "0.2rem" }}>Live Ops aktif — menunggu data</div>
+              <div style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.68rem", fontWeight: 700, marginBottom: "0.2rem" }}>Live Ops active — waiting for data </div>
               <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: "0.62rem", lineHeight: 1.5 }}>
-                Modul ini menampilkan data real-time dari semua modul lain. Untuk melihat Live Ops beraksi, buka <strong style={{ color: T.cyan }}>Smart Triage (Modul 9)</strong> dan submit beberapa keluhan dulu.
+                This module displays real-time data from all other modules. To see Live Ops in action, go to <strong style={{ color: T.cyan }}>Smart Triage (Modul 9)</strong> and submit some complaints first.
               </div>
             </div>
             <button
@@ -7990,7 +7990,7 @@ Alfin Yudistira · Pulse Digital`;
               }}
               style={{ background: `${T.cyan}18`, border: `1px solid ${T.cyan}44`, color: T.cyan, padding: "0.4rem 0.85rem", borderRadius: 4, cursor: "pointer", fontFamily: T.mono, fontSize: "0.62rem", whiteSpace: "nowrap" }}
             >
-              → Buka Smart Triage
+              → Open Smart Triage
             </button>
           </motion.div>
         )}
