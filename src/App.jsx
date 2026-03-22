@@ -3739,6 +3739,9 @@ const COPQ_CATEGORY_DEFAULTS = {
 function COPQEngine() {
   const { sym, s, fmt, fmtFull } = useCurrencyFmt();
   const company = useCompany();
+  const [copqAiLoading, setCopqAiLoading] = useState(false);
+  const [copqAiResult, setCopqAiResult] = useState("");
+  const [copqAiError, setCopqAiError] = useState("");
   const [showExecDeck, setShowExecDeck] = useState(false);
   const [activeScenario, setActiveScenario] = useLocalState("copq_activeScenario", "A");
   const [scenarios, setScenarios] = useLocalState("copq_scenarios", COPQ_DEFAULTS);
@@ -3998,6 +4001,74 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
         sub="Cost of Poor Quality with full scenario comparison. Edit any value directly. All data auto-saved."
       />
 
+ {/* AI COPQ Benchmark Panel */}
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1rem 1.25rem", marginBottom: "1.5rem", display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ color: T.yellow, fontFamily: T.mono, fontSize: "0.6rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "0.3rem" }}>✦ AI COPQ Advisor</div>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", lineHeight: 1.6 }}>
+            {copqAiResult || "Klik untuk AI analisis COPQ lo — benchmark vs industri dan rekomendasi prioritas pengurangan biaya"}
+          </div>
+          {copqAiError && <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.6rem", marginTop: "0.3rem" }}>{copqAiError}</div>}
+        </div>
+        <button
+          onClick={async () => {
+            setCopqAiLoading(true);
+            setCopqAiResult("");
+            setCopqAiError("");
+            try {
+              const prompt = `You are a Six Sigma Black Belt and financial analyst specializing in Cost of Poor Quality (COPQ) reduction.
+
+Company profile:
+- Company: ${company?.name || "Unknown"}
+- Industry: ${company?.industry || "General"}
+- Process: ${company?.processName || "General Process"}
+- Monthly volume: ${company?.monthlyVolume || "N/A"} units/cases
+- Staff hourly cost: ${company?.currency || "USD"} ${company?.laborRate || "N/A"}/hr
+
+Current COPQ Data:
+- Scenario A (Baseline) Total COPQ: ${fmt(copqA.total)}
+  - Wasted Labor: ${fmt(copqA.wastedCap)}
+  - Customer Churn: ${fmt(copqA.churn)}
+  - Escalation: ${fmt(copqA.escalation)}
+  - Rework: ${fmt(copqA.rework)}
+- Scenario B (Improved) Total COPQ: ${fmt(copqB.total)}
+- Projected Annual Savings: ${fmt(Math.abs(copqA.total - copqB.total))}
+- ROI: ${roiPct}%
+
+Provide a concise COPQ advisory in 3-4 sentences:
+1. Is this COPQ level typical or high for this industry?
+2. Which cost category should be attacked first and why?
+3. One specific, actionable recommendation to accelerate COPQ reduction.
+
+Be direct, specific, and use the numbers provided.`;
+              const res = await fetch("/api/claude", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ messages: [{ content: prompt }] }),
+              });
+              const data = await res.json();
+              const text = data?.content?.[0]?.text || "";
+              setCopqAiResult(text || "Tidak ada respons dari AI");
+            } catch {
+              setCopqAiError("AI gagal — coba lagi");
+            } finally {
+              setCopqAiLoading(false);
+            }
+          }}
+          disabled={copqAiLoading}
+          style={{
+            background: copqAiLoading ? `${T.yellow}08` : `${T.yellow}15`,
+            border: `1px solid ${T.yellow}55`,
+            color: copqAiLoading ? T.textDim : T.yellow,
+            padding: "0.5rem 1rem", borderRadius: 4,
+            cursor: copqAiLoading ? "not-allowed" : "pointer",
+            fontFamily: T.mono, fontSize: "0.65rem", whiteSpace: "nowrap",
+            alignSelf: "center",
+          }}>
+          {copqAiLoading ? "⏳ Analyzing..." : "✦ AI Advise"}
+        </button>
+      </div>
+      
 {/* Category Label Editor — Company Mode only */}
       {!company?.isPulseDigital && (
         <AnimatePresence>
@@ -4213,6 +4284,10 @@ ${categories.map(c => `  ${c.name}: ${fmt(copqB[c.key])} (${((copqB[c.key]/copqB
 
 // ─── 06: SPC CHARTS (LIVE INPUT) ─────────────────────────────────
 function SPCCharts() {
+  const company = useCompany();
+  const [spcAiLoading, setSpcAiLoading] = useState(false);
+  const [spcAiResult, setSpcAiResult] = useState("");
+  const [spcAiError, setSpcAiError] = useState("");
   const DEMO_DATASETS = {
     resolution: {
       label: "Avg Resolution Time (hrs)",
@@ -4408,6 +4483,74 @@ const [customLSL, setCustomLSL] = useLocalState("spc_custom_lsl", "");
         sub="Input your own weekly data or explore Pulse Digital demo datasets. Western Electric rules auto-applied. Export as CSV when ready."
       />
 
+{/* AI SPC Interpreter */}
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1rem 1.25rem", marginBottom: "1.5rem", display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ color: T.cyan, fontFamily: T.mono, fontSize: "0.6rem", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "0.3rem" }}>✦ AI Pattern Analysis</div>
+          <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: "0.62rem", lineHeight: 1.6 }}>
+            {spcAiResult || "Klik Analyze untuk AI interpretasi pattern di control chart lo"}
+          </div>
+          {spcAiError && <div style={{ color: T.red, fontFamily: T.mono, fontSize: "0.6rem", marginTop: "0.3rem" }}>{spcAiError}</div>}
+        </div>
+        <button
+          onClick={async () => {
+            setSpcAiLoading(true);
+            setSpcAiResult("");
+            setSpcAiError("");
+            try {
+              const vals = pts;
+              if (vals.length < 5) { setSpcAiError("Minimal 5 data points dulu"); setSpcAiLoading(false); return; }
+              const meanVal = (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2);
+              const mrArr = vals.slice(1).map((v,i)=>Math.abs(v-vals[i]));
+              const mrBarVal = mrArr.length > 0 ? (mrArr.reduce((a,b)=>a+b,0)/mrArr.length).toFixed(2) : "0";
+              const uclVal = (+meanVal + 2.66 * +mrBarVal).toFixed(2);
+              const lclVal = (+meanVal - 2.66 * +mrBarVal).toFixed(2);
+              const oocCount = vals.filter(v => v > +uclVal || v < +lclVal).length;
+              const prompt = `You are a Six Sigma Black Belt analyzing a Statistical Process Control (SPC) I-MR chart.
+
+Process context:
+- Company: ${company?.name || "Unknown"}
+- Process: ${company?.processName || activeDataset.label}
+- Unit: ${activeDataset.unit || company?.processUnit || "units"}
+- Target: ${activeDataset.target || company?.target || "N/A"}
+
+SPC Data:
+- Data points: ${vals.length}
+- Mean: ${meanVal}
+- UCL: ${uclVal} | LCL: ${lclVal}
+- Out-of-control points: ${oocCount}
+- Western Electric violations: ${totalViolations}
+- Last 5 values: ${vals.slice(-5).join(", ")}
+- All values: ${vals.join(", ")}
+
+Analyze in 3-4 sentences: Is the process in control? Any patterns (trend, shift, cycles)? What is the likely cause if out of control? One concrete action.`;
+              const res = await fetch("/api/claude", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ messages: [{ content: prompt }] }),
+              });
+              const data = await res.json();
+              setSpcAiResult(data?.content?.[0]?.text || "Tidak ada respons dari AI");
+            } catch {
+              setSpcAiError("AI gagal — coba lagi");
+            } finally {
+              setSpcAiLoading(false);
+            }
+          }}
+          disabled={spcAiLoading}
+          style={{
+            background: spcAiLoading ? `${T.cyan}08` : `${T.cyan}15`,
+            border: `1px solid ${T.cyan}55`,
+            color: spcAiLoading ? T.textDim : T.cyan,
+            padding: "0.5rem 1rem", borderRadius: 4,
+            cursor: spcAiLoading ? "not-allowed" : "pointer",
+            fontFamily: T.mono, fontSize: "0.65rem", whiteSpace: "nowrap",
+            alignSelf: "center",
+          }}>
+          {spcAiLoading ? "⏳ Analyzing..." : "✦ AI Analyze Chart"}
+        </button>
+      </div>
+      
       {/* ── Mode Toggle ── */}
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
         {[
