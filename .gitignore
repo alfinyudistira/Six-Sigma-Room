@@ -1,8 +1,50 @@
+# ========================
+# Dependencies & Runtimes
+# ========================
 node_modules
+.pnp
+.pnp.js
+
+# ========================
+# Build Outputs
+# ========================
 dist
 dist-ssr
 *.local
+
+# ========================
+# Testing & Coverage
+# ========================
+coverage/
+.nyc_output/
+
+# ========================
+# Caches (Wajib di-ignore)
+# ========================
+.vite/
+.eslintcache
+*.tsbuildinfo
+
+# ========================
+# Environment Variables
+# ========================
 .env
 .env.local
-.vercel
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ========================
+# Logs & Debugging
+# ========================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ========================
+# OS & Cloud
+# ========================
 .DS_Store
+Thumbs.db
+.vercel
