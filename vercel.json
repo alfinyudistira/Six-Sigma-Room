@@ -40,6 +40,6 @@
     { "source": "/home", "destination": "/", "permanent": true }
   ],
   "functions": {
-    "api/*.js": { "runtime": "nodejs20.x", "maxDuration": 10 }
+    "api/*.js": { "maxDuration": 10 }
   }
 }
