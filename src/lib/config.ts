@@ -1,10 +1,3 @@
-// src/lib/config.ts
-/**
- * ============================================================================
- * SIGMA CONFIG — SINGLE SOURCE OF TRUTH (SSOT)
- * ============================================================================
- */
-
 import { create } from 'zustand'
 import { persist, createJSONStorage, devtools } from 'zustand/middleware'
 import { shallow } from 'zustand/shallow'
