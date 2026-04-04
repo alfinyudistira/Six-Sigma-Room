@@ -144,8 +144,9 @@ export function storageKey(module: string, key: string): string {
 
 // ─── CSV export with UTF-8 BOM ────────────────────────────────────────────────
 export function downloadCSV(rows: Record<string, unknown>[], filename: string) {
-  if (!rows.length) return
-  const headers = Object.keys(rows[0])
+  const firstRow = rows[0]
+  if (!rows.length || !firstRow) return 
+  const headers = Object.keys(firstRow)
   const lines = [
     headers.join(','),
     ...rows.map(r => headers.map(h => JSON.stringify(r[h] ?? '')).join(',')),
