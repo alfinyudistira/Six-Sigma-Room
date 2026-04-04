@@ -1,75 +1,90 @@
 // src/lib/config.ts
-// ─── SSOT Configurability Layer ───────────────────────────────────────────────
-// Every rule, threshold, color mapping, and limit lives here.
-// Modules NEVER hardcode thresholds — they read from getConfig().
-// Users can override via ConfigStore. App auto-adapts everywhere.
+/**
+ * ============================================================================
+ * SIGMA CONFIG — SINGLE SOURCE OF TRUTH (SSOT)
+ * ============================================================================
+ */
 
 import { create } from 'zustand'
-import { persist as persistMiddleware, createJSONStorage } from 'zustand/middleware'
+import { persist, createJSONStorage, devtools } from 'zustand/middleware'
+import { shallow } from 'zustand/shallow'
 
-// ─── Config shape ─────────────────────────────────────────────────────────────
+/* --------------------------------------------------------------------------
+   COLOR PALETTE (Sinkron dengan Tailwind)
+   -------------------------------------------------------------------------- */
+export const CONFIG_COLORS = {
+  worldClass: '#00FF9C', // emerald
+  excellent: '#00D4FF',  // cyan
+  acceptable: '#FFD60A', // warn
+  marginal: '#FF8C00',   // amber
+  poor: '#FF3B5C',       // danger
+  critical: '#FF3B5C',
+  high: '#FFD60A',
+  medium: '#FF8C00',
+  low: '#00FF9C',
+  warn: '#FFD60A',
+  ok: '#00FF9C',
+} as const
+
+/* --------------------------------------------------------------------------
+   TYPES & UTILITIES
+   -------------------------------------------------------------------------- */
+export type DeepReadonly<T> = {
+  readonly [K in keyof T]: T[K] extends object ? DeepReadonly<T[K]> : T[K]
+}
+
+export type DeepPartial<T> = T extends object
+  ? { [P in keyof T]?: DeepPartial<T[P]> }
+  : T
+
+export type Status<T extends string> = {
+  label: T
+  color: string
+}
+
+/* --------------------------------------------------------------------------
+   APP CONFIG SHAPE
+   -------------------------------------------------------------------------- */
 export interface AppConfig {
-  // Sigma thresholds
-  sigma: {
-    worldClass: number   // default 5.0
-    excellent:  number   // default 4.0
-    acceptable: number   // default 3.0
-    poor:       number   // default 2.0
-  }
-  // Ppk thresholds
-  ppk: {
-    worldClass: number   // 1.67
-    capable:    number   // 1.33
-    marginal:   number   // 1.00
-  }
-  // RPN thresholds (FMEA)
-  rpn: {
-    critical: number     // 200
-    high:     number     // 100
-    medium:   number     // 50
-  }
-  // COPQ as % of revenue — alert thresholds
-  copq: {
-    criticalPct: number  // 15%
-    warnPct:     number  // 5%
-  }
-  // SPC Western Electric rule toggles
-  weco: {
-    rule1: boolean  // 1 beyond 3σ
-    rule2: boolean  // 9 same side
-    rule3: boolean  // 6 consecutive trend
-    rule4: boolean  // 14 alternating
-  }
-  // Pareto settings
-  pareto: {
-    cutoffPct: number    // 80%
-    maxCategories: number // 20
-  }
-  // UI preferences
+  sigma: { worldClass: number; excellent: number; acceptable: number; poor: number }
+  ppk: { worldClass: number; capable: number; marginal: number }
+  rpn: { critical: number; high: number; medium: number }
+  copq: { criticalPct: number; warnPct: number }
+  weco: { rule1: boolean; rule2: boolean; rule3: boolean; rule4: boolean }
+  pareto: { cutoffPct: number; maxCategories: number }
   ui: {
     animationsEnabled: boolean
     hapticsEnabled: boolean
     compactMode: boolean
-    autoSaveInterval: number   // ms
-    chartAnimationDuration: number // ms
+    autoSaveInterval: number
+    chartAnimationDuration: number
+    theme: 'light' | 'dark' | 'system'
+    fontSize: number
   }
-  // Locale
   locale: string
-  // Feature flags
   features: {
-    aiTriage:     boolean
-    liveOps:      boolean
-    webSockets:   boolean
-    exportPDF:    boolean
+    aiTriage: boolean
+    liveOps: boolean
+    webSockets: boolean
+    exportPDF: boolean
+    advancedAnalytics: boolean 
+    mobileOptimized: boolean 
+  }
+  metadata: { 
+    version: number
+    lastModified: number
   }
 }
 
-export const DEFAULT_CONFIG: AppConfig = {
+/* --------------------------------------------------------------------------
+   DEFAULT CONFIG
+   -------------------------------------------------------------------------- */
+export const DEFAULT_CONFIG: DeepReadonly<AppConfig> = Object.freeze({
   sigma: { worldClass: 5.0, excellent: 4.0, acceptable: 3.0, poor: 2.0 },
-  ppk:   { worldClass: 1.67, capable: 1.33, marginal: 1.00 },
-  rpn:   { critical: 200, high: 100, medium: 50 },
-  copq:  { criticalPct: 15, warnPct: 5 },
-  weco:  { rule1: true, rule2: true, rule3: true, rule4: false },
+  ppk: { worldClass: 1.67, capable: 1.33, marginal: 1.0 },
+  rpn: { critical: 200, high: 100, medium: 50 },
+  copq: { criticalPct: 15, warnPct: 5 },
+  weco: { rule1: true, rule2: true, rule3: true, rule4: false },
   pareto: { cutoffPct: 80, maxCategories: 20 },
   ui: {
     animationsEnabled: true,
@@ -77,6 +92,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     compactMode: false,
     autoSaveInterval: 800,
     chartAnimationDuration: 1200,
+    theme: 'system',
+    fontSize: 1.0,
   },
   locale: 'auto',
   features: {
@@ -84,79 +101,173 @@ export const DEFAULT_CONFIG: AppConfig = {
     liveOps: true,
     webSockets: true,
     exportPDF: false,
+    advancedAnalytics: false,
+    mobileOptimized: true,
   },
+  metadata: {
+    version: 3,
+    lastModified: Date.now(),
+  },
+}) as AppConfig
+
+/* --------------------------------------------------------------------------
+   DEEP MERGE
+   -------------------------------------------------------------------------- */
+function deepMerge<T extends object>(base: T, override: DeepPartial<T>): T {
+  if (!override) return base
+  const output = { ...base } as T
+  for (const key in override) {
+    const k = key as keyof T
+    const baseValue = base[k]
+    const overrideValue = override[k]
+    if (
+      typeof baseValue === 'object' &&
+      baseValue !== null &&
+      !Array.isArray(baseValue) &&
+      typeof overrideValue === 'object' &&
+      overrideValue !== null
+    ) {
+      output[k] = deepMerge(baseValue as object, overrideValue as DeepPartial<object>) as T[keyof T]
+    } else if (overrideValue !== undefined) {
+      output[k] = overrideValue as T[keyof T]
+    }
+  }
+  return output
 }
 
-// ─── Config store (Zustand, persisted) ───────────────────────────────────────
+/* --------------------------------------------------------------------------
+   VALIDATION LAYER (Diperkuat dengan logika matematis B)
+   -------------------------------------------------------------------------- */
+function validateConfig(config: AppConfig): AppConfig {
+  const safeConfig = { ...config }
+
+  // Fallback safety checks
+  if (safeConfig.sigma.poor >= safeConfig.sigma.acceptable) {
+    safeConfig.sigma.poor = safeConfig.sigma.acceptable - 1
+  }
+  if (safeConfig.copq.warnPct >= safeConfig.copq.criticalPct) {
+    const temp = safeConfig.copq.warnPct
+    safeConfig.copq.warnPct = safeConfig.copq.criticalPct
+    safeConfig.copq.criticalPct = temp
+  }
+  if (safeConfig.ui.fontSize <= 0 || safeConfig.ui.fontSize > 2) {
+    safeConfig.ui.fontSize = 1.0
+  }
+  
+  safeConfig.metadata.lastModified = Date.now()
+  return safeConfig
+}
+
+/* --------------------------------------------------------------------------
+   MIGRATION HANDLER
+   -------------------------------------------------------------------------- */
+function migrateConfig(persistedState: unknown, currentVersion: number): AppConfig {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const state = persistedState as any
+  if (!state?.config) return DEFAULT_CONFIG as AppConfig
+
+  let oldConfig = state.config
+  const oldVersion = oldConfig.metadata?.version ?? oldConfig.configVersion ?? 0
+
+  if (oldVersion === currentVersion) return oldConfig as AppConfig
+
+  // Migrate ke versi 3 (Format struktur baru gabungan A+B)
+  if (oldVersion < 3) {
+    oldConfig = {
+      ...DEFAULT_CONFIG,
+      ...oldConfig,
+      ui: { ...DEFAULT_CONFIG.ui, ...oldConfig.ui },
+      features: { ...DEFAULT_CONFIG.features, ...oldConfig.features },
+      metadata: { version: 3, lastModified: Date.now() }
+    }
+    // Hapus sisa key lama jika ada
+    delete oldConfig.configVersion 
+  }
+
+  return oldConfig as AppConfig
+}
+
+/* --------------------------------------------------------------------------
+   CONFIG STORE
+   -------------------------------------------------------------------------- */
 interface ConfigState {
   config: AppConfig
   setConfig: (partial: DeepPartial<AppConfig>) => void
   resetConfig: () => void
-  getConfig: () => AppConfig
-}
-
-type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] }
-
-function deepMerge<T extends object>(base: T, override: DeepPartial<T>): T {
-  const result = { ...base }
-  for (const key in override) {
-    const k = key as keyof T
-    if (override[k] !== undefined) {
-      if (typeof base[k] === 'object' && !Array.isArray(base[k]) && override[k] && typeof override[k] === 'object') {
-        result[k] = deepMerge(base[k] as object, override[k] as DeepPartial<object>) as T[keyof T]
-      } else {
-        result[k] = override[k] as T[keyof T]
-      }
-    }
-  }
-  return result
+  getSigma: () => AppConfig['sigma']
+  getUI: () => AppConfig['ui']
+  getFeatures: () => AppConfig['features']
 }
 
 export const useConfigStore = create<ConfigState>()(
-  persistMiddleware(
-    (set, get) => ({
-      config: DEFAULT_CONFIG,
-
-      setConfig: (partial) => {
-        set((state) => ({ config: deepMerge(state.config, partial) }))
+  devtools(
+    persist(
+      (set, get) => ({
+        config: DEFAULT_CONFIG as AppConfig,
+        setConfig: (partial) =>
+          set((state) => ({ config: validateConfig(deepMerge(state.config, partial)) })),
+        resetConfig: () => set({ config: DEFAULT_CONFIG as AppConfig }),
+        getSigma: () => get().config.sigma,
+        getUI: () => get().config.ui,
+        getFeatures: () => get().config.features,
+      }),
+      {
+        name: 'sigma-config-v3',
+        storage: createJSONStorage(() => localStorage),
+        version: 3,
+        migrate: migrateConfig,
       },
-
-      resetConfig: () => set({ config: DEFAULT_CONFIG }),
-
-      getConfig: () => get().config,
-    }),
-    {
-      name: 'sigma-config-v2',
-      storage: createJSONStorage(() => localStorage),
-    },
+    ),
+    { name: 'Sigma Config Store', enabled: import.meta.env.DEV },
   ),
 )
 
-// ─── Derived helpers — modules use these, never raw numbers ──────────────────
-export function getSigmaColor(sigma: number, config: AppConfig): string {
-  if (sigma >= config.sigma.worldClass)  return '#00FF9C'
-  if (sigma >= config.sigma.excellent)   return '#00D4FF'
-  if (sigma >= config.sigma.acceptable)  return '#FFD60A'
-  if (sigma >= config.sigma.poor)        return '#FF8C00'
-  return '#FF3B5C'
+/* --------------------------------------------------------------------------
+   CONVENIENCE HOOKS
+   -------------------------------------------------------------------------- */
+export const useConfig = () => useConfigStore((state) => state.config)
+export function useConfigSelector<T>(selector: (config: AppConfig) => T): T {
+  return useConfigStore((state) => selector(state.config), shallow)
+}
+export const useSigmaConfig = () => useConfigStore((state) => state.config.sigma, shallow)
+export const useUIConfig = () => useConfigStore((state) => state.config.ui, shallow)
+export const useFeatureFlags = () => useConfigStore((state) => state.config.features, shallow)
+
+/* --------------------------------------------------------------------------
+   DERIVED HELPERS
+   -------------------------------------------------------------------------- */
+export function getSigmaColor(sigma: number, config: AppConfig = DEFAULT_CONFIG as AppConfig): string {
+  const { worldClass, excellent, acceptable, poor } = config.sigma
+  const c = CONFIG_COLORS
+  if (sigma >= worldClass) return c.worldClass
+  if (sigma >= excellent) return c.excellent
+  if (sigma >= acceptable) return c.acceptable
+  if (sigma >= poor) return c.marginal
+  return c.poor
 }
 
-export function getPpkStatus(ppk: number, config: AppConfig): { label: string; color: string } {
-  if (ppk >= config.ppk.worldClass) return { label: 'WORLD CLASS', color: '#00FF9C' }
-  if (ppk >= config.ppk.capable)    return { label: 'CAPABLE',     color: '#00D4FF' }
-  if (ppk >= config.ppk.marginal)   return { label: 'MARGINAL',    color: '#FFD60A' }
-  return                                   { label: 'INCAPABLE',  color: '#FF3B5C' }
+export function getPpkStatus(ppk: number, config: AppConfig = DEFAULT_CONFIG as AppConfig): Status<'WORLD CLASS' | 'CAPABLE' | 'MARGINAL' | 'INCAPABLE'> {
+  const { worldClass, capable, marginal } = config.ppk
+  const c = CONFIG_COLORS
+  if (ppk >= worldClass) return { label: 'WORLD CLASS', color: c.worldClass }
+  if (ppk >= capable) return { label: 'CAPABLE', color: c.excellent }
+  if (ppk >= marginal) return { label: 'MARGINAL', color: c.acceptable }
+  return { label: 'INCAPABLE', color: c.poor }
 }
 
-export function getRpnSeverity(rpn: number, config: AppConfig): { label: string; color: string } {
-  if (rpn >= config.rpn.critical) return { label: 'CRITICAL', color: '#FF3B5C' }
-  if (rpn >= config.rpn.high)     return { label: 'HIGH',     color: '#FFD60A' }
-  if (rpn >= config.rpn.medium)   return { label: 'MEDIUM',   color: '#FF8C00' }
-  return                                  { label: 'LOW',     color: '#00FF9C' }
+export function getRpnSeverity(rpn: number, config: AppConfig = DEFAULT_CONFIG as AppConfig): Status<'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'> {
+  const { critical, high, medium } = config.rpn
+  const c = CONFIG_COLORS
+  if (rpn >= critical) return { label: 'CRITICAL', color: c.critical }
+  if (rpn >= high) return { label: 'HIGH', color: c.high }
+  if (rpn >= medium) return { label: 'MEDIUM', color: c.medium }
+  return { label: 'LOW', color: c.low }
 }
 
-export function getCopqAlert(copqPct: number, config: AppConfig): { level: 'critical' | 'warn' | 'ok'; color: string } {
-  if (copqPct >= config.copq.criticalPct) return { level: 'critical', color: '#FF3B5C' }
-  if (copqPct >= config.copq.warnPct)    return { level: 'warn',     color: '#FFD60A' }
-  return                                          { level: 'ok',      color: '#00FF9C' }
+export function getCopqAlert(copqPct: number, config: AppConfig = DEFAULT_CONFIG as AppConfig): { level: 'critical' | 'warn' | 'ok'; color: string } {
+  const { criticalPct, warnPct } = config.copq
+  const c = CONFIG_COLORS
+  if (copqPct >= criticalPct) return { level: 'critical', color: c.critical }
+  if (copqPct >= warnPct) return { level: 'warn', color: c.warn }
+  return { level: 'ok', color: c.ok }
 }
