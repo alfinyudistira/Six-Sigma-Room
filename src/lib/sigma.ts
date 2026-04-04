@@ -111,7 +111,7 @@ export function detectWECO(data: number[], mean: number, sigma: number): WECOVio
 
   for (let i = 0; i < z.length; i++) {
     // Rule 1: 1 point beyond 3σ
-    if (Math.abs(z[i]) > 3)
+    if (Math.abs(z[i]!) > 3)
       violations.push({ index: i, rule: '1', description: 'Point beyond 3σ control limit' })
 
     // Rule 2: 9 consecutive on same side
