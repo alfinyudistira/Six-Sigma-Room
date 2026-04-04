@@ -8,16 +8,17 @@
   :root {
     /* Colors */
     --bg: #050A0F;
-    --panel: #0A1320;   
-    --surface: #111B2B;   
+    --panel: #080E14;   
+    --surface: #0D1520;   
     --ink: #E2EEF9;
-    --ink-dim: #8FA3B8;  
-    --ink-mid: #B8C7D9;  
+    --ink-dim: #4A6785;  
+    --ink-mid: #7A99B8;  
     --border: #112233;
     --border-hi: #1A3A5C;
     --cyan: #00D4FF;
-    --green: #00FF9C;
-    --red: #FF3B5C;
+    --emerald: #00FF9C;
+    --danger: #FF3B5C;
+    --warn: #FFD60A; 
     --amber: #FF8C00;     
 
     /* Spacing & Radius */
