@@ -1,3 +1,6 @@
+// src/lib/sigma.ts
+// ─── Pure Six Sigma Math Library ─────────────────────────────────────────────
+
 // DPMO ↔ Sigma level lookup table (interpolated)
 const SIGMA_TABLE: [number, number][] = [
   [3.4,    6.0],
