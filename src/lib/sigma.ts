@@ -1,5 +1,10 @@
-// src/lib/sigma.ts
-// ─── Pure Six Sigma Math Library ─────────────────────────────────────────────
+import { registerRule } from './rulesEngine'
+
+registerRule({
+  key: 'fmea.rpn',
+  compute: ({ severity, occurrence, detection }) =>
+    severity * occurrence * detection,
+})
 
 // DPMO ↔ Sigma level lookup table (interpolated)
 const SIGMA_TABLE: [number, number][] = [
