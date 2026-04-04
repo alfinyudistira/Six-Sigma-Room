@@ -57,7 +57,7 @@ export const CURRENCY_OPTIONS = ['USD', 'IDR', 'EUR', 'GBP', 'SGD', 'AUD', 'JPY'
 
 export type TabId =
   | 'overview' | 'sigma' | 'dmaic' | 'fmea' | 'copq'
-  | 'spc' | 'pareto' | 'rootcause' | 'triage' | 'universal' | 'ops'
+  | 'spc' | 'pareto' | 'rootcause' | 'triage' | 'universal' | 'ops' | 'settings'
 
 export interface AppState {
   company: CompanyProfile
