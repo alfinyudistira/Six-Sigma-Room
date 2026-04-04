@@ -1,10 +1,17 @@
-// src/lib/storage.ts
-// ─── Hybrid Storage: IndexedDB (primary) + localStorage (fallback) ────────────
 import { get, set, del, keys, createStore } from 'idb-keyval'
+
+async function retry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+  try {
+    return await fn()
+  } catch (e) {
+    if (retries <= 0) throw e
+    return retry(fn, retries - 1)
+  }
+}
 
 const idbStore = createStore('sigma-war-room', 'app-data')
 
-const TTL_MS = 1000 * 60 * 60 * 24 * 30 // 30 days
+const TTL_MS = 1000 * 60 * 60 * 24 * 30
 
 interface StoredValue<T> {
   data: T
@@ -21,7 +28,7 @@ export async function persist<T>(key: string, value: T, ttlMs = TTL_MS): Promise
     version: CURRENT_VERSION,
   }
   try {
-    await set(key, payload, idbStore)
+    await retry(() => set(key, payload, idbStore))
   } catch {
     // Fallback to localStorage
     try {
