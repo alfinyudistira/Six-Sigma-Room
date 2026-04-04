@@ -15,9 +15,14 @@ const SIGMA_TABLE: [number, number][] = [
 export function dpmoToSigma(dpmo: number): number {
   if (dpmo <= 0)       return 6.0
   if (dpmo >= 1000000) return 0
+  
   for (let i = 0; i < SIGMA_TABLE.length - 1; i++) {
-    const [dpmoLo, sigmaHi] = SIGMA_TABLE[i]
-    const [dpmoHi, sigmaLo] = SIGMA_TABLE[i + 1]
+  const rowLo = SIGMA_TABLE[i];
+  const rowHi = SIGMA_TABLE[i + 1];
+  if (rowLo && rowHi) {
+    const [dpmoLo, sigmaHi] = rowLo;
+    const [dpmoHi, sigmaLo] = rowHi;
+    
     if (dpmo >= dpmoLo && dpmo < dpmoHi) {
       const t =
         (Math.log(dpmo) - Math.log(dpmoLo)) /
@@ -33,13 +38,21 @@ export function sigmaToDpmo(sigma: number): number {
     6: 3.4, 5: 233, 4: 6210, 3: 66807, 2: 308537, 1: 691462,
   }
   const keys = Object.keys(table).map(Number).sort((a, b) => b - a)
+ 
   for (let i = 0; i < keys.length - 1; i++) {
-    const hi = keys[i], lo = keys[i + 1]
+  const hi = keys[i];
+  const lo = keys[i + 1];
+
+  if (hi !== undefined && lo !== undefined) {
     if (sigma <= hi && sigma >= lo) {
-      const t = (sigma - lo) / (hi - lo)
-      return Math.round(table[lo] + t * (table[hi] - table[lo]))
+      const t = (sigma - lo) / (hi - lo);
+      const valLo = table[lo] ?? 0;
+      const valHi = table[hi] ?? 0;
+      return Math.round(valLo + t * (valHi - valLo));
     }
   }
+}
+  
   return sigma >= 6 ? 3.4 : 691462
 }
 
