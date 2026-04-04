@@ -1,10 +1,13 @@
 // src/store/useAppStore.ts
-// ─── Zustand Store — Global App State ────────────────────────────────────────
+
 import { create } from 'zustand'
-import { persist as persistMiddleware, createJSONStorage } from 'zustand/middleware'
+import { persist, createJSONStorage, devtools } from 'zustand/middleware'
+import { shallow } from 'zustand/shallow'
 import { persist as idbPersist, retrieve } from '@/lib/storage'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+/* --------------------------------------------------------------------------
+   TYPES & CONSTANTS
+   -------------------------------------------------------------------------- */
 export interface CompanyProfile {
   name: string
   dept: string
@@ -24,9 +27,36 @@ export interface CompanyProfile {
   customerLTV: number
   slaTarget: number
   isPulseDigital: boolean
+  lastModified: number
+  createdAt: number
 }
 
-export const DEMO_COMPANY: CompanyProfile = {
+export type TabId =
+  | 'overview' | 'sigma' | 'dmaic' | 'fmea' | 'copq'
+  | 'spc' | 'pareto' | 'rootcause' | 'triage' | 'universal' | 'ops' | 'settings'
+
+export type Theme = 'dark' | 'light' | 'system'
+
+export interface AppState {
+  company: CompanyProfile
+  activeTab: TabId
+  showApp: boolean
+  showCompanySetup: boolean
+  savedFlash: boolean
+  theme: Theme
+
+  setCompany: (partial: Partial<CompanyProfile>) => void
+  resetCompany: () => void
+  resetToDemo: () => void
+  setActiveTab: (tab: TabId) => void
+  setUI: (partial: Partial<Pick<AppState, 'showApp' | 'showCompanySetup' | 'savedFlash' | 'theme'>>) => void
+  flashSaved: () => void
+  reset: () => void
+}
+
+const now = Date.now()
+
+export const DEMO_COMPANY: Readonly<CompanyProfile> = Object.freeze({
   name: 'Pulse Digital',
   dept: 'Technical Support',
   industry: 'IT / Tech Support',
@@ -45,7 +75,9 @@ export const DEMO_COMPANY: CompanyProfile = {
   customerLTV: 3200,
   slaTarget: 48,
   isPulseDigital: true,
-}
+  lastModified: now,
+  createdAt: now,
+})
 
 export const INDUSTRY_OPTIONS = [
   'IT / Tech Support', 'Manufacturing', 'Healthcare', 'Financial Services',
@@ -55,74 +87,127 @@ export const INDUSTRY_OPTIONS = [
 
 export const CURRENCY_OPTIONS = ['USD', 'IDR', 'EUR', 'GBP', 'SGD', 'AUD', 'JPY', 'MYR'] as const
 
-export type TabId =
-  | 'overview' | 'sigma' | 'dmaic' | 'fmea' | 'copq'
-  | 'spc' | 'pareto' | 'rootcause' | 'triage' | 'universal' | 'ops' | 'settings'
+export const COMPANY_VALIDATORS = {
+  name: (value: string): boolean => value.length >= 2 && value.length <= 100,
+  teamSize: (value: number): boolean => value > 0 && value <= 100000,
+  baselineStdDev: (value: number): boolean => isFinite(value) && value > 0,
+  laborRate: (value: number): boolean => value >= 0,
+} as const
 
-export interface AppState {
-  company: CompanyProfile
-  activeTab: TabId
-  showApp: boolean
-  showCompanySetup: boolean
-  savedFlash: boolean
-  theme: 'dark' // Future: 'dark' | 'light'
-
-  // Actions
-  setCompany: (c: Partial<CompanyProfile>) => void
-  setActiveTab: (tab: TabId) => void
-  setShowApp: (v: boolean) => void
-  setShowCompanySetup: (v: boolean) => void
-  setSavedFlash: (v: boolean) => void
-  flashSaved: () => void
-  resetToDemo: () => void
+function safeMergeCompany(base: CompanyProfile, partial: Partial<CompanyProfile>): CompanyProfile {
+  return {
+    ...base,
+    ...partial,
+    isPulseDigital: false,
+    lastModified: Date.now(),
+  }
 }
 
-// ─── Store ────────────────────────────────────────────────────────────────────
 export const useAppStore = create<AppState>()(
-  persistMiddleware(
-    (set, get) => ({
-      company: DEMO_COMPANY,
-      activeTab: 'overview',
-      showApp: false,
-      showCompanySetup: false,
-      savedFlash: false,
-      theme: 'dark',
+  devtools(
+    persist(
+      (set, get) => ({
+        company: DEMO_COMPANY,
+        activeTab: 'overview',
+        showApp: false,
+        showCompanySetup: false,
+        savedFlash: false,
+        theme: 'dark',
 
-      setCompany: (partial) => {
-        const next = { ...get().company, ...partial, isPulseDigital: false }
-        set({ company: next })
-        // Also persist to IndexedDB (async, fire-and-forget)
-        void idbPersist('company_profile', next)
-      },
+        setCompany: (partial) => {
+          const nextCompany = safeMergeCompany(get().company, partial)
+          set({ company: nextCompany })
 
-      setActiveTab: (tab) => set({ activeTab: tab }),
-      setShowApp: (v) => set({ showApp: v }),
-      setShowCompanySetup: (v) => set({ showCompanySetup: v }),
-      setSavedFlash: (v) => set({ savedFlash: v }),
+          queueMicrotask(() => {
+            void idbPersist('company_profile', nextCompany).catch((err) =>
+              console.warn('[useAppStore] Failed to persist company to IndexedDB', err),
+            )
+          })
+        },
 
-      flashSaved: () => {
-        set({ savedFlash: true })
-        setTimeout(() => set({ savedFlash: false }), 2000)
-      },
+        resetCompany: () => {
+          set({ company: DEMO_COMPANY })
+          queueMicrotask(() => {
+            void idbPersist('company_profile', DEMO_COMPANY).catch(() => {})
+          })
+        },
 
-      resetToDemo: () => set({ company: DEMO_COMPANY }),
-    }),
-    {
-      name: 'sigma-war-room-v2',
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        company: state.company,
-        activeTab: state.activeTab,
-        showApp: state.showApp,
+        resetToDemo: () => {
+          set({ company: DEMO_COMPANY })
+          queueMicrotask(() => {
+            void idbPersist('company_profile', DEMO_COMPANY).catch(() => {})
+          })
+        },
+
+        setActiveTab: (tab) => set({ activeTab: tab }),
+        setUI: (partial) => set(partial),
+
+        flashSaved: () => {
+          set({ savedFlash: true })
+          setTimeout(() => set({ savedFlash: false }), 2000)
+        },
+
+        reset: () =>
+          set({
+            company: DEMO_COMPANY,
+            activeTab: 'overview',
+            showApp: false,
+            showCompanySetup: false,
+            savedFlash: false,
+            theme: 'dark',
+          }),
       }),
-    },
+      {
+        name: 'sigma-war-room-v4',
+        version: 4, 
+        storage: createJSONStorage(() => localStorage),
+        partialize: (state) => ({
+          company: state.company,
+          activeTab: state.activeTab,
+          theme: state.theme,
+          showApp: state.showApp,
+        }),
+      },
+    ),
+    { name: 'Sigma App Store', enabled: import.meta.env.DEV },
   ),
 )
 
-// ─── Hydrate from IndexedDB on boot ──────────────────────────────────────────
+/* --------------------------------------------------------------------------
+   SELECTORS & HOOKS
+   -------------------------------------------------------------------------- */
+export const appSelectors = {
+  company: (state: AppState) => state.company,
+  activeTab: (state: AppState) => state.activeTab,
+  ui: (state: AppState) => ({
+    showApp: state.showApp,
+    showCompanySetup: state.showCompanySetup,
+    savedFlash: state.savedFlash,
+  }),
+  theme: (state: AppState) => state.theme,
+}
+
+export const useAppCompany = () => useAppStore(appSelectors.company, shallow)
+export const useAppActiveTab = () => useAppStore(appSelectors.activeTab)
+export const useAppUI = () => useAppStore(appSelectors.ui, shallow)
+export const useAppTheme = () => useAppStore(appSelectors.theme)
+
+/* --------------------------------------------------------------------------
+   HYDRATION FROM INDEXEDDB
+   -------------------------------------------------------------------------- */
 export async function hydrateFromIDB(): Promise<void> {
   try {
-    const company = await retrieve<CompanyProfile>('company_profile')
-    if (company) useAppStore.setState({ company })
-  } catch { /* noop */ }
+    const storedCompany = await retrieve<CompanyProfile>('company_profile')
+    if (storedCompany) {
+      const mergedCompany = {
+        ...DEMO_COMPANY,
+        ...storedCompany,
+        isPulseDigital: false,
+      }
+      useAppStore.setState({ company: mergedCompany })
+      console.log('%c[useAppStore] ✅ Company profile hydrated', 'color: #00FF9C')
+    }
+  } catch (err) {
+    console.warn('[useAppStore] ⚠️ Failed to hydrate company', err)
+  }
 }
