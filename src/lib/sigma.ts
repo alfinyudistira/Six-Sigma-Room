@@ -28,6 +28,7 @@ export function dpmoToSigma(dpmo: number): number {
         (Math.log(dpmo) - Math.log(dpmoLo)) /
         (Math.log(dpmoHi) - Math.log(dpmoLo))
       return +(sigmaHi + t * (sigmaLo - sigmaHi)).toFixed(2)
+          }
     }
   }
   return 0
@@ -83,7 +84,7 @@ export function calcControlLimits(data: number[]): {
 } {
   if (data.length < 2) return { mean: 0, ucl: 0, lcl: 0, mrUcl: 0, mrMean: 0 }
   const mean = data.reduce((a, b) => a + b, 0) / data.length
-  const mrs = data.slice(1).map((v, i) => Math.abs(v - data[i]))
+  const mrs = data.slice(1).map((v, i) => Math.abs(v - data[i]!))
   const mrMean = mrs.reduce((a, b) => a + b, 0) / mrs.length
   // d2 = 1.128 for n=2 (I-MR chart constant)
   const d2 = 1.128
@@ -123,8 +124,8 @@ export function detectWECO(data: number[], mean: number, sigma: number): WECOVio
     // Rule 3: 6 consecutive trend
     if (i >= 5) {
       const chunk = data.slice(i - 5, i + 1)
-      const trend = chunk.every((v, j) => j === 0 || v > chunk[j - 1]) ||
-                    chunk.every((v, j) => j === 0 || v < chunk[j - 1])
+      const trend = chunk.every((v, j) => j === 0 || v > chunk[j - 1]!) ||
+                    chunk.every((v, j) => j === 0 || v < chunk[j - 1]!)
       if (trend)
         violations.push({ index: i, rule: '3', description: '6 consecutive points trending' })
     }
@@ -134,7 +135,7 @@ export function detectWECO(data: number[], mean: number, sigma: number): WECOVio
       const chunk = data.slice(i - 13, i + 1)
       const alt = chunk.every((v, j) => {
         if (j === 0) return true
-        const up = v > chunk[j - 1]
+        const up = v > chunk[j - 1]!
         return j % 2 === 0 ? up : !up
       })
       if (alt)
