@@ -1,7 +1,23 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ['./index.html', './src/**/*.{ts,tsx}'],
   darkMode: 'class',
+  content: [
+    './index.html',
+    './src/**/*.{ts,tsx}',
+    // Tambahan jika ada library yang butuh
+  ],
+  safelist: [
+    // Mencegah class dinamis terhapus PurgeCSS
+    'border-cyan-dim',
+    'bg-emerald-dim',
+    'text-danger-dim',
+    'hover:glow',
+    'hover:glow-red',
+    'hover:glow-grn',
+    // Warna-warna yang mungkin muncul dari API
+    /^bg-(cyan|emerald|danger|warn|amber)-(50|100|200|300|400|500|600|700|800|900)$/,
+    /^text-(cyan|emerald|danger|warn|amber)-(50|100|200|300|400|500|600|700|800|900)$/,
+  ],
   theme: {
     extend: {
       colors: {
@@ -31,6 +47,9 @@ export default {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'scan':       'scan 8s linear infinite',
         'flicker':    'flicker 0.1s infinite',
+        // Tambahan top tier
+        'spin-slow':  'spin 3s linear infinite',
+        'ping-once':  'ping 1s cubic-bezier(0, 0, 0.2, 1) 1',
       },
       keyframes: {
         scan: {
@@ -44,14 +63,25 @@ export default {
       },
       backdropBlur: { xs: '2px' },
       screens: {
-  xs: '480px',
-  sm: '640px',
-  md: '768px',
-  lg: '1024px',
-  xl: '1280px',
-  '2xl': '1536px',
-},
+        xs: '480px',
+        sm: '640px',
+        md: '768px',
+        lg: '1024px',
+        xl: '1280px',
+        '2xl': '1536px',
+      },
+      // Tambahan top tier: transitionTimingFunction custom
+      transitionTimingFunction: {
+        'bounce-in': 'cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+        'smooth':    'cubic-bezier(0.4, 0, 0.2, 1)',
+      },
+      // Container queries (plugin terpisah, tapi bisa ditambah)
     },
   },
-  plugins: [],
-}
+  plugins: [
+    // Top tier plugins yang sangat berguna (install dulu)
+    require('@tailwindcss/forms')({ strategy: 'class' }), // styling form konsisten
+    require('@tailwindcss/typography'), // untuk konten rich text
+    require('tailwindcss-animate'), // animasi siap pakai (fade, slide, dll)
+  ],
+        }
