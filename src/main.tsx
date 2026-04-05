@@ -38,8 +38,8 @@ initSecurity()
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5,          // 5 minutes
-      gcTime: 1000 * 60 * 30,            // 30 minutes
+      staleTime: 1000 * 60 * 5,       
+      gcTime: 1000 * 60 * 30,        
       retry: (failureCount, error: unknown) => {
         if (failureCount >= 2) return false
         if ((error as any)?.status === 404) return false
@@ -57,8 +57,8 @@ const queryClient = new QueryClient({
 
 function AppRoot() {
   return (
-    <ErrorBoundary
-      fallback={
+        <ErrorBoundary
+      fallback={() => (
         <div className="min-h-screen bg-bg flex items-center justify-center font-mono text-red p-8">
           <div className="text-center">
             <h1 className="text-5xl mb-4 text-red glow-text-red">σ KERNEL PANIC</h1>
@@ -71,7 +71,7 @@ function AppRoot() {
             </button>
           </div>
         </div>
-      }
+      )}
     >
       <ReduxProvider store={store}>
         <QueryClientProvider client={queryClient}>
@@ -92,9 +92,6 @@ function AppRoot() {
   )
 }
 
-/* --------------------------------------------------------------------------
-   MOUNTING (SSR‑aware)
-   -------------------------------------------------------------------------- */
 function mountApp(container: HTMLElement) {
   const shouldHydrate = container.hasChildNodes()
   if (shouldHydrate) {
@@ -104,9 +101,6 @@ function mountApp(container: HTMLElement) {
   }
 }
 
-/* --------------------------------------------------------------------------
-   BOOTSTRAP SEQUENCE
-   -------------------------------------------------------------------------- */
 async function bootstrap() {
   performance.mark('app_start')
   if (IS_DEV) {
@@ -116,7 +110,6 @@ async function bootstrap() {
     )
   }
 
-  // 1. PWA Service Worker (production only)
   if (IS_PROD) {
     try {
       registerSW({
@@ -134,23 +127,22 @@ async function bootstrap() {
     }
   }
 
-  // 2. Parallel data hydration (IndexedDB + Redux)
   if (IS_DEV) console.log('%c📥 Hydrating persistent data...', 'color:#FFD60A')
   await Promise.allSettled([hydrateFromIDB(), store.dispatch(loadModuleData())])
 
-  // 3. Mount React app
   const container = document.getElementById('root')
   if (!container) throw new Error('Root element #root not found')
   mountApp(container)
 
   performance.mark('app_mounted')
   performance.measure('app_boot_time', 'app_start', 'app_mounted')
-  if (IS_DEV && performance.getEntriesByType('measure').length) {
+    if (IS_DEV && performance.getEntriesByType('measure').length) {
     const measure = performance.getEntriesByType('measure')[0]
-    console.log(`%c⚡ Boot time: ${measure.duration.toFixed(2)}ms`, 'color:#00FF9C')
+    if (measure) {
+      console.log(`%c⚡ Boot time: ${measure.duration.toFixed(2)}ms`, 'color:#00FF9C')
+    }
   }
 
-  // 4. Lazy load devtools & analytics (non‑blocking)
   if (IS_DEV) {
     import('@tanstack/react-query-devtools')
       .then(({ ReactQueryDevtools }) => {
@@ -187,9 +179,6 @@ async function bootstrap() {
   }
 }
 
-/* --------------------------------------------------------------------------
-   GLOBAL ERROR HANDLERS (last line of defence)
-   -------------------------------------------------------------------------- */
 window.addEventListener('error', (e) => {
   console.error('%c❌ Global error', 'color:#FF3B5C', e.error)
 })
@@ -197,9 +186,6 @@ window.addEventListener('unhandledrejection', (e) => {
   console.error('%c❌ Unhandled promise rejection', 'color:#FF3B5C', e.reason)
 })
 
-/* --------------------------------------------------------------------------
-   START ENGINE (with fatal fallback)
-   -------------------------------------------------------------------------- */
 bootstrap().catch((err) => {
   console.error('%c💥 CRITICAL BOOT FAILURE', 'color:#FF3B5C; font-size:18px; font-weight:800', err)
 
