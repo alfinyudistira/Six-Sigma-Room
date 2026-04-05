@@ -349,7 +349,6 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       console.warn('[ErrorBoundary] hardReset clearAll failed', err)
     }
     if (this.props.reloadOnHardReset) {
-      // Give UI a tick to show resetting state, then reload
       setTimeout(() => {
         location.reload()
       }, 50)
@@ -371,7 +370,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       error,
       errorInfo,
       errorId: errorId ?? 'unknown',
-      moduleName,
+      moduleName: moduleName ?? 'unknown',
       isResetting,
       onRetry: this.retry,
       onSoftReset: this.softReset,
