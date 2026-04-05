@@ -21,25 +21,19 @@ function useReducedMotion(): boolean {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)')
     setReduced(media.matches)
     
-    // Fallback for older browsers (Safari < 14)
     if (media.addEventListener) {
       const listener = (e: MediaQueryListEvent) => setReduced(e.matches)
       media.addEventListener('change', listener)
       return () => media.removeEventListener('change', listener)
     } else if (media.addListener) {
-      // Legacy
       const listener = (e: MediaQueryListEvent) => setReduced(e.matches)
       media.addListener(listener)
       return () => media.removeListener(listener)
     }
   }, [])
-
   return reduced
 }
 
-/* --------------------------------------------------------------------------
-   PHASE TEXT (default)
-   -------------------------------------------------------------------------- */
 const DEFAULT_PHASES = [
   'Initializing core systems',
   'Loading modules',
@@ -48,9 +42,6 @@ const DEFAULT_PHASES = [
   'Almost ready',
 ]
 
-/* --------------------------------------------------------------------------
-   COMPONENT
-   -------------------------------------------------------------------------- */
 export default function LoadingFallback({
   message = 'Initializing',
   subtitle = 'SIGMA WAR ROOM KERNEL',
