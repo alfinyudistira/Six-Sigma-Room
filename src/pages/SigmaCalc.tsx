@@ -20,7 +20,6 @@ import {
   calcYield,
 } from '@/lib/sigma'
 
-// 🔥 PERBAIKAN 1: Import dari barrel hooks
 import { useCurrency, useHaptic } from '@/hooks'
 import { feedback } from '@/lib/feedback'
 
@@ -36,21 +35,20 @@ import { downloadCSV, copyToClipboard, cn } from '@/lib/utils'
 /* --------------------------------------------------------------------------
    CONSTANTS & FORMATTERS
    -------------------------------------------------------------------------- */
+// 🔥 PERBAIKAN: Ganti 'yield' jadi 'yieldPct' untuk menghindari Reserved Keyword bentrok di JSX
 const SIGMA_REF = [
-  { level: 1, dpmo: 691462, yield: 30.85 },
-  { level: 2, dpmo: 308538, yield: 69.15 },
-  { level: 3, dpmo: 66807, yield: 93.32 },
-  { level: 4, dpmo: 6210, yield: 99.38 },
-  { level: 5, dpmo: 233, yield: 99.977 },
-  { level: 6, dpmo: 3.4, yield: 99.99966 },
+  { level: 1, dpmo: 691462, yieldPct: 30.85 },
+  { level: 2, dpmo: 308538, yieldPct: 69.15 },
+  { level: 3, dpmo: 66807, yieldPct: 93.32 },
+  { level: 4, dpmo: 6210, yieldPct: 99.38 },
+  { level: 5, dpmo: 233, yieldPct: 99.977 },
+  { level: 6, dpmo: 3.4, yieldPct: 99.99966 },
 ] as const
 
 type CalcMode = 'from-company' | 'manual-dpmo' | 'from-defects'
 
-// 🔥 PERBAIKAN 2: Native formatter agar Strict Mode aman
 const numFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
 
-// Helper mapping warna hex ke BadgeColor enum
 const getBadgeColor = (hex: string): BadgeColor => {
   if (hex === T.green) return 'green'
   if (hex === T.cyan) return 'cyan'
@@ -67,7 +65,6 @@ export default function SigmaCalc() {
   const { format: formatCurrency } = useCurrency()
   const { light, medium, success } = useHaptic()
 
-  // ─── STATE (Aman untuk Input kosong) ────────────────────────────────────
   const [mode, setMode] = useState<CalcMode>('from-company')
   const [manualDpmo, setManualDpmo] = useState<number | ''>(6210)
   const [defects, setDefects] = useState<number | ''>(50)
@@ -97,15 +94,11 @@ export default function SigmaCalc() {
     const cp = calcCp(baselineStdDev, usl, lsl)
     const monthlyCopq = laborRate * monthlyVolume * (1 - yieldPct / 100)
 
-    // What-if: target 4σ
     const targetDpmo = sigmaToDpmo(4)
     const targetYield = calcYield(targetDpmo)
-    
-    // 🔥 PERBAIKAN 3: Jangan tampilkan minus jika proses sudah > 4 Sigma
     const savedYield = Math.max(0, targetYield - yieldPct)
     const savedCopq = Math.max(0, laborRate * monthlyVolume * (savedYield / 100))
 
-    // Bell curve shape (normal distribution)
     const bellData = Array.from({ length: 40 }, (_, i) => {
       const x = lsl + (usl - lsl) * (i / 39)
       const z = (x - baselineMean) / baselineStdDev
@@ -118,7 +111,7 @@ export default function SigmaCalc() {
     })
 
     return {
-      dpmo, sigma, yield: yieldPct, ppk, cp,
+      dpmo, sigma, yieldPct, ppk, cp,
       monthlyCopq, savedCopq, bellData, targetYield, savedYield,
     }
   }, [company, mode, manualDpmo, defects, units, opps])
@@ -138,7 +131,7 @@ export default function SigmaCalc() {
           Ppk: derived.ppk,
           Cp: derived.cp,
           DPMO: derived.dpmo,
-          Yield_Pct: derived.yield,
+          Yield_Pct: derived.yieldPct,
           Monthly_COPQ: derived.monthlyCopq,
         },
       ],
@@ -154,7 +147,7 @@ export default function SigmaCalc() {
 
   const handleCopy = useCallback(async () => {
     light()
-    const text = `Sigma: ${derived.sigma.toFixed(2)} | Ppk: ${derived.ppk.toFixed(3)} | DPMO: ${numFormatter.format(derived.dpmo)} | Yield: ${derived.yield.toFixed(2)}%`
+    const text = `Sigma: ${derived.sigma.toFixed(2)} | Ppk: ${derived.ppk.toFixed(3)} | DPMO: ${numFormatter.format(derived.dpmo)} | Yield: ${derived.yieldPct.toFixed(2)}%`
     const ok = await copyToClipboard(text)
     if (ok) {
       medium()
@@ -174,7 +167,6 @@ export default function SigmaCalc() {
       transition={{ duration: 0.3 }}
       className="flex flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
-      {/* Header */}
       <Section
         subtitle="Module 2 — Process Capability"
         title="Sigma Calculator"
@@ -186,7 +178,6 @@ export default function SigmaCalc() {
         }
       />
 
-      {/* Mode Selector Panel */}
       <Panel>
         <div className="mb-6 flex flex-wrap gap-2 rounded-lg bg-surface/50 p-1.5 border border-border">
           {[
@@ -214,7 +205,6 @@ export default function SigmaCalc() {
           ))}
         </div>
 
-        {/* Input Form Area */}
         <motion.div layout>
           {mode === 'manual-dpmo' && (
             <div className="max-w-xl space-y-6">
@@ -284,7 +274,6 @@ export default function SigmaCalc() {
         </motion.div>
       </Panel>
 
-      {/* Primary KPIs */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
         <KPICard
           label="Sigma Level"
@@ -312,9 +301,9 @@ export default function SigmaCalc() {
         />
         <KPICard
           label="Process Yield"
-          value={<Counter value={derived.yield} decimals={3} suffix="%" color={derived.yield > 99 ? T.green : T.yellow} />}
+          value={<Counter value={derived.yieldPct} decimals={3} suffix="%" color={derived.yieldPct > 99 ? T.green : T.yellow} />}
           sub="First pass yield"
-          color={derived.yield > 99 ? T.green : T.yellow}
+          color={derived.yieldPct > 99 ? T.green : T.yellow}
         />
         <KPICard
           label="Monthly COPQ"
@@ -324,7 +313,6 @@ export default function SigmaCalc() {
         />
       </div>
 
-      {/* Charts & Visuals */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <Panel className="lg:col-span-7 flex flex-col justify-between">
           <Section
@@ -356,11 +344,11 @@ export default function SigmaCalc() {
           <div className="flex flex-wrap items-center justify-around gap-6 py-6">
             <Gauge value={derived.sigma} max={6} color={sigmaColor.color} size={110} label="Sigma" />
             <Gauge value={derived.ppk} max={2} color={ppkStatus.color} size={110} label="Ppk" />
+            <Gauge value={derived.yieldPct} max={100} color={derived.yieldPct > 99 ? T.green : T.cyan} size={110} label="Yield %" />
           </div>
         </Panel>
       </div>
 
-      {/* Reference & What-If */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Panel className="xl:col-span-2">
           <Section subtitle="Reference" title="Sigma Level Comparison" />
@@ -389,13 +377,13 @@ export default function SigmaCalc() {
                         {ref.level}σ {isCurrentRow && <span className="ml-2 rounded bg-cyan px-1 text-[8px] text-bg">YOU</span>}
                       </td>
                       <td className="p-3 text-ink">{numFormatter.format(ref.dpmo)}</td>
-                      <td className="p-3 text-ink">{ref.yield.toFixed(ref.yield > 99 ? 4 : 2)}%</td>
+                      <td className="p-3 text-ink">{ref.yieldPct.toFixed(ref.yieldPct > 99 ? 4 : 2)}%</td>
                       <td className="p-3 text-ink">{ppkVal.toFixed(2)}</td>
                       <td className="p-3">
                         <Badge label={ppkStatusRow.label} color={getBadgeColor(ppkStatusRow.color)} />
                       </td>
                       <td className="p-3 text-red">
-                        {formatCurrency(company.laborRate * company.monthlyVolume * (1 - ref.yield / 100))}
+                        {formatCurrency(company.laborRate * company.monthlyVolume * (1 - ref.yieldPct / 100))}
                       </td>
                     </tr>
                   )
