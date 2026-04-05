@@ -34,17 +34,11 @@ export function sanitizeText(input: unknown): string {
     .replace(/\//g, '&#x2F;')
 }
 
-/**
- * Remove all HTML tags (and comments) from a string.
- */
 export function stripTags(input: unknown): string {
   const str = normalizeString(input)
   return str.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]*>/g, '')
 }
 
-/**
- * Clamp string length.
- */
 export function clampString(input: string, max = 255): string {
   return input.slice(0, max)
 }
@@ -195,15 +189,8 @@ export class RateLimiter {
 export const aiCallLimiter = new RateLimiter({ maxCalls: 10, windowMs: 60_000 })
 export const exportLimiter = new RateLimiter({ maxCalls: 20, windowMs: 60_000 })
 export const storageWriteLimiter = new RateLimiter({ maxCalls: 100, windowMs: 10_000 })
-
-/* --------------------------------------------------------------------------
-   URL SAFETY
-   -------------------------------------------------------------------------- */
 const SAFE_PROTOCOLS = ['http:', 'https:']
 
-/**
- * Validate URL protocol and optionally hostname against allowlist.
- */
 export function isSafeURL(url: string, allowlist?: string[]): boolean {
   try {
     const parsed = new URL(url, window.location?.href)
@@ -217,16 +204,7 @@ export function isSafeURL(url: string, allowlist?: string[]): boolean {
   }
 }
 
-/* --------------------------------------------------------------------------
-   CSP META INJECTION / REMOVAL (with nonce support)
-   -------------------------------------------------------------------------- */
 const CSP_META_ATTR = 'data-ss-csp'
-
-/**
- * Inject a Content-Security-Policy meta tag (idempotent).
- * @param content optional custom CSP string
- * @param nonce optional script nonce (will be added to script-src)
- */
 export function injectCSPMeta(content?: string, nonce?: string): void {
   try {
     if (typeof document === 'undefined') return
@@ -247,9 +225,6 @@ export function injectCSPMeta(content?: string, nonce?: string): void {
   }
 }
 
-/**
- * Remove the CSP meta tag if present.
- */
 export function removeCSPMeta(): void {
   try {
     if (typeof document === 'undefined') return
@@ -259,14 +234,6 @@ export function removeCSPMeta(): void {
   }
 }
 
-/* --------------------------------------------------------------------------
-   CLICKJACKING PROTECTION
-   -------------------------------------------------------------------------- */
-
-/**
- * Prevent framing of the page (break out of iframe).
- * @param replaceContent if true, replace document content with a denial message.
- */
 export function preventClickjacking(replaceContent = true): void {
   try {
     if (typeof window === 'undefined' || typeof document === 'undefined') return
@@ -278,8 +245,8 @@ export function preventClickjacking(replaceContent = true): void {
           <p>Access denied: frame embedding not permitted.</p>
         `
       }
-      try {
-        window.top.location.replace(window.location.href)
+            try {
+        window.top?.location.replace(window.location.href)
       } catch {
         // cross‑origin, ignore
       }
@@ -289,13 +256,6 @@ export function preventClickjacking(replaceContent = true): void {
   }
 }
 
-/* --------------------------------------------------------------------------
-   SAFE EXECUTION WRAPPER
-   -------------------------------------------------------------------------- */
-
-/**
- * Wrap a function in try/catch and return fallback on error.
- */
 export function safeExecute<T>(fn: () => T, fallback: T, label = 'safeExecute'): T {
   try {
     return fn()
@@ -305,19 +265,11 @@ export function safeExecute<T>(fn: () => T, fallback: T, label = 'safeExecute'):
   }
 }
 
-/* --------------------------------------------------------------------------
-   GENERATE NONCE (for CSP)
-   -------------------------------------------------------------------------- */
-
-/**
- * Generate a cryptographically strong random nonce (for inline scripts).
- */
 export function generateNonce(): string {
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
     const buffer = new Uint8Array(16)
     crypto.getRandomValues(buffer)
     return Array.from(buffer, (b) => b.toString(16).padStart(2, '0')).join('')
   }
-  // fallback for insecure contexts (not recommended)
   return Math.random().toString(36).substring(2, 18)
 }
