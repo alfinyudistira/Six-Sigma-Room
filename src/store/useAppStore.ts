@@ -5,9 +5,6 @@ import { persist, createJSONStorage, devtools } from 'zustand/middleware'
 import { shallow } from 'zustand/shallow'
 import { persist as idbPersist, retrieve } from '@/lib/storage'
 
-/* --------------------------------------------------------------------------
-   TYPES & CONSTANTS
-   -------------------------------------------------------------------------- */
 export interface CompanyProfile {
   name: string
   dept: string
@@ -21,7 +18,7 @@ export interface CompanyProfile {
   target: number
   usl: number
   lsl: number
-  currency: strin
+  currency: string
   laborRate: number
   monthlyVolume: number
   customerLTV: number
