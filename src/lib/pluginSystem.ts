@@ -94,9 +94,6 @@ class PluginRegistry {
     }
   }
 
-  /**
-   * Topological sort berdasarkan dependencies
-   */
   private resolveOrder(): string[] {
     const names = Array.from(this.plugins.keys())
     const visited = new Set<string>()
@@ -130,9 +127,6 @@ class PluginRegistry {
     return order
   }
 
-  /**
-   * Initialize all plugins in dependency order
-   */
   async init(): Promise<void> {
     if (this.isInitialized) return
 
@@ -159,9 +153,6 @@ class PluginRegistry {
     this.isInitialized = true
   }
 
-  /**
-   * Start all initialized plugins
-   */
   async start(): Promise<void> {
     if (!this.isInitialized) {
       await this.init()
@@ -190,9 +181,6 @@ class PluginRegistry {
     this.isStarted = true
   }
 
-  /**
-   * Stop all plugins (reverse order)
-   */
   async stop(): Promise<void> {
     if (!this.isStarted) return
 
@@ -213,9 +201,6 @@ class PluginRegistry {
     this.isStarted = false
   }
 
-  /**
-   * Destroy all plugins (cleanup)
-   */
   async destroy(): Promise<void> {
     await this.stop()
     const order = this.resolveOrder().reverse()
@@ -256,6 +241,7 @@ class PluginRegistry {
     
     return result
   }
+  } 
 
 const registry = new PluginRegistry()
 
