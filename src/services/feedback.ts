@@ -2,6 +2,7 @@
 
 import { create } from 'zustand'
 import { feedback } from '@/lib/feedback'
+
 export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading'
 
 export interface ToastAction {
@@ -9,16 +10,28 @@ export interface ToastAction {
   onClick: () => void
 }
 
+// 🔥 PERBAIKAN 1: Tambahkan '| undefined' eksplisit agar Strict Mode puas
 export interface Toast {
   id: string
   type: ToastType
   title: string
-  message?: string
+  message?: string | undefined
   duration: number
-  action?: ToastAction
-  progress?: number
+  action?: ToastAction | undefined
+  progress?: number | undefined
   createdAt: number
-  replaced?: boolean
+  replaced?: boolean | undefined
+}
+
+// 🔥 PERBAIKAN 2: Buat payload khusus untuk fungsi 'add' agar Omit & Partial tidak bertabrakan
+export interface ToastPayload {
+  id?: string | undefined
+  type: ToastType
+  title: string
+  message?: string | undefined
+  duration?: number | undefined
+  action?: ToastAction | undefined
+  progress?: number | undefined
 }
 
 /* --------------------------------------------------------------------------
@@ -74,22 +87,19 @@ function clearTimer(id: string): void {
 interface FeedbackState {
   toasts: Toast[]
 
-  add: (
-    toast: Omit<Partial<Toast>, 'id' | 'createdAt'> & { type: ToastType; title: string },
-    options?: { replace?: boolean }
-  ) => string
-
+  // 🔥 PERBAIKAN 3: Gunakan tipe ToastPayload yang sudah kita buat
+  add: (toast: ToastPayload, options?: { replace?: boolean | undefined }) => string
   update: (id: string, patch: Partial<Toast>) => void
   dismiss: (id: string) => void
   dismissAll: () => void
   getById: (id: string) => Toast | undefined
 
   // Convenience helpers
-  success: (title: string, message?: string) => string
-  error: (title: string, message?: string) => string
-  warning: (title: string, message?: string) => string
-  info: (title: string, message?: string) => string
-  loading: (title: string, message?: string) => string
+  success: (title: string, message?: string | undefined) => string
+  error: (title: string, message?: string | undefined) => string
+  warning: (title: string, message?: string | undefined) => string
+  info: (title: string, message?: string | undefined) => string
+  loading: (title: string, message?: string | undefined) => string
 
   promise: <T>(
     promise: Promise<T>,
@@ -104,7 +114,6 @@ export const useFeedback = create<FeedbackState>((set, get) => ({
   toasts: [],
 
   add: (toast, options = {}) => {
-    // Kita biarkan ID di-generate otomatis kecuali sudah dikasih (dari event bus)
     const id = toast.id || generateId()
     const now = Date.now()
     const type = toast.type
@@ -119,6 +128,7 @@ export const useFeedback = create<FeedbackState>((set, get) => ({
       action: toast.action,
       progress: toast.progress,
       createdAt: now,
+      replaced: false,
     }
 
     set((state) => {
