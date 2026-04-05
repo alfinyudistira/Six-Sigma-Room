@@ -99,7 +99,8 @@ export default function COPQEngine() {
 
   const chartData = useMemo(() => [
     { category: 'Prevention', cost: metrics.preventionTotal, fill: tokens.cyan },
-    { category: 'Appraisal', cost: metrics.appraisalTotal, fill: tokens.blue },
+    // PERBAIKAN 1: tokens.blue diganti menjadi tokens.cyan agar sesuai dengan file tokens.ts kamu
+    { category: 'Appraisal', cost: metrics.appraisalTotal, fill: tokens.cyan },
     { category: 'Internal Fail', cost: metrics.internal, fill: tokens.orange },
     { category: 'External Fail', cost: metrics.external, fill: tokens.red },
   ], [metrics])
@@ -110,8 +111,12 @@ export default function COPQEngine() {
       [{ ...metrics, company: company.name, timestamp: new Date().toISOString() }],
       `TQC-Analysis-${company.name.replace(/\s+/g, '-')}.csv`
     )
-    if (success) feedback.notifySuccess('Enterprise TQC Exported', 'Financial dataset ready for leadership review.')
-    else feedback.notifyError('Export Failed', 'Unable to generate financial report.')
+    // PERBAIKAN 2: Gabungkan string menjadi satu argumen agar tidak bentrok dengan tipe argumen kedua
+    if (success) {
+      feedback.notifySuccess('Enterprise TQC Exported: Financial dataset ready for leadership review.')
+    } else {
+      feedback.notifyError('Export Failed: Unable to generate financial report.')
+    }
   }, [metrics, company.name])
 
   const animated = config.ui.animationsEnabled
@@ -119,7 +124,6 @@ export default function COPQEngine() {
   // ─── RENDER ──────────────────────────────────────────────────────────────
   return (
     <motion.div
-      // 🔥 PERBAIKAN: Spread operator agar tidak mengirimkan undefined ke motion props
       {...(animated ? { initial: { opacity: 0, y: 15 }, animate: { opacity: 1, y: 0 } } : {})}
       transition={{ duration: 0.4, ease: "easeOut" }}
       className="flex flex-col gap-6 p-4 md:p-6 lg:p-8 overflow-x-hidden"
@@ -204,7 +208,8 @@ export default function COPQEngine() {
 
         {/* Visualization */}
         <Panel className="lg:col-span-3 flex flex-col">
-          <Section subtitle="Breakdown" title="Cost Distribution" color={tokens.blue} />
+          {/* PERBAIKAN 3: tokens.blue diganti menjadi tokens.cyan */}
+          <Section subtitle="Breakdown" title="Cost Distribution" color={tokens.cyan} />
           <div className="flex-1 min-h-[280px] mt-4 relative">
             {/* Menggunakan Custom Fill Colors */}
             <SimpleBarChart
