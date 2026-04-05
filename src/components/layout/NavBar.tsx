@@ -1,23 +1,13 @@
-/**
- * ============================================================================
- * NAVIGATION BAR — DESKTOP + MOBILE, ACCESSIBLE, PERFORMANT
- * ============================================================================
- */
-
 import React, { useState, useCallback, useMemo, memo, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useShallow } from 'zustand/react/shallow'
 
 import { useAppStore, type TabId } from '@/store/useAppStore'
-// Perbaikan 1: Hanya impor useHaptic, useReducedMotion didefinisikan secara lokal untuk keamanan build
 import { useHaptic } from '@/hooks'
 import { viewTransition, cn } from '@/lib/utils'
 import { tokens } from '@/lib/tokens'
 
-/* --------------------------------------------------------------------------
-   LOCAL HOOK: Reduced Motion
-   -------------------------------------------------------------------------- */
 function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false)
   useEffect(() => {
@@ -36,9 +26,6 @@ function useReducedMotion(): boolean {
   return reduced
 }
 
-/* --------------------------------------------------------------------------
-   TABS DATA
-   -------------------------------------------------------------------------- */
 interface NavTab {
   id: TabId
   label: string
