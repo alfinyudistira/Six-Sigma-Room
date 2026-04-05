@@ -5,11 +5,10 @@
  * ============================================================================
  */
 
-import { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import {
   ComposedChart,
-  Bar,
   Line,
   XAxis,
   YAxis,
@@ -25,14 +24,13 @@ import {
   addSPCPoint,
   deleteSPCPoint,
   setSPC,
-  spcSelectors, // 🔥 PERBAIKAN 1: Import Selector EntityState
+  spcSelectors,
   type SPCPoint,
 } from '@/store/moduleSlice'
 
 import { useConfigStore } from '@/lib/config'
 import { calcControlLimits, detectWECO } from '@/lib/sigma'
 import { feedback } from '@/lib/feedback'
-// 🔥 PERBAIKAN 2: Barrel import
 import { useHaptic, useModulePersist } from '@/hooks'
 
 import { Section, Panel, KPICard } from '@/components/charts'
@@ -42,8 +40,7 @@ import { Badge } from '@/components/ui/Badge'
 import { HelpTooltip } from '@/components/ui/Tooltip'
 import { ConfirmButton } from '@/components/ui/Confirm'
 import { tokens as T } from '@/lib/tokens'
-import { downloadCSV } from '@/lib/utils'
-import { cn } from '@/lib/utils'
+import { downloadCSV, cn } from '@/lib/utils'
 
 /* --------------------------------------------------------------------------
    CONSTANTS & FORMATTERS
@@ -51,21 +48,16 @@ import { cn } from '@/lib/utils'
 const DEMO_POINTS: SPCPoint[] = Array.from({ length: 20 }, (_, i) => ({
   id: `demo_${i}`,
   label: `W${i + 1}`,
-  value: 48 + Math.sin(i * 0.7) * 8 + (i === 12 ? 22 : 0), // Memasukkan 1 anomali di index 12
+  value: 48 + Math.sin(i * 0.7) * 8 + (i === 12 ? 22 : 0),
   timestamp: new Date(Date.now() - (19 - i) * 7 * 86400000).toISOString(),
 }))
 
-// 🔥 PERBAIKAN 3: Native Formatter untuk keamanan Strict Mode
 const numFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 })
-const dateFormatter = new Intl.DateTimeFormat('en-US', { 
-  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-})
 
-// Style Tooltip Recharts agar senada dengan UI
 const chartTooltipStyle = {
   contentStyle: {
     background: T.panel,
-    border: `1px solid ${T.borderHi}`,
+    border: `1px solid ${T.border}`,
     borderRadius: '8px',
     fontFamily: T.mono,
     fontSize: '11px',
@@ -73,7 +65,7 @@ const chartTooltipStyle = {
     boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
   },
   labelStyle: { color: T.cyan, fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' },
-  itemStyle: { color: T.textMid, fontSize: '11px', fontWeight: 'bold' },
+  itemStyle: { color: T.text, fontSize: '11px', fontWeight: 'bold' },
 }
 
 /* --------------------------------------------------------------------------
@@ -82,8 +74,6 @@ const chartTooltipStyle = {
 export default function SPCCharts() {
   const company = useAppStore((s) => s.company)
   const dispatch = useAppDispatch()
-  
-  // 🔥 PERBAIKAN 4: Ekstrak array dengan selector yang benar
   const userPoints = useAppSelector(spcSelectors.selectAll)
   const rawState = useAppSelector((s) => s.modules.spc)
   
@@ -91,8 +81,6 @@ export default function SPCCharts() {
   const { light, medium, success } = useHaptic()
 
   const [showDemo, setShowDemo] = useState(userPoints.length === 0)
-  
-  // 🔥 PERBAIKAN 5: State aman untuk NumberInput (number | '')
   const [form, setForm] = useState<{ label: string; value: number | ''; note: string }>({
     label: '',
     value: '',
@@ -100,29 +88,24 @@ export default function SPCCharts() {
   })
 
   const points = showDemo ? DEMO_POINTS : userPoints
-  
-  // Auto save ke IndexedDB
   useModulePersist('spc_points', rawState, { debounceMs: 800 })
 
-  // ─── CALCULATIONS (Memoized) ────────────────────────────────────────────
-  const { limits, violations, chartData, mrData } = useMemo(() => {
+  // ─── CALCULATIONS ───────────────────────────────────────────────────────
+  const { limits, violations, chartData, mrData, stabilityScore } = useMemo(() => {
     const vals = points.map((p) => p.value)
+    
+    // Default fallback object
+    const defaultLimits = { mean: 0, ucl: 0, lcl: 0, mrMean: 0, mrUcl: 0, sigma: 0 }
+    
     if (vals.length < 2) {
-      return {
-        limits: { mean: 0, ucl: 0, lcl: 0, mrMean: 0, mrUcl: 0, sigma: 0 },
-        violations: [],
-        chartData: [],
-        mrData: [],
-      }
+      return { limits: defaultLimits, violations: [], chartData: [], mrData: [], stabilityScore: 100 }
     }
 
     const lim = calcControlLimits(vals)
-    const sigmaS = (lim.ucl - lim.mean) / 3 // 1 standard deviation for WECO
+    const sigmaS = Math.abs(lim.ucl - lim.mean) / 3
 
-    // Evaluasi WECO Rules berdasarkan Config
-    const weco =
-      config.weco.rule1 || config.weco.rule2 || config.weco.rule3
-        ? detectWECO(vals, lim.mean, sigmaS)
+    const weco = (config as any).weco?.rule1 || (config as any).weco?.rule2 
+        ? detectWECO(vals, lim.mean, sigmaS) 
         : []
 
     const violationSet = new Set(weco.map((v) => v.index))
@@ -133,31 +116,35 @@ export default function SPCCharts() {
       ucl: lim.ucl,
       cl: lim.mean,
       lcl: lim.lcl,
-      target: company.target,
       alarm: violationSet.has(idx) ? p.value : null,
       isViolation: violationSet.has(idx),
     }))
 
-    // Data Moving Range (Jarak Absolut antara titik N dan N-1)
     const mr = points.slice(1).map((p, idx) => ({
       name: p.label,
-      mr: Math.abs(p.value - points[idx].value),
+      mr: Math.abs(p.value - points[idx]!.value),
       mrUcl: lim.mrUcl,
       mrMean: lim.mrMean,
     }))
 
-    return { limits: lim, violations: weco, chartData: chart, mrData: mr }
-  }, [points, config.weco, company.target])
+    // Top Tier: Calculate Stability Score
+    const stablePoints = points.length - violationSet.size
+    const score = Math.round((stablePoints / points.length) * 100)
+
+    return { limits: lim, violations: weco, chartData: chart, mrData: mr, stabilityScore: score }
+  }, [points, config, company.target])
 
   const outOfControl = violations.length > 0
   const animated = config.ui.animationsEnabled
+  const animProps = animated 
+    ? { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 } }
+    : { initial: false, animate: false }
 
   // ─── ACTIONS ────────────────────────────────────────────────────────────
   const handleAddPoint = useCallback(() => {
     const val = Number(form.value)
-    if (!form.label.trim() || isNaN(val) || form.value === '') {
-      light()
-      feedback.notifyWarning('Label and valid numeric value are required')
+    if (!form.label.trim() || form.value === '' || isNaN(val)) {
+      feedback.notifyWarning('Label and value are required')
       return
     }
 
@@ -166,7 +153,7 @@ export default function SPCCharts() {
 
     dispatch(
       addSPCPoint({
-        id: `spc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id: `spc_${Date.now()}`,
         label: form.label.trim(),
         value: val,
         timestamp: new Date().toISOString(),
@@ -176,8 +163,7 @@ export default function SPCCharts() {
 
     setForm({ label: '', value: '', note: '' })
     success()
-    feedback.notifySuccess(`Point added: ${val}`)
-  }, [form, dispatch, showDemo, light, medium, success])
+  }, [form, dispatch, showDemo, medium, success])
 
   const handleResetDemo = useCallback(() => {
     medium()
@@ -186,14 +172,10 @@ export default function SPCCharts() {
     feedback.notifyInfo('Reset to Demo Dataset')
   }, [dispatch, medium])
 
-  const handleDelete = useCallback(
-    (id: string, label: string) => {
-      medium()
-      dispatch(deleteSPCPoint(id))
-      feedback.notifySuccess(`Deleted point: ${label}`)
-    },
-    [dispatch, medium]
-  )
+  const handleDelete = useCallback((id: string) => {
+    medium()
+    dispatch(deleteSPCPoint(id))
+  }, [dispatch, medium])
 
   const handleExport = useCallback(() => {
     light()
@@ -202,69 +184,42 @@ export default function SPCCharts() {
       Value: p.value,
       Timestamp: p.timestamp,
       Note: p.note || '',
-    }))
-    const ok = downloadCSV(exportData, 'spc-data.csv')
-    if (ok) {
-      success()
-      feedback.notifySuccess('Data exported to CSV')
-    } else {
-      feedback.notifyError('Failed to export data')
-    }
-  }, [points, success, light])
+    })) as any[]
+    downloadCSV(exportData, 'spc-data.csv')
+    feedback.notifySuccess('Data exported')
+  }, [points, light])
 
-  // ─── RENDER ─────────────────────────────────────────────────────────────
   return (
-    <motion.div
-      initial={animated ? { opacity: 0, y: 10 } : undefined}
-      animate={animated ? { opacity: 1, y: 0 } : undefined}
-      transition={{ duration: 0.3 }}
-      className="flex flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
-      {/* HEADER */}
+    <motion.div {...animProps} className="flex flex-col gap-6 p-4 md:p-6 lg:p-8">
       <Section
         subtitle="Module 6 — Statistical Control"
         title={`I-MR Chart — ${company.processName || 'Process Control'}`}
         action={
           <div className="flex items-center gap-3">
             {showDemo && <Badge label="DEMO" color="yellow" size="sm" glow />}
-            {outOfControl && <Badge label={`${violations.length} ALERTS`} color="red" glow size="sm" />}
-            <Button size="sm" variant="outline" onClick={handleExport} icon="↓">CSV</Button>
+            <Button size="sm" variant="outline" onClick={handleExport}>CSV</Button>
             {!showDemo && (
-              <Button size="sm" variant="danger" onClick={handleResetDemo} icon="↺">Reset</Button>
+              <Button size="sm" variant="danger" onClick={handleResetDemo}>Reset</Button>
             )}
           </div>
         }
       />
 
-      {/* KPI CARDS */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-        <KPICard label="Data Points" value={points.length} color={T.cyan} />
-        <KPICard label="Process Mean" value={numFormatter.format(limits.mean)} color={T.green} />
-        <KPICard label="Upper Control Limit" value={numFormatter.format(limits.ucl)} color={T.red} />
-        <KPICard label="Lower Control Limit" value={numFormatter.format(limits.lcl)} color={T.yellow} />
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+        <KPICard label="Points" value={points.length} color={T.cyan} />
+        <KPICard label="Mean" value={numFormatter.format(limits.mean)} color={T.green} />
+        <KPICard label="UCL" value={numFormatter.format(limits.ucl)} color={T.red} />
+        <KPICard label="Stability" value={`${stabilityScore}%`} color={stabilityScore > 90 ? T.green : T.red} />
         <KPICard
-          label="WECO Status"
-          value={outOfControl ? `${violations.length} Violations` : 'In Control'}
+          label="Status"
+          value={outOfControl ? 'Unstable' : 'Stable'}
           color={outOfControl ? T.red : T.green}
-          icon={outOfControl ? '⚠' : '✓'}
         />
       </div>
 
-      {/* CHARTS AREA */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-        {/* I-Chart (Individual) */}
-        <Panel className="xl:col-span-12">
-          <Section
-            subtitle="I-Chart"
-            title="Individual Values"
-            color={T.cyan}
-            action={
-              <HelpTooltip
-                title="I-Chart"
-                description="Monitors process center over time. Red dashed = Limits (UCL/LCL). Green = Mean. Red dots = Out of Control (WECO)."
-              />
-            }
-          />
+      <div className="grid grid-cols-1 gap-6">
+        <Panel>
+          <Section subtitle="I-Chart" title="Individual Values" color={T.cyan} />
           <div className="mt-4 h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -273,25 +228,20 @@ export default function SPCCharts() {
                 <YAxis tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} />
                 <Tooltip {...chartTooltipStyle} />
                 
-                <ReferenceLine y={limits.ucl} stroke={T.red} strokeDasharray="4 4" label={{ value: 'UCL', fill: T.red, fontSize: 10, position: 'insideTopLeft' }} />
-                <ReferenceLine y={limits.mean} stroke={T.green} label={{ value: 'MEAN', fill: T.green, fontSize: 10, position: 'insideTopLeft' }} />
-                <ReferenceLine y={limits.lcl} stroke={T.red} strokeDasharray="4 4" label={{ value: 'LCL', fill: T.red, fontSize: 10, position: 'insideBottomLeft' }} />
+                <ReferenceLine y={limits.ucl} stroke={T.red} strokeDasharray="4 4" />
+                <ReferenceLine y={limits.mean} stroke={T.green} />
+                <ReferenceLine y={limits.lcl} stroke={T.red} strokeDasharray="4 4" />
                 
-                {company.target > 0 && (
-                  <ReferenceLine y={company.target} stroke={T.cyan} strokeDasharray="2 2" label={{ value: 'TARGET', fill: T.cyan, fontSize: 10, position: 'insideTopRight' }} />
-                )}
-
                 <Line
                   type="monotone"
                   dataKey="value"
-                  name="Value"
                   stroke={T.cyan}
                   strokeWidth={2}
                   isAnimationActive={animated}
-                  // 🔥 PERBAIKAN 6: Typing aman untuk custom dot Recharts
+                  // Perbaikan: Dot typing yang aman untuk Recharts
                   dot={(props: any) => {
                     const { cx, cy, payload } = props
-                    if (isNaN(cx) || isNaN(cy)) return null
+                    if (typeof cx !== 'number' || typeof cy !== 'number') return <path />
                     return (
                       <circle
                         cx={cx}
@@ -300,41 +250,27 @@ export default function SPCCharts() {
                         fill={payload.isViolation ? T.red : T.bg}
                         stroke={payload.isViolation ? T.red : T.cyan}
                         strokeWidth={2}
-                        className={payload.isViolation ? "animate-pulse" : ""}
                       />
                     )
                   }}
-                  activeDot={{ r: 6, stroke: T.bg, strokeWidth: 2 }}
                 />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
         </Panel>
 
-        {/* MR-Chart (Moving Range) */}
         {mrData.length > 0 && (
-          <Panel className="xl:col-span-12 border-t-4" style={{ borderColor: T.orange }}>
+          <Panel>
             <Section subtitle="MR-Chart" title="Moving Range" color={T.orange} />
-            <div className="mt-4 h-[200px] w-full">
+            <div className="mt-4 h-[180px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={mrData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
                   <XAxis dataKey="name" tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} />
                   <YAxis tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} />
                   <Tooltip {...chartTooltipStyle} />
-                  
-                  <ReferenceLine y={limits.mrUcl} stroke={T.red} strokeDasharray="4 4" label={{ value: 'MR UCL', fill: T.red, fontSize: 10, position: 'insideTopLeft' }} />
-                  <ReferenceLine y={limits.mrMean} stroke={T.green} label={{ value: 'MR MEAN', fill: T.green, fontSize: 10, position: 'insideTopLeft' }} />
-                  
-                  <Line 
-                    type="stepAfter" 
-                    dataKey="mr" 
-                    name="Moving Range" 
-                    stroke={T.orange} 
-                    strokeWidth={2} 
-                    dot={{ r: 3, fill: T.bg, stroke: T.orange, strokeWidth: 2 }} 
-                    isAnimationActive={animated}
-                  />
+                  <ReferenceLine y={limits.mrUcl} stroke={T.red} strokeDasharray="4 4" />
+                  <Line type="stepAfter" dataKey="mr" stroke={T.orange} strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -342,90 +278,66 @@ export default function SPCCharts() {
         )}
       </div>
 
-      {/* DATA ENTRY & WECO LOGS */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* WECO Violations Alert Box */}
         {violations.length > 0 && (
           <Panel className="lg:col-span-4 border-red/40 bg-red/5">
-            <Section subtitle="Out of Control" title="WECO Violations" color={T.red} />
-            <div className="mt-2 flex flex-col gap-3">
+            <Section title="Violations" color={T.red} />
+            <div className="mt-2 flex flex-col gap-2">
               {violations.map((v, idx) => (
-                <div key={idx} className="flex flex-col gap-1 rounded-lg border border-red/20 bg-bg p-3 shadow-sm">
-                  <div className="flex items-center gap-2 font-mono text-xs font-bold" style={{ color: T.red }}>
-                    <span className="animate-pulse">⚠</span> RULE {v.rule}
-                  </div>
-                  <div className="font-mono text-[10px] text-ink-dim">
-                    <strong className="text-ink">Point {v.index + 1}:</strong> {v.description}
-                  </div>
+                <div key={idx} className="text-[10px] font-mono p-2 border border-red/20 rounded bg-bg">
+                  <span className="text-red font-bold">RULE {v.rule}:</span> {v.description} (Point {v.index + 1})
                 </div>
               ))}
             </div>
           </Panel>
         )}
 
-        {/* Add Point Form */}
         <Panel className={violations.length > 0 ? "lg:col-span-8" : "lg:col-span-12"}>
-          <Section subtitle="Data Entry" title="Add Measurement" />
+          <Section title="Add Measurement" />
           <div className="mt-2 flex flex-wrap items-end gap-4">
             <div className="flex-1 min-w-[120px]">
               <Input
-                label="Sample Label"
+                label="Label"
                 value={form.label}
-                onChange={(e) => setForm({ ...form, label: e.target.value })}
-                placeholder="e.g., Batch 42"
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, label: e.target.value })}
               />
             </div>
             <div className="w-32">
               <NumberInput
                 label="Value"
                 value={form.value}
-                onChange={(e) => setForm({ ...form, value: e.target.value === '' ? '' : Number(e.target.value) })}
-                placeholder="Measurement"
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAddPoint() }}
+                onChange={(e: any) => setForm({ ...form, value: e.target.value === '' ? '' : Number(e.target.value) })}
               />
             </div>
-            <div className="flex-1 min-w-[150px]">
+            <div className="flex-1">
               <Input
-                label="Note (Optional)"
+                label="Note"
                 value={form.note}
-                onChange={(e) => setForm({ ...form, note: e.target.value })}
-                placeholder="Special cause note..."
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAddPoint() }}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, note: e.target.value })}
               />
             </div>
-            <Button onClick={handleAddPoint} variant="primary" haptic="medium" className="mb-[2px]">
-              + Add Point
-            </Button>
+            <Button onClick={handleAddPoint} variant="primary">+ Add</Button>
           </div>
 
-          {/* Data Table */}
           {points.length > 0 && (
-            <div className="mt-8 overflow-x-auto rounded-lg border border-border">
-              <table className="w-full text-left font-mono text-xs">
-                <thead className="bg-surface text-ink-dim border-b border-border">
+            <div className="mt-6 overflow-x-auto border border-border rounded-lg">
+              <table className="w-full text-left font-mono text-[10px]">
+                <thead className="bg-surface border-b border-border text-ink-dim uppercase">
                   <tr>
-                    <th className="p-3 font-semibold uppercase tracking-wider">#</th>
-                    <th className="p-3 font-semibold uppercase tracking-wider">Label</th>
-                    <th className="p-3 font-semibold uppercase tracking-wider">Value</th>
-                    <th className="p-3 font-semibold uppercase tracking-wider">Note</th>
-                    <th className="p-3 font-semibold uppercase tracking-wider text-right">Action</th>
+                    <th className="p-2">#</th>
+                    <th className="p-2">Label</th>
+                    <th className="p-2">Value</th>
+                    <th className="p-2 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
-                  {points.map((p, index) => (
-                    <tr key={p.id} className="hover:bg-white/5 transition-colors">
-                      <td className="p-3 text-ink-dim">{index + 1}</td>
-                      <td className="p-3 font-bold text-ink">{p.label}</td>
-                      <td className="p-3 font-bold" style={{ color: T.cyan }}>{p.value}</td>
-                      <td className="p-3 text-ink-dim">{p.note || '—'}</td>
-                      <td className="p-3 text-right">
-                        <ConfirmButton
-                          variant="danger"
-                          label="✕"
-                          size="xs"
-                          message="Delete?"
-                          onConfirm={() => handleDelete(p.id, p.label)}
-                        />
+                  {points.map((p, i) => (
+                    <tr key={p.id} className="hover:bg-white/5">
+                      <td className="p-2 text-ink-dim">{i + 1}</td>
+                      <td className="p-2 font-bold">{p.label}</td>
+                      <td className="p-2" style={{ color: T.cyan }}>{p.value}</td>
+                      <td className="p-2 text-right">
+                        <ConfirmButton label="✕" variant="danger" size="xs" onConfirm={() => handleDelete(p.id)} />
                       </td>
                     </tr>
                   ))}
