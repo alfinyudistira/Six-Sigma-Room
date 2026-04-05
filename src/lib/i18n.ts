@@ -38,14 +38,11 @@ export function detectLocale(): SupportedLocale {
   const browser = (typeof navigator !== 'undefined' && (navigator.language || navigator.languages?.[0])) || DEFAULT_LOCALE
   if (browser && browser in LOCALE_META) return browser as SupportedLocale
 
-  const prefix = browser.split('-')[0]
+  const prefix = browser.split('-')[0]??
   const match = Object.keys(LOCALE_META).find((l) => l.startsWith(prefix)) as SupportedLocale | undefined
   return match ?? DEFAULT_LOCALE
 }
 
-/**
- * Ambil locale yang tersimpan (async, untuk hydration awal).
- */
 export async function getStoredLocale(): Promise<SupportedLocale | null> {
   try {
     return (await retrieve<SupportedLocale>(STORAGE_KEY)) ?? null
@@ -54,16 +51,12 @@ export async function getStoredLocale(): Promise<SupportedLocale | null> {
   }
 }
 
-/**
- * Set locale dan simpan ke storage (async), lalu notify subscribers.
- */
 export async function setLocale(locale: SupportedLocale): Promise<void> {
   if (locale === currentLocale) return
 
   try {
     await persist<SupportedLocale>(STORAGE_KEY, locale)
   } catch {
-    /* fallback ke localStorage */
     try {
       localStorage.setItem(STORAGE_KEY, locale)
     } catch {
@@ -75,25 +68,15 @@ export async function setLocale(locale: SupportedLocale): Promise<void> {
   notifyLocaleChange(locale)
 }
 
-/**
- * Sinkronkan locale dari luar (misal setelah hydrate dari IndexedDB).
- */
 export function setLocaleSync(locale: SupportedLocale): void {
   if (locale === currentLocale) return
   currentLocale = locale
   notifyLocaleChange(locale)
 }
 
-/**
- * Dapatkan locale yang sedang aktif (synchronous).
- */
 export function getLocale(): SupportedLocale {
   return currentLocale
 }
-
-/* --------------------------------------------------------------------------
-   LOCALE CHANGE SUBSCRIPTION (dari A)
-   -------------------------------------------------------------------------- */
 
 type LocaleListener = (locale: SupportedLocale) => void
 const localeListeners = new Set<LocaleListener>()
@@ -112,10 +95,6 @@ export function subscribeLocale(listener: LocaleListener): () => void {
   localeListeners.add(listener)
   return () => localeListeners.delete(listener)
 }
-
-/* --------------------------------------------------------------------------
-   FORMATTER CACHE (dari B, dioptimalkan)
-   -------------------------------------------------------------------------- */
 
 const numberFormatterCache = new Map<string, Intl.NumberFormat>()
 const dateFormatterCache = new Map<string, Intl.DateTimeFormat>()
@@ -144,18 +123,10 @@ function getRelativeTimeFormatter(locale: SupportedLocale): Intl.RelativeTimeFor
   return rtfCache.get(locale)!
 }
 
-/* --------------------------------------------------------------------------
-   CURRENCY HELPER
-   -------------------------------------------------------------------------- */
-
 export function getCurrency(locale?: SupportedLocale): SupportedCurrency {
   const loc = locale ?? currentLocale
   return LOCALE_META[loc].defaultCurrency
 }
-
-/* --------------------------------------------------------------------------
-   FORMATTER FUNCTIONS (menggunakan cache dan locale saat ini)
-   -------------------------------------------------------------------------- */
 
 export function fmtNumber(n: number, decimals: number = 0, locale?: SupportedLocale): string {
   const loc = locale ?? currentLocale
@@ -177,7 +148,6 @@ export function fmtCurrency(n: number, compact: boolean = true, locale?: Support
     }).format(n)
   }
 
-  // Compact currency (K, M, B, T)
   return getNumberFormatter(loc, {
     style: 'currency',
     currency,
@@ -234,10 +204,6 @@ export function fmtCompact(n: number, locale?: SupportedLocale): string {
   const loc = locale ?? currentLocale
   return getNumberFormatter(loc, { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 }
-
-/* --------------------------------------------------------------------------
-   TRANSLATIONS (dari A, diperluas dengan parameter support dari B)
-   -------------------------------------------------------------------------- */
 
 export type TranslationKey =
   | 'nav.overview' | 'nav.sigma' | 'nav.dmaic' | 'nav.fmea' | 'nav.copq'
