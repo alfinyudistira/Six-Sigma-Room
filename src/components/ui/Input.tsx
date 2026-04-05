@@ -10,11 +10,12 @@ import {
 import { cn } from '@/lib/utils'
 import { tokens } from '@/lib/tokens'
 
+// Perbaikan: Menambahkan '| undefined' secara eksplisit untuk mendukung exactOptionalPropertyTypes
 interface BaseFieldProps {
-  label?: string
-  error?: string
-  hint?: string
-  required?: boolean
+  label?: string | undefined
+  error?: string | undefined
+  hint?: string | undefined
+  required?: boolean | undefined
 }
 
 const getFieldId = (id?: string, label?: string) => 
@@ -85,7 +86,7 @@ export interface SelectProps
   extends SelectHTMLAttributes<HTMLSelectElement>,
     BaseFieldProps {
   options: Array<{ value: string; label: string } | string>
-  placeholder?: string
+  placeholder?: string | undefined
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
@@ -157,7 +158,7 @@ Select.displayName = 'Select'
 export interface SliderProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>,
     BaseFieldProps {
-  valueLabel?: string | ReactNode
+  valueLabel?: string | ReactNode | undefined
 }
 
 export const Slider = forwardRef<HTMLInputElement, SliderProps>(
@@ -202,7 +203,7 @@ Slider.displayName = 'Slider'
 export interface CheckboxProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>,
     BaseFieldProps {
-  description?: string
+  description?: string | undefined
 }
 
 export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
@@ -242,7 +243,14 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
 )
 Checkbox.displayName = 'Checkbox'
 
-// Exporting NumberInput & Textarea (Same logic pattern)
+/* --------------------------------------------------------------------------
+   TEXTAREA
+   -------------------------------------------------------------------------- */
+// Perbaikan: Mendefinisikan interface yang sebelumnya hilang
+export interface TextareaProps
+  extends TextareaHTMLAttributes<HTMLTextAreaElement>,
+    BaseFieldProps {}
+
 export const NumberInput = forwardRef<HTMLInputElement, InputProps>((props, ref) => <Input ref={ref} type="number" {...props} />)
 NumberInput.displayName = 'NumberInput'
 
