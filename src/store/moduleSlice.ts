@@ -7,6 +7,9 @@ import {
 } from '@reduxjs/toolkit'
 import { persist, retrieve } from '@/lib/storage'
 
+/* --------------------------------------------------------------------------
+   TYPES
+   -------------------------------------------------------------------------- */
 export interface FMEARow {
   id: string; process: string; failureMode: string; effect: string;
   cause: string; severity: number; occurrence: number; detection: number;
@@ -34,25 +37,14 @@ export interface RootCauseNode {
   id: string; text: string; parentId: string | null; category?: string; verified: boolean;
 }
 
-const fmeaAdapter = createEntityAdapter<FMEARow>({
-  selectId: (item) => item.id
-})
-
-const dmaicAdapter = createEntityAdapter<DMAICTask>({
-  selectId: (item) => item.id
-})
-
-const spcAdapter = createEntityAdapter<SPCPoint>({
-  selectId: (item) => item.id
-})
-
-const paretoAdapter = createEntityAdapter<ParetoItem>({
-  selectId: (item) => item.id
-})
-
-const rootCauseAdapter = createEntityAdapter<RootCauseNode>({
-  selectId: (item) => item.id
-})
+/* --------------------------------------------------------------------------
+   ADAPTERS (Simplified: remove selectId because 'id' is default)
+   -------------------------------------------------------------------------- */
+const fmeaAdapter = createEntityAdapter<FMEARow>()
+const dmaicAdapter = createEntityAdapter<DMAICTask>()
+const spcAdapter = createEntityAdapter<SPCPoint>()
+const paretoAdapter = createEntityAdapter<ParetoItem>()
+const rootCauseAdapter = createEntityAdapter<RootCauseNode>()
 
 export interface ModuleState {
   fmea: ReturnType<typeof fmeaAdapter.getInitialState>
@@ -72,9 +64,6 @@ const initialState: ModuleState = {
   hydrated: false,
 }
 
-/* --------------------------------------------------------------------------
-   STORAGE KEYS
-   -------------------------------------------------------------------------- */
 const STORAGE_KEYS = {
   fmea: 'fmea_rows',
   dmaic: 'dmaic_tasks',
@@ -103,7 +92,7 @@ export const loadModuleData = createAsyncThunk(
           }
         }),
       )
-      return Object.fromEntries(entries) as Partial<Record<ModuleKey, unknown>>
+      return Object.fromEntries(entries) as Partial<Record<ModuleKey, any>>
     } catch (err) {
       return rejectWithValue((err as Error).message)
     }
@@ -114,9 +103,10 @@ export const saveModuleData = createAsyncThunk(
   'modules/save',
   async (key: ModuleKey, { getState, rejectWithValue }) => {
     try {
-      const state = (getState() as { modules: ModuleState }).modules
+      const state = (getState() as any).modules as ModuleState
       const slice = state[key]
-      const items = slice.ids.map((id) => slice.entities[id])
+      // Perbaikan: Ambil semua entitas secara aman
+      const items = Object.values(slice.entities).filter(Boolean)
       await persist(STORAGE_KEYS[key], items)
       return key
     } catch (err) {
@@ -155,7 +145,7 @@ const moduleSlice = createSlice({
     updateRootCauseNode: (state, action: PayloadAction<RootCauseNode>) => { rootCauseAdapter.upsertOne(state.rootCause, action.payload) },
     deleteRootCauseNode: (state, action: PayloadAction<string>) => { rootCauseAdapter.removeOne(state.rootCause, action.payload) },
     toggleNodeVerified: (state, action: PayloadAction<string>) => {
-      const node = state.rootCause.entities[action.payload]
+      const node = (state.rootCause.entities as any)[action.payload]
       if (node) node.verified = !node.verified
     },
 
@@ -163,16 +153,13 @@ const moduleSlice = createSlice({
     clearAllModules: () => initialState,
   },
   extraReducers: (builder) => {
-    // 🔥 Tangkap action 'app/reset' dari store utama
-    builder.addCase('app/reset', () => initialState)
-    
     builder.addCase(loadModuleData.fulfilled, (state, action) => {
       const p = action.payload
-      if (p.fmea) fmeaAdapter.setAll(state.fmea, p.fmea as FMEARow[])
-      if (p.dmaic) dmaicAdapter.setAll(state.dmaic, p.dmaic as DMAICTask[])
-      if (p.spc) spcAdapter.setAll(state.spc, p.spc as SPCPoint[])
-      if (p.pareto) paretoAdapter.setAll(state.pareto, p.pareto as ParetoItem[])
-      if (p.rootCause) rootCauseAdapter.setAll(state.rootCause, p.rootCause as RootCauseNode[])
+      if (p.fmea) fmeaAdapter.setAll(state.fmea, p.fmea)
+      if (p.dmaic) dmaicAdapter.setAll(state.dmaic, p.dmaic)
+      if (p.spc) spcAdapter.setAll(state.spc, p.spc)
+      if (p.pareto) paretoAdapter.setAll(state.pareto, p.pareto)
+      if (p.rootCause) rootCauseAdapter.setAll(state.rootCause, p.rootCause)
       state.hydrated = true
     })
   },
@@ -190,12 +177,10 @@ export const {
 export default moduleSlice.reducer
 
 /* --------------------------------------------------------------------------
-   SELECTORS (Diperbaiki agar Type-Safe dan Tidak Crash)
+   SELECTORS
    -------------------------------------------------------------------------- */
-export const selectModulesState = (state: { modules: ModuleState }) => state.modules
-
-export const fmeaSelectors = fmeaAdapter.getSelectors((state: { modules: ModuleState }) => state.modules.fmea)
-export const dmaicSelectors = dmaicAdapter.getSelectors((state: { modules: ModuleState }) => state.modules.dmaic)
-export const spcSelectors = spcAdapter.getSelectors((state: { modules: ModuleState }) => state.modules.spc)
-export const paretoSelectors = paretoAdapter.getSelectors((state: { modules: ModuleState }) => state.modules.pareto)
-export const rootCauseSelectors = rootCauseAdapter.getSelectors((state: { modules: ModuleState }) => state.modules.rootCause)
+export const fmeaSelectors = fmeaAdapter.getSelectors((state: any) => state.modules.fmea)
+export const dmaicSelectors = dmaicAdapter.getSelectors((state: any) => state.modules.dmaic)
+export const spcSelectors = spcAdapter.getSelectors((state: any) => state.modules.spc)
+export const paretoSelectors = paretoAdapter.getSelectors((state: any) => state.modules.pareto)
+export const rootCauseSelectors = rootCauseAdapter.getSelectors((state: any) => state.modules.rootCause)
