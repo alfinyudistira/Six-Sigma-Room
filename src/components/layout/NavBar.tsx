@@ -1,13 +1,24 @@
 // src/components/layout/NavBar.tsx
+/**
+ * ============================================================================
+ * NAVIGATION BAR — DESKTOP + MOBILE, ACCESSIBLE, PERFORMANT
+ * ============================================================================
+ */
 
 import { useState, useCallback, useMemo, memo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useAppStore, type TabId } from '@/store/useAppStore'
-import { useHaptic } from '@/hooks/useHaptic'
-import { viewTransition } from '@/lib/utils'
-import { cn } from '@/lib/utils'
+import { useShallow } from 'zustand/react/shallow'
 
+import { useAppStore, type TabId } from '@/store/useAppStore'
+// 🔥 PERBAIKAN 1: Import terpusat dari barrel
+import { useHaptic, useReducedMotion } from '@/hooks'
+import { viewTransition, cn } from '@/lib/utils'
+import { tokens } from '@/lib/tokens'
+
+/* --------------------------------------------------------------------------
+   TABS DATA
+   -------------------------------------------------------------------------- */
 interface NavTab {
   id: TabId
   label: string
@@ -17,51 +28,58 @@ interface NavTab {
 }
 
 const TABS: readonly NavTab[] = [
-  { id: 'overview',   label: 'Overview',      shortLabel: 'OVR',  icon: '◈', key: '1' },
-  { id: 'sigma',      label: 'Sigma Calc',    shortLabel: 'SIG',  icon: 'σ', key: '2' },
-  { id: 'dmaic',      label: 'DMAIC',         shortLabel: 'DMC',  icon: '⊕', key: '3' },
-  { id: 'fmea',       label: 'FMEA',          shortLabel: 'FMA',  icon: '⚠', key: '4' },
-  { id: 'copq',       label: 'COPQ',          shortLabel: 'CPQ',  icon: '$', key: '5' },
-  { id: 'spc',        label: 'SPC Charts',    shortLabel: 'SPC',  icon: '~', key: '6' },
-  { id: 'pareto',     label: 'Pareto',        shortLabel: 'PAR',  icon: '▌', key: '7' },
-  { id: 'rootcause',  label: 'Root Cause',    shortLabel: 'R/C',  icon: '⊸', key: '8' },
-  { id: 'triage',     label: 'AI Triage',     shortLabel: 'TRG',  icon: '◎', key: '9' },
-  { id: 'universal',  label: 'Universal',     shortLabel: 'UNI',  icon: '∞', key: '0' },
-  { id: 'ops',        label: 'Live Ops',      shortLabel: 'OPS',  icon: '⚡', key: '-' },
-  { id: 'settings',   label: 'Settings',      shortLabel: 'CFG',  icon: '⚙', key: '=' },
+  { id: 'overview',  label: 'Overview',    shortLabel: 'OVR', icon: '◈', key: '1' },
+  { id: 'sigma',     label: 'Sigma Calc',  shortLabel: 'SIG', icon: 'σ', key: '2' },
+  { id: 'dmaic',     label: 'DMAIC',       shortLabel: 'DMC', icon: '⊕', key: '3' },
+  { id: 'fmea',      label: 'FMEA',        shortLabel: 'FMA', icon: '⚠', key: '4' },
+  { id: 'copq',      label: 'COPQ',        shortLabel: 'CPQ', icon: '$', key: '5' },
+  { id: 'spc',       label: 'SPC Charts',  shortLabel: 'SPC', icon: '~', key: '6' },
+  { id: 'pareto',    label: 'Pareto',      shortLabel: 'PAR', icon: '▌', key: '7' },
+  { id: 'rootcause', label: 'Root Cause',  shortLabel: 'R/C', icon: '⊸', key: '8' },
+  { id: 'triage',    label: 'AI Triage',   shortLabel: 'TRG', icon: '◎', key: '9' },
+  { id: 'universal', label: 'Universal',   shortLabel: 'UNI', icon: '∞', key: '0' },
+  { id: 'ops',       label: 'Live Ops',    shortLabel: 'OPS', icon: '⚡', key: '-' },
+  { id: 'settings',  label: 'Settings',    shortLabel: 'CFG', icon: '⚙', key: '=' },
 ] as const
 
+/* --------------------------------------------------------------------------
+   PROPS
+   -------------------------------------------------------------------------- */
 export interface NavBarProps {
   onItemHover?: (tabId: TabId) => void
 }
 
+/* --------------------------------------------------------------------------
+   NAVBAR COMPONENT
+   -------------------------------------------------------------------------- */
 export const NavBar = memo(function NavBar({ onItemHover }: NavBarProps) {
-  const { activeTab, setActiveTab } = useAppStore()
+  // 🔥 PERBAIKAN 2: Gunakan useShallow untuk performa render
+  const { activeTab, setActiveTab } = useAppStore(
+    useShallow((s) => ({
+      activeTab: s.activeTab,
+      setActiveTab: s.setActiveTab,
+    }))
+  )
+
   const [, setSearchParams] = useSearchParams()
   const [mobileOpen, setMobileOpen] = useState(false)
   const { light: hapticLight } = useHaptic()
+  const reducedMotion = useReducedMotion()
 
   const navigate = useCallback(
     (tabId: TabId) => {
+      if (tabId === activeTab) return
       hapticLight()
+      // Menggunakan View Transition API untuk transisi antar halaman yang mulus
       void viewTransition(() => {
         setActiveTab(tabId)
         setSearchParams({ tab: tabId }, { replace: true })
         setMobileOpen(false)
       })
     },
-    [hapticLight, setActiveTab, setSearchParams]
+    [activeTab, hapticLight, setActiveTab, setSearchParams]
   )
 
-  // Handle hover (for prefetch)
-  const handleHover = useCallback(
-    (tabId: TabId) => {
-      onItemHover?.(tabId)
-    },
-    [onItemHover]
-  )
-
-  // Find current tab (memoized)
   const currentTab = useMemo(
     () => TABS.find((t) => t.id === activeTab) ?? TABS[0],
     [activeTab]
@@ -73,8 +91,8 @@ export const NavBar = memo(function NavBar({ onItemHover }: NavBarProps) {
       <nav
         role="tablist"
         aria-label="Module navigation"
-        className="hidden md:flex shrink-0 gap-0 overflow-x-auto border-b border-border bg-bg px-4 scrollbar-none"
-        style={{ scrollbarWidth: 'none' }}
+        className="hidden shrink-0 border-b border-border bg-bg px-4 overflow-x-auto scrollbar-none md:flex"
+        style={{ borderColor: tokens.border, backgroundColor: tokens.bg }}
       >
         {TABS.map((tab) => {
           const isActive = activeTab === tab.id
@@ -83,26 +101,36 @@ export const NavBar = memo(function NavBar({ onItemHover }: NavBarProps) {
               key={tab.id}
               role="tab"
               aria-selected={isActive}
-              aria-controls={`panel-${tab.id}`}
               title={`${tab.label} [${tab.key}]`}
               onClick={() => navigate(tab.id)}
-              onMouseEnter={() => handleHover(tab.id)}
+              onMouseEnter={() => onItemHover?.(tab.id)}
               className={cn(
-                'group flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 font-mono text-[0.6rem] font-medium uppercase tracking-wide transition-all',
-                isActive
-                  ? 'border-cyan text-cyan'
-                  : 'border-transparent text-ink-dim hover:text-ink-mid'
+                'relative flex shrink-0 items-center gap-2 px-4 py-3 text-[0.65rem] font-mono font-bold uppercase tracking-widest transition-all duration-200',
+                isActive ? 'text-cyan' : 'text-ink-dim hover:text-ink hover:bg-white/5'
               )}
+              style={{ color: isActive ? tokens.cyan : tokens.textDim }}
             >
-              <span className={cn('text-sm', isActive ? 'opacity-100' : 'opacity-60')}>
+              {/* Active Indicator Bar */}
+              {isActive && (
+                <motion.div
+                  layoutId="nav-indicator"
+                  className="absolute bottom-0 left-0 right-0 h-0.5"
+                  style={{ backgroundColor: tokens.cyan }}
+                  transition={reducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 350, damping: 30 }}
+                />
+              )}
+
+              <span className={cn('text-base', isActive ? 'opacity-100' : 'opacity-50')}>
                 {tab.icon}
               </span>
-              <span className="hidden sm:inline">{tab.label}</span>
-              <span className="inline sm:hidden">{tab.shortLabel}</span>
+              <span className="hidden lg:inline">{tab.label}</span>
+              <span className="inline lg:hidden">{tab.shortLabel}</span>
+
+              {/* Keyboard Hint Chip */}
               <span
                 className={cn(
-                  'ml-0.5 rounded-sm bg-border/60 px-1 text-[0.48rem] leading-tight text-ink-dim/60',
-                  isActive && 'bg-cyan/20 text-cyan'
+                  'ml-1 rounded px-1 text-[0.45rem] font-bold transition-colors',
+                  isActive ? 'bg-cyan/20 text-cyan' : 'bg-border/50 text-ink-dim/40'
                 )}
               >
                 {tab.key}
@@ -113,66 +141,51 @@ export const NavBar = memo(function NavBar({ onItemHover }: NavBarProps) {
       </nav>
 
       {/* ─── MOBILE NAVIGATION ──────────────────────────────────────────── */}
-      <div className="block shrink-0 border-b border-border bg-panel md:hidden">
-        {/* Mobile header: current tab + hamburger */}
-        <div className="flex items-center gap-3 px-4 py-2">
-          <div className="flex flex-1 items-center gap-3">
-            <span className="text-xl text-cyan">{currentTab.icon}</span>
+      <div className="block shrink-0 border-b border-border bg-panel md:hidden" style={{ borderColor: tokens.border, backgroundColor: tokens.panel }}>
+        <div className="flex items-center justify-between px-4 py-2">
+          <div className="flex items-center gap-3">
+            <span className="text-xl" style={{ color: tokens.cyan }}>{currentTab.icon}</span>
             <div>
-              <div className="font-mono text-[0.5rem] uppercase tracking-wider text-ink-dim">
-                Current Module
-              </div>
-              <div className="font-display text-sm font-bold text-ink">
-                {currentTab.label}
-              </div>
+              <div className="font-mono text-[0.5rem] uppercase opacity-50" style={{ color: tokens.textDim }}>Module</div>
+              <div className="text-sm font-bold leading-none" style={{ color: tokens.text }}>{currentTab.label}</div>
             </div>
           </div>
+
           <button
-            onClick={() => {
-              hapticLight()
-              setMobileOpen((v) => !v)
-            }}
-            aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
-            aria-expanded={mobileOpen}
+            onClick={() => { hapticLight(); setMobileOpen(!mobileOpen) }}
             className={cn(
-              'rounded-md border px-2 py-1.5 font-mono text-xs transition-colors',
-              mobileOpen
-                ? 'border-cyan bg-cyan/10 text-cyan'
-                : 'border-border text-ink-dim hover:border-cyan/50'
+              'flex items-center justify-center rounded-lg border p-2 transition-all active:scale-90',
+              mobileOpen ? 'border-cyan bg-cyan/10 text-cyan' : 'border-border text-ink-dim'
             )}
           >
-            {mobileOpen ? '✕' : '☰'}
+            <span className="text-xs font-bold font-mono">{mobileOpen ? 'CLOSE' : 'MENU'}</span>
           </button>
         </div>
 
-        {/* Mobile dropdown (grid) */}
         <AnimatePresence>
           {mobileOpen && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden border-t border-border"
+              className="overflow-hidden border-t border-border/50 bg-bg"
             >
-              <div className="grid grid-cols-3 gap-px bg-border">
+              <div className="grid grid-cols-3 gap-px bg-border/20">
                 {TABS.map((tab) => {
                   const isActive = activeTab === tab.id
                   return (
                     <button
                       key={tab.id}
                       onClick={() => navigate(tab.id)}
-                      onMouseEnter={() => handleHover(tab.id)}
-                      aria-selected={isActive}
                       className={cn(
-                        'flex flex-col items-center gap-1 py-3 text-center font-mono text-[0.6rem] uppercase transition-colors',
-                        isActive
-                          ? 'bg-cyan/10 text-cyan'
-                          : 'bg-bg text-ink-dim hover:bg-white/5'
+                        'flex flex-col items-center gap-1.5 py-4 text-center transition-all active:bg-white/10',
+                        isActive ? 'bg-cyan/10' : 'bg-panel'
                       )}
                     >
-                      <span className="text-base">{tab.icon}</span>
-                      <span>{tab.shortLabel}</span>
+                      <span className="text-xl" style={{ color: isActive ? tokens.cyan : tokens.textDim }}>{tab.icon}</span>
+                      <span className="font-mono text-[0.55rem] font-bold uppercase tracking-tighter" style={{ color: isActive ? tokens.cyan : tokens.textDim }}>
+                        {tab.shortLabel}
+                      </span>
                     </button>
                   )
                 })}
