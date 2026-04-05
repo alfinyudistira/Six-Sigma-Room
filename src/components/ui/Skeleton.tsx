@@ -1,73 +1,124 @@
 // src/components/ui/Skeleton.tsx
+
 import { cn } from '@/lib/utils'
+import { memo, type CSSProperties } from 'react'
+import { tokens } from '@/lib/tokens'
 
-interface SkeletonProps { className?: string }
+/* --------------------------------------------------------------------------
+   TYPES
+   -------------------------------------------------------------------------- */
+export interface SkeletonProps {
+  className?: string
+  variant?: 'default' | 'text' | 'circular' | 'rect'
+  width?: string | number
+  height?: string | number
+  rounded?: string
+  animate?: 'shimmer' | 'pulse' | 'none'
+  respectReducedMotion?: boolean
+}
 
-export function Skeleton({ className }: SkeletonProps) {
+/* --------------------------------------------------------------------------
+   SKELETON BASE COMPONENT
+   -------------------------------------------------------------------------- */
+export const Skeleton = memo(function Skeleton({
+  className,
+  variant = 'default',
+  width,
+  height,
+  rounded,
+  animate = 'shimmer',
+}: SkeletonProps) {
+  
+  const variantClasses = {
+    default: 'rounded',
+    text: 'rounded-md',
+    circular: 'rounded-full',
+    rect: 'rounded-lg',
+  }
+
+  const animationClasses = {
+    shimmer: cn(
+      'relative overflow-hidden before:absolute before:inset-0 before:-translate-x-full',
+      'before:animate-[shimmer_2s_infinite]',
+      'before:bg-gradient-to-r before:from-transparent before:via-white/5 before:to-transparent',
+      'motion-reduce:before:animate-none'
+    ),
+    pulse: 'animate-pulse',
+    none: '',
+  }
+
+  const style: CSSProperties = {
+    ...(width && { width: typeof width === 'number' ? `${width}px` : width }),
+    ...(height && { height: typeof height === 'number' ? `${height}px` : height }),
+    backgroundColor: tokens.surface || '#0F172A',
+  }
+
   return (
     <div
-      className={cn('animate-pulse rounded bg-surface', className)}
-      style={{ background: 'linear-gradient(90deg, #0D1520 25%, #112233 50%, #0D1520 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }}
       aria-hidden="true"
+      className={cn(
+        'bg-opacity-70',
+        rounded || variantClasses[variant],
+        animationClasses[animate],
+        className
+      )}
+      style={style}
     />
   )
-}
+})
 
 export function ModuleSkeleton() {
   return (
-    <div className="space-y-4 p-4" aria-label="Loading module..." aria-busy="true">
-      {/* Header row */}
-      <div className="flex gap-3">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-8 w-24" />
-        <Skeleton className="h-8 w-24" />
-      </div>
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="card p-4 space-y-2">
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="h-8 w-28" />
-            <Skeleton className="h-3 w-16" />
-          </div>
-        ))}
-      </div>
-      {/* Chart area */}
-      <div className="card p-4">
-        <Skeleton className="h-3 w-32 mb-4" />
-        <Skeleton className="h-48 w-full" />
-      </div>
-      {/* Table rows */}
-      <div className="card">
-        <div className="p-3 border-b border-border">
-          <Skeleton className="h-3 w-48" />
+    <div className="space-y-6 p-4 animate-in fade-in duration-500" aria-label="Loading module" aria-busy="true">
+      <div className="flex gap-4 items-center">
+        <Skeleton className="h-10 w-64" />
+        <div className="flex gap-2 ml-auto">
+           <Skeleton className="h-8 w-20" />
+           <Skeleton className="h-8 w-20" />
         </div>
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="flex gap-4 p-3 border-b border-border last:border-0">
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className="h-3 w-32" />
-            <Skeleton className="h-3 w-16" />
-            <Skeleton className="h-3 w-12" />
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="card p-4 space-y-3 border border-border/50">
+             <Skeleton variant="text" className="w-16 h-3" />
+             <Skeleton className="h-8 w-24" />
+             <Skeleton variant="text" className="w-full h-2" />
           </div>
         ))}
       </div>
 
-      <style>{`
-        @keyframes shimmer {
-          0%   { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
-        }
-      `}</style>
-    </div>
-  )
-}
-
-export function CardSkeleton() {
-  return (
-    <div className="card p-4 space-y-3" aria-hidden="true">
-      <Skeleton className="h-3 w-24" />
-      <Skeleton className="h-10 w-32" />
-      <Skeleton className="h-2 w-full" />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+           <div className="card p-4 h-64 border border-border/50">
+              <div className="flex justify-between mb-6">
+                 <Skeleton className="h-5 w-32" />
+                 <Skeleton className="h-5 w-16" />
+              </div>
+              <div className="flex items-end gap-2 h-40">
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <Skeleton key={i} className="flex-1" height={`${30 + Math.random() * 60}%`} />
+                ))}
+              </div>
+           </div>
+        </div>
+        <div className="space-y-4">
+           <div className="card p-4 h-64 border border-border/50">
+              <Skeleton variant="text" className="w-full h-4 mb-4" />
+              <div className="space-y-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                   <div key={i} className="flex gap-3">
+                      <Skeleton variant="circular" className="h-8 w-8" />
+                      <div className="flex-1 space-y-2">
+                         <Skeleton variant="text" className="w-3/4 h-2" />
+                         <Skeleton variant="text" className="w-1/2 h-2" />
+                      </div>
+                   </div>
+                ))}
+              </div>
+           </div>
+        </div>
+      </div>
     </div>
   )
 }
