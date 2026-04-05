@@ -77,13 +77,7 @@ export async function persist<T>(
   }
 }
 
-/**
- * Mengambil data dari storage (IDB dulu, fallback localStorage).
- * @param key Unique identifier
- * @returns Stored data or null if not found/expired
- */
-export async function retrieve<T>(key: string): Promise<T | null> {
-  // Try IndexedDB
+export async function retrieve<T>(key: string, _options?: { signal?: AbortSignal }): Promise<T | null> {
   try {
     const stored = await get<StoredValue<T>>(key, idbStore)
     if (!stored) throw new Error('not found')
