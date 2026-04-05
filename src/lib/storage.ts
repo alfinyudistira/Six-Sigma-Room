@@ -2,6 +2,9 @@
 
 import { get, set, del, keys, createStore } from 'idb-keyval'
 
+export type RetrieveFn = <T>(key: string, options?: { signal?: AbortSignal }) => Promise<T | null>
+export type PersistFn = <T>(key: string, value: T, ttl?: number) => Promise<void>
+
 const DB_NAME = 'sigma-war-room'
 const STORE_NAME = 'app-data'
 const PREFIX = 'ss_idb_' as const
