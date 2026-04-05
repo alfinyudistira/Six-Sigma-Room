@@ -1,4 +1,4 @@
-// src/components/ui/ErrorBoundary.tsx
+// src/components/feedback/ErrorBoundary.tsx
 import React from 'react'
 import { clearAll } from '@/lib/storage'
 
