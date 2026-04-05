@@ -1,130 +1,198 @@
 // src/components/charts/index.tsx
-// ─── Chart Component Library — consistent dark-theme wrappers ─────────────────
+
+import React, { memo, useMemo, useState, useEffect } from 'react'
 import {
-  ResponsiveContainer, LineChart, Line, BarChart, Bar, ComposedChart,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  Cell, Area, AreaChart,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  ComposedChart,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceLine,
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Cell,
+  Area,
+  AreaChart,
 } from 'recharts'
-import { tokens as T } from '@/lib/tokens'
+
+import { tokens } from '@/lib/tokens'
 import { useConfigStore } from '@/lib/config'
+import { cn } from '@/lib/utils'
 
-// ─── Shared tooltip style ─────────────────────────────────────────────────────
-export const CHART_TOOLTIP_STYLE = {
-  contentStyle: {
-    background: '#0D1520', border: `1px solid ${T.borderHi}`,
-    borderRadius: 8, fontFamily: T.mono, fontSize: '0.65rem', color: T.text,
-    boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-  },
-  labelStyle: { color: T.cyan, fontFamily: T.mono, fontSize: '0.6rem', marginBottom: 4 },
-  itemStyle:  { color: T.textMid, fontFamily: T.mono, fontSize: '0.62rem' },
+/* --------------------------------------------------------------------------
+   HOOK: CHART CONFIG (theme + animation)
+   -------------------------------------------------------------------------- */
+function useChartConfig() {
+  const { config } = useConfigStore()
+  const [prefersReduced, setPrefersReduced] = useState(false)
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    setPrefersReduced(media.matches)
+    const handler = (e: MediaQueryListEvent) => setPrefersReduced(e.matches)
+    media.addEventListener('change', handler)
+    return () => media.removeEventListener('change', handler)
+  }, [])
+
+  const animated = config.ui.animationsEnabled && !prefersReduced
+
+  return useMemo(
+    () => ({
+      animated,
+      axis: {
+        tick: {
+          fill: tokens.textDim,
+          fontFamily: tokens.font.mono,
+          fontSize: 9, // Menggunakan angka murni untuk Recharts
+        },
+        axisLine: { stroke: tokens.border },
+        tickLine: { stroke: tokens.border },
+      },
+      tooltip: {
+        contentStyle: {
+          background: tokens.panel,
+          border: `1px solid ${tokens.borderHi}`,
+          borderRadius: tokens.borderRadius.md,
+          fontFamily: tokens.font.mono,
+          fontSize: '0.65rem',
+          color: tokens.text,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          backdropFilter: 'blur(12px)',
+        },
+        labelStyle: { color: tokens.cyan, fontSize: '0.6rem' },
+        itemStyle: { color: tokens.textMid, fontSize: '0.62rem' },
+      },
+    }),
+    [animated]
+  )
 }
 
-const AXIS_STYLE = {
-  tick:  { fill: T.textDim, fontFamily: T.mono, fontSize: '0.58rem' },
-  axisLine:  { stroke: T.border },
-  tickLine:  { stroke: T.border },
-}
-
-// ─── KPI Card ────────────────────────────────────────────────────────────────
-interface KPICardProps {
+/* --------------------------------------------------------------------------
+   KPI CARD
+   -------------------------------------------------------------------------- */
+export interface KPICardProps {
   label: string
   value: React.ReactNode
   sub?: string
   color?: string
   icon?: string
-  trend?: number   // positive = up, negative = down
+  trend?: number
   onClick?: () => void
 }
 
-export function KPICard({ label, value, sub, color = T.cyan, icon, trend, onClick }: KPICardProps) {
+export const KPICard = memo(function KPICard({
+  label,
+  value,
+  sub,
+  color = tokens.cyan,
+  icon,
+  trend,
+  onClick,
+}: KPICardProps) {
+  const interactive = !!onClick
+
   return (
     <div
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
       onClick={onClick}
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      aria-label={onClick ? `${label}: ${value}. Click for details.` : undefined}
-      style={{
-        background: T.panel,
-        border: `1px solid ${T.border}`,
-        borderLeft: `3px solid ${color}`,
-        borderRadius: 10,
-        padding: '1rem 1.1rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.3rem',
-        cursor: onClick ? 'pointer' : 'default',
-        transition: 'all 0.15s',
-        position: 'relative',
-        overflow: 'hidden',
+      onKeyDown={(e) => {
+        if (interactive && (e.key === 'Enter' || e.key === ' ')) onClick?.()
       }}
-      onMouseEnter={e => { if (onClick) (e.currentTarget as HTMLDivElement).style.borderColor = color }}
-      onMouseLeave={e => { if (onClick) (e.currentTarget as HTMLDivElement).style.borderColor = T.border }}
-      onKeyDown={e => { if (onClick && (e.key === 'Enter' || e.key === ' ')) onClick() }}
+      className={cn(
+        'relative flex flex-col gap-1 rounded-xl border p-5 transition-all',
+        interactive && 'cursor-pointer hover:scale-[1.02] active:scale-95'
+      )}
+      style={{
+        background: tokens.panel,
+        borderColor: tokens.border,
+        borderLeft: `3px solid ${color}`,
+      }}
     >
-      {/* Glow bg */}
-      <div style={{ position: 'absolute', top: 0, right: 0, width: 60, height: 60, borderRadius: '50%', background: `${color}08`, filter: 'blur(20px)', pointerEvents: 'none' }} />
+      <div
+        className="pointer-events-none absolute -top-6 -right-6 h-20 w-20 rounded-full blur-2xl opacity-20"
+        style={{ background: color }}
+      />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.52rem', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+      <div className="flex items-start justify-between">
+        <span className="font-mono text-[0.55rem] font-semibold uppercase tracking-[1px]" style={{ color: tokens.textDim }}>
           {label}
         </span>
-        {icon && <span style={{ color, fontSize: '0.9rem', opacity: 0.7 }} aria-hidden="true">{icon}</span>}
+        {icon && <span className="text-xl" style={{ color }} aria-hidden="true">{icon}</span>}
       </div>
 
-      <div style={{ color, fontFamily: T.mono, fontSize: '1.5rem', fontWeight: 700, lineHeight: 1, letterSpacing: '-0.02em' }}>
+      <div className="font-mono text-2xl font-bold tracking-tighter" style={{ color }}>
         {value}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-        {sub && <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.58rem' }}>{sub}</span>}
+      <div className="flex items-center gap-3">
+        {sub && <span className="font-mono text-[10px]" style={{ color: tokens.textDim }}>{sub}</span>}
         {trend !== undefined && (
-          <span style={{ color: trend >= 0 ? T.green : T.red, fontFamily: T.mono, fontSize: '0.55rem' }}>
+          <span
+            className="font-mono text-[10px] flex items-center gap-px font-bold"
+            style={{ color: trend >= 0 ? tokens.green : tokens.red }}
+          >
             {trend >= 0 ? '▲' : '▼'} {Math.abs(trend).toFixed(1)}%
           </span>
         )}
       </div>
     </div>
   )
-}
+})
 
-// ─── Section header ───────────────────────────────────────────────────────────
-interface SectionProps {
+/* --------------------------------------------------------------------------
+   SECTION HEADER
+   -------------------------------------------------------------------------- */
+export interface SectionProps {
   title: string
   subtitle?: string
   action?: React.ReactNode
   color?: string
 }
 
-export function Section({ title, subtitle, action, color = T.cyan }: SectionProps) {
+export function Section({ title, subtitle, action, color = tokens.cyan }: SectionProps) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '1rem' }}>
+    <div className="mb-6 flex items-end justify-between px-1">
       <div>
         {subtitle && (
-          <div style={{ color, fontFamily: T.mono, fontSize: '0.52rem', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
+          <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color }}>
             {subtitle}
           </div>
         )}
-        <h2 style={{ color: T.text, fontFamily: 'Syne, sans-serif', fontSize: '1.1rem', fontWeight: 700, margin: 0, letterSpacing: '-0.01em' }}>
-          {title}
-        </h2>
+        <h2 className="font-display text-2xl font-bold tracking-tight" style={{ color: tokens.text }}>{title}</h2>
       </div>
       {action && <div>{action}</div>}
     </div>
   )
 }
 
-// ─── Panel wrapper ────────────────────────────────────────────────────────────
-export function Panel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+/* --------------------------------------------------------------------------
+   PANEL WRAPPER
+   -------------------------------------------------------------------------- */
+export function Panel({ children, className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div style={{ background: T.panel, border: `1px solid ${T.border}`, borderRadius: 12, padding: '1.25rem', ...style }}>
+    <div
+      className={cn('rounded-2xl border bg-panel p-6 shadow-sm', className)}
+      style={{ borderColor: tokens.border }}
+      {...props}
+    >
       {children}
     </div>
   )
 }
 
-// ─── Bar chart wrapper ────────────────────────────────────────────────────────
-interface SimpleBarChartProps {
+/* --------------------------------------------------------------------------
+   BAR CHART
+   -------------------------------------------------------------------------- */
+export interface SimpleBarChartProps {
   data: Record<string, unknown>[]
   xKey: string
   bars: { key: string; color: string; label?: string }[]
@@ -132,171 +200,284 @@ interface SimpleBarChartProps {
   referenceLines?: { value: number; color: string; label: string }[]
 }
 
-export function SimpleBarChart({ data, xKey, bars, height = 220, referenceLines }: SimpleBarChartProps) {
-  const { config } = useConfigStore()
-  const animated = config.ui.animationsEnabled
+export const SimpleBarChart = memo(function SimpleBarChart({
+  data,
+  xKey,
+  bars,
+  height = 240,
+  referenceLines,
+}: SimpleBarChartProps) {
+  const cfg = useChartConfig()
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-        <XAxis dataKey={xKey} {...AXIS_STYLE} />
-        <YAxis {...AXIS_STYLE} />
-        <Tooltip {...CHART_TOOLTIP_STYLE} />
-        {referenceLines?.map(rl => (
-          <ReferenceLine key={rl.label} y={rl.value} stroke={rl.color} strokeDasharray="4 4"
-            label={{ value: rl.label, fill: rl.color, fontFamily: T.mono, fontSize: '0.55rem' }} />
+      <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 10 }}>
+        <CartesianGrid stroke={tokens.border} strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey={xKey} {...cfg.axis} />
+        <YAxis {...cfg.axis} />
+        <Tooltip {...cfg.tooltip} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+
+        {referenceLines?.map((rl) => (
+          <ReferenceLine
+            key={rl.label}
+            y={rl.value}
+            stroke={rl.color}
+            strokeDasharray="4 4"
+            label={{ value: rl.label, fill: rl.color, fontSize: 10, fontFamily: tokens.font.mono }}
+          />
         ))}
-        {bars.map(b => (
-          <Bar key={b.key} dataKey={b.key} name={b.label ?? b.key} fill={b.color}
-            radius={[3, 3, 0, 0]} isAnimationActive={animated} />
+
+        {bars.map((bar) => (
+          <Bar
+            key={bar.key}
+            dataKey={bar.key}
+            name={bar.label ?? bar.key}
+            fill={bar.color}
+            radius={[4, 4, 0, 0]}
+            isAnimationActive={cfg.animated}
+          />
         ))}
       </BarChart>
     </ResponsiveContainer>
   )
-}
+})
 
-// ─── Line chart wrapper ───────────────────────────────────────────────────────
-interface SimpleLineChartProps {
+/* --------------------------------------------------------------------------
+   LINE / AREA CHART
+   -------------------------------------------------------------------------- */
+export interface SimpleLineChartProps {
   data: Record<string, unknown>[]
   xKey: string
   lines: { key: string; color: string; label?: string; dashed?: boolean }[]
+  areas?: boolean
   height?: number
   referenceLines?: { value: number; color: string; label: string }[]
-  areas?: boolean
 }
 
-export function SimpleLineChart({ data, xKey, lines, height = 220, referenceLines, areas }: SimpleLineChartProps) {
-  const { config } = useConfigStore()
-  const animated = config.ui.animationsEnabled
-  const ChartComp = areas ? AreaChart : LineChart
+export const SimpleLineChart = memo(function SimpleLineChart({
+  data,
+  xKey,
+  lines,
+  areas = false,
+  height = 240,
+  referenceLines,
+}: SimpleLineChartProps) {
+  const cfg = useChartConfig()
+  const ChartComponent = areas ? AreaChart : LineChart
+
+  const gradientIds = useMemo(() => lines.map((line) => `grad-${line.key}`), [lines])
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <ChartComp data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+      <ChartComponent data={data} margin={{ top: 10, right: 10, left: -20, bottom: 10 }}>
         <defs>
-          {lines.map(l => (
-            <linearGradient key={l.key} id={`grad-${l.key}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%"  stopColor={l.color} stopOpacity={0.15} />
-              <stop offset="95%" stopColor={l.color} stopOpacity={0} />
+          {lines.map((line, i) => (
+            <linearGradient key={line.key} id={gradientIds[i]} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={line.color} stopOpacity={0.3} />
+              <stop offset="95%" stopColor={line.color} stopOpacity={0} />
             </linearGradient>
           ))}
-          <filter id="line-glow">
-            <feGaussianBlur stdDeviation="2" result="blur" />
-            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-          </filter>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-        <XAxis dataKey={xKey} {...AXIS_STYLE} />
-        <YAxis {...AXIS_STYLE} />
-        <Tooltip {...CHART_TOOLTIP_STYLE} />
-        {referenceLines?.map(rl => (
-          <ReferenceLine key={rl.label} y={rl.value} stroke={rl.color} strokeDasharray="4 4"
-            label={{ value: rl.label, fill: rl.color, fontFamily: T.mono, fontSize: '0.55rem', position: 'insideTopRight' }} />
+
+        <CartesianGrid stroke={tokens.border} strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey={xKey} {...cfg.axis} />
+        <YAxis {...cfg.axis} />
+        <Tooltip {...cfg.tooltip} />
+
+        {referenceLines?.map((rl) => (
+          <ReferenceLine
+            key={rl.label}
+            y={rl.value}
+            stroke={rl.color}
+            strokeDasharray="4 4"
+            label={{ value: rl.label, fill: rl.color, fontSize: 10, fontFamily: tokens.font.mono }}
+          />
         ))}
-        {lines.map(l => (
-          areas
-            ? <Area key={l.key} type="monotone" dataKey={l.key} name={l.label ?? l.key}
-                stroke={l.color} strokeWidth={2} fill={`url(#grad-${l.key})`}
-                strokeDasharray={l.dashed ? '5 5' : undefined} isAnimationActive={animated} />
-            : <Line key={l.key} type="monotone" dataKey={l.key} name={l.label ?? l.key}
-                stroke={l.color} strokeWidth={2} dot={{ fill: l.color, r: 3 }}
-                strokeDasharray={l.dashed ? '5 5' : undefined} isAnimationActive={animated} />
-        ))}
-      </ChartComp>
+
+        {lines.map((line, i) =>
+          areas ? (
+            <Area
+              key={line.key}
+              type="monotone"
+              dataKey={line.key}
+              name={line.label ?? line.key}
+              stroke={line.color}
+              strokeWidth={2}
+              fill={`url(#${gradientIds[i]})`}
+              strokeDasharray={line.dashed ? '5 5' : undefined}
+              isAnimationActive={cfg.animated}
+            />
+          ) : (
+            <Line
+              key={line.key}
+              type="monotone"
+              dataKey={line.key}
+              name={line.label ?? line.key}
+              stroke={line.color}
+              strokeWidth={2}
+              dot={{ fill: line.color, r: 3, strokeWidth: 0 }}
+              activeDot={{ r: 5, stroke: tokens.bg, strokeWidth: 2 }}
+              strokeDasharray={line.dashed ? '5 5' : undefined}
+              isAnimationActive={cfg.animated}
+            />
+          )
+        )}
+      </ChartComponent>
     </ResponsiveContainer>
   )
-}
+})
 
-// ─── Radar chart ──────────────────────────────────────────────────────────────
-interface SimpleRadarChartProps {
+/* --------------------------------------------------------------------------
+   RADAR CHART
+   -------------------------------------------------------------------------- */
+export interface SimpleRadarChartProps {
   data: { subject: string; value: number; fullMark?: number }[]
   color?: string
   height?: number
 }
 
-export function SimpleRadarChart({ data, color = T.cyan, height = 240 }: SimpleRadarChartProps) {
+export const SimpleRadarChart = memo(function SimpleRadarChart({
+  data,
+  color = tokens.cyan,
+  height = 260,
+}: SimpleRadarChartProps) {
+  const cfg = useChartConfig()
+
   return (
     <ResponsiveContainer width="100%" height={height}>
       <RadarChart data={data}>
-        <PolarGrid stroke={T.border} />
-        <PolarAngleAxis dataKey="subject" tick={{ fill: T.textDim, fontFamily: T.mono, fontSize: '0.55rem' }} />
-        <PolarRadiusAxis tick={{ fill: T.textDim, fontSize: '0.5rem' }} />
-        <Radar dataKey="value" stroke={color} fill={color} fillOpacity={0.15} strokeWidth={2} />
-        <Tooltip {...CHART_TOOLTIP_STYLE} />
+        <PolarGrid stroke={tokens.border} />
+        <PolarAngleAxis
+          dataKey="subject"
+          tick={{ fill: tokens.textDim, fontFamily: tokens.font.mono, fontSize: 9 }}
+        />
+        <PolarRadiusAxis tick={{ fill: tokens.textDim, fontSize: 8 }} axisLine={false} />
+        <Radar dataKey="value" stroke={color} fill={color} fillOpacity={0.2} strokeWidth={2} />
+        <Tooltip {...cfg.tooltip} />
       </RadarChart>
     </ResponsiveContainer>
   )
+})
+
+/* --------------------------------------------------------------------------
+   GAUGE / PROGRESS RING
+   -------------------------------------------------------------------------- */
+export interface GaugeProps {
+  value: number
+  max: number
+  color: string
+  size?: number
+  label?: string
 }
 
-// ─── Gauge / progress ring ────────────────────────────────────────────────────
-interface GaugeProps { value: number; max: number; color: string; size?: number; label?: string }
-
-export function Gauge({ value, max, color, size = 80, label }: GaugeProps) {
-  const pct     = Math.min(value / max, 1)
-  const r       = (size - 10) / 2
-  const circ    = 2 * Math.PI * r
-  const offset  = circ * (1 - pct)
+export const Gauge = memo(function Gauge({
+  value, max, color, size = 88, label,
+}: GaugeProps) {
+  const percent = Math.min(Math.max(value / max, 0), 1)
+  const radius = (size - 12) / 2
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference * (1 - percent)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
-      <svg width={size} height={size} aria-label={label ? `${label}: ${value}` : undefined} role="img">
+    <div className="flex flex-col items-center gap-2">
+      <svg width={size} height={size} role="img" aria-label={label ? `${label}: ${value}` : undefined}>
         <defs>
-          <filter id="gauge-glow">
-            <feGaussianBlur stdDeviation="2" result="blur" />
+          <filter id="gauge-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="2.5" result="blur" />
             <feComposite in="SourceGraphic" in2="blur" operator="over" />
           </filter>
         </defs>
-        {/* Track */}
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={T.surface} strokeWidth={8} />
-        {/* Progress */}
+
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={tokens.border} strokeWidth={8} />
+
         <circle
-          cx={size/2} cy={size/2} r={r} fill="none"
-          stroke={color} strokeWidth={8}
-          strokeLinecap="round"
-          strokeDasharray={circ}
+          cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color} strokeWidth={8} strokeLinecap="round"
+          strokeDasharray={circumference}
           strokeDashoffset={offset}
-          transform={`rotate(-90 ${size/2} ${size/2})`}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
           filter="url(#gauge-glow)"
           style={{ transition: 'stroke-dashoffset 1s ease-out' }}
         />
-        <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="middle"
-          fill={color} fontFamily={T.mono} fontWeight={700}
-          fontSize={size < 70 ? '0.65rem' : '0.8rem'}>
-          {Math.round(pct * 100)}%
+
+        <text
+          x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="middle"
+          fill={color} fontFamily={tokens.font.mono} fontWeight={700} fontSize={size < 80 ? 14 : 18}
+        >
+          {Math.round(percent * 100)}%
         </text>
       </svg>
-      {label && <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.52rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>}
+      {label && <span className="font-mono text-[10px] font-bold uppercase tracking-widest" style={{ color: tokens.textDim }}>{label}</span>}
     </div>
   )
-}
+})
 
-// ─── Pareto combo chart ───────────────────────────────────────────────────────
-interface ParetoChartProps {
+/* --------------------------------------------------------------------------
+   PARETO CHART (COMPOSED)
+   -------------------------------------------------------------------------- */
+export interface ParetoChartProps {
   data: { category: string; count: number; cumPct: number; color?: string }[]
   cutoff?: number
   height?: number
 }
 
-export function ParetoChart({ data, cutoff = 80, height = 280 }: ParetoChartProps) {
+export const ParetoChart = memo(function ParetoChart({
+  data, cutoff = 80, height = 300,
+}: ParetoChartProps) {
+  const cfg = useChartConfig()
+
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <ComposedChart data={data} margin={{ top: 4, right: 40, left: 0, bottom: 40 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-        <XAxis dataKey="category" {...AXIS_STYLE} angle={-35} textAnchor="end" interval={0} height={60} />
-        <YAxis yAxisId="left" {...AXIS_STYLE} />
-        <YAxis yAxisId="right" orientation="right" domain={[0, 100]} {...AXIS_STYLE}
-          tickFormatter={v => `${v}%`} />
-        <Tooltip {...CHART_TOOLTIP_STYLE} />
-        <Bar yAxisId="left" dataKey="count" radius={[3, 3, 0, 0]} isAnimationActive>
-          {data.map((d, i) => <Cell key={i} fill={d.color ?? T.cyan} />)}
+      <ComposedChart data={data} margin={{ top: 10, right: 40, left: -20, bottom: 40 }}>
+        <CartesianGrid stroke={tokens.border} strokeDasharray="3 3" vertical={false} />
+        <XAxis
+          dataKey="category"
+          {...cfg.axis}
+          angle={-30}
+          textAnchor="end"
+          height={60}
+          interval={0}
+        />
+        <YAxis yAxisId="left" {...cfg.axis} />
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          domain={[0, 100]}
+          tickFormatter={(v: number) => `${v}%`}
+          {...cfg.axis}
+        />
+        <Tooltip {...cfg.tooltip} />
+
+        <Bar yAxisId="left" dataKey="count" radius={[4, 4, 0, 0]} isAnimationActive={cfg.animated}>
+          {data.map((entry, i) => (
+            <Cell key={`cell-${i}`} fill={entry.color ?? tokens.cyan} />
+          ))}
         </Bar>
-        <Line yAxisId="right" type="monotone" dataKey="cumPct" stroke={T.red}
-          strokeWidth={2} dot={{ fill: T.red, r: 3 }} name="Cumulative %" />
-        <ReferenceLine yAxisId="right" y={cutoff} stroke={T.yellow} strokeDasharray="6 3"
-          label={{ value: `${cutoff}%`, fill: T.yellow, fontFamily: T.mono, fontSize: '0.55rem', position: 'insideTopRight' }} />
+
+        <Line
+          yAxisId="right"
+          type="monotone"
+          dataKey="cumPct"
+          stroke={tokens.red}
+          strokeWidth={2}
+          dot={{ fill: tokens.red, r: 3, strokeWidth: 0 }}
+          name="Cumulative %"
+          isAnimationActive={cfg.animated}
+        />
+
+        <ReferenceLine
+          yAxisId="right"
+          y={cutoff}
+          stroke={tokens.yellow}
+          strokeDasharray="5 5"
+          label={{
+            value: `${cutoff}%`,
+            fill: tokens.yellow,
+            fontSize: 10,
+            position: 'insideTopRight',
+            fontFamily: tokens.font.mono
+          }}
+        />
       </ComposedChart>
     </ResponsiveContainer>
   )
-}
-
+})
