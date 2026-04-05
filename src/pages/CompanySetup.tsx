@@ -1,6 +1,6 @@
 // src/pages/CompanySetup.tsx
 
-import { useCallback } from 'react'
+import React, { useCallback } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -56,7 +56,7 @@ const schema = z
 type FormData = z.infer<typeof schema>
 
 /* --------------------------------------------------------------------------
-   FIELD SECTIONS (scalable configuration)
+   FIELD SECTIONS
    -------------------------------------------------------------------------- */
 const SECTIONS = [
   {
@@ -116,7 +116,7 @@ export default function CompanySetup() {
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: company,
+    defaultValues: company as FormData,
     mode: 'onChange',
   })
 
@@ -127,7 +127,6 @@ export default function CompanySetup() {
     formState: { errors, isDirty, isValid, isSubmitting },
   } = form
 
-  // ─── Actions ──────────────────────────────────────────────────────────────
   const onSubmit = useCallback(
     async (data: FormData) => {
       success()
@@ -141,7 +140,7 @@ export default function CompanySetup() {
 
   const loadDemo = useCallback(() => {
     medium()
-    reset(DEMO_COMPANY)
+    reset(DEMO_COMPANY as FormData)
     feedback.notifyInfo('Demo data loaded')
   }, [reset, medium])
 
@@ -152,10 +151,13 @@ export default function CompanySetup() {
       name: '',
       dept: '',
       processName: '',
-    })
+    } as FormData)
   }, [reset, medium])
 
-  const animated = config.ui.animationsEnabled
+  // Perbaikan: Animasi Props untuk strict mode
+  const animProps = config.ui.animationsEnabled
+    ? { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 } }
+    : { initial: false, animate: false }
 
   return (
     <Modal
@@ -165,12 +167,7 @@ export default function CompanySetup() {
       subtitle="⚡ COMPANY PROFILE"
       maxWidth={840}
     >
-      <motion.div
-        initial={animated ? { opacity: 0, y: 10 } : undefined}
-        animate={animated ? { opacity: 1, y: 0 } : undefined}
-        className="space-y-6"
-      >
-        {/* Action Bar */}
+      <motion.div {...animProps} className="space-y-6">
         <div className="flex flex-wrap gap-3 border-b pb-4" style={{ borderColor: tokens.border }}>
           <Button variant="ghost" size="sm" onClick={loadDemo}>
             Load Demo Data
@@ -202,7 +199,6 @@ export default function CompanySetup() {
               <div className={`grid ${section.grid} gap-x-6 gap-y-4`}>
                 {section.fields.map((field) => {
                   const fieldName = field.name as keyof FormData
-                  // 🔥 PERBAIKAN: Fallback ke undefined agar Strict Mode aman
                   const errorMsg = errors[fieldName]?.message ?? undefined
                   const required = field.required ?? false
 
@@ -215,10 +211,11 @@ export default function CompanySetup() {
                         render={({ field: { value, onChange, onBlur } }) => (
                           <Select
                             label={field.label}
-                            value={String(value)} // Pastikan string untuk select
-                            onChange={(e) => onChange(e.target.value)}
+                            value={String(value)}
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onChange(e.target.value)}
                             onBlur={onBlur}
-                            options={field.options as string[]}
+                            // Perbaikan: Casting readonly array ke string[]
+                            options={field.options as unknown as string[]}
                             error={errorMsg}
                             required={required}
                           />
@@ -228,6 +225,8 @@ export default function CompanySetup() {
                   }
 
                   if (field.type === 'number') {
+                    // Perbaikan: Casting field ke any agar TS tidak protes tentang properti 'step/min'
+                    const numField = field as any
                     return (
                       <Controller
                         key={field.name}
@@ -236,11 +235,11 @@ export default function CompanySetup() {
                         render={({ field: { value, onChange, onBlur } }) => (
                           <NumberInput
                             label={field.label}
-                            value={value}
+                            value={value as number}
                             onChange={onChange}
                             onBlur={onBlur}
-                            step={field.step}
-                            min={field.min}
+                            step={numField.step}
+                            min={numField.min}
                             error={errorMsg}
                             required={required}
                           />
@@ -249,7 +248,6 @@ export default function CompanySetup() {
                     )
                   }
 
-                  // Text input
                   return (
                     <Controller
                       key={field.name}
@@ -258,8 +256,8 @@ export default function CompanySetup() {
                       render={({ field: { value, onChange, onBlur } }) => (
                         <Input
                           label={field.label}
-                          value={String(value)} // Pastikan string untuk input text
-                          onChange={onChange}
+                          value={String(value)}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
                           onBlur={onBlur}
                           error={errorMsg}
                           required={required}
@@ -272,7 +270,6 @@ export default function CompanySetup() {
             </div>
           ))}
 
-          {/* Footer Actions */}
           <div className="flex justify-end gap-3 border-t pt-6" style={{ borderColor: tokens.border }}>
             <Button
               type="button"
