@@ -27,6 +27,8 @@ export const tokens = {
   textDim: '#4A6785', 
 
   // ─── TYPOGRAPHY ────────────────────────────────────────────────────────────
+ mono: "'Space Mono', monospace",
+  sans: "'DM Sans', sans-serif",
   font: {
     mono: "'Space Mono', monospace",
     sans: "'DM Sans', sans-serif",
