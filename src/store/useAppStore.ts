@@ -21,7 +21,7 @@ export interface CompanyProfile {
   target: number
   usl: number
   lsl: number
-  currency: string
+  currency: strin
   laborRate: number
   monthlyVolume: number
   customerLTV: number
@@ -49,6 +49,8 @@ export interface AppState {
   resetCompany: () => void
   resetToDemo: () => void
   setActiveTab: (tab: TabId) => void
+  setShowApp: (v: boolean) => void
+  setShowCompanySetup: (v: boolean) => void
   setUI: (partial: Partial<Pick<AppState, 'showApp' | 'showCompanySetup' | 'savedFlash' | 'theme'>>) => void
   flashSaved: () => void
   reset: () => void
@@ -140,6 +142,8 @@ export const useAppStore = create<AppState>()(
         },
 
         setActiveTab: (tab) => set({ activeTab: tab }),
+        setShowApp: (v) => set({ showApp: v }),
+        setShowCompanySetup: (v) => set({ showCompanySetup: v }),
         setUI: (partial) => set(partial),
 
         flashSaved: () => {
