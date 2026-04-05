@@ -5,21 +5,20 @@
  * ============================================================================
  */
 
-import { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppDispatch, useAppSelector } from '@/store/store'
 import {
   addDMAICTask,
   updateDMAICTask,
   deleteDMAICTask,
-  dmaicSelectors, // 🔥 PERBAIKAN 1: Import selector untuk EntityState
+  dmaicSelectors,
   type DMAICTask,
   type DMAICPhase,
 } from '@/store/moduleSlice'
 import { useAppStore } from '@/store/useAppStore'
-import { useModulePersist } from '@/hooks'
+import { useModulePersist, useHaptic } from '@/hooks'
 import { feedback } from '@/lib/feedback'
-import { useHaptic } from '@/hooks'
 import { useConfigStore } from '@/lib/config'
 import { Section, Panel, KPICard } from '@/components/charts'
 import { Button } from '@/components/ui/Button'
@@ -32,7 +31,7 @@ import { cn } from '@/lib/utils'
 /* --------------------------------------------------------------------------
    CONSTANTS
    -------------------------------------------------------------------------- */
-const PHASES: DMAICPhase[] = ['define', 'measure', 'analyze', 'improve', 'control']
+const PHASES: readonly DMAICPhase[] = ['define', 'measure', 'analyze', 'improve', 'control']
 const STATUS_OPTIONS: DMAICTask['status'][] = ['not-started', 'in-progress', 'complete', 'blocked']
 
 const PHASE_LABELS: Record<DMAICPhase, string> = {
@@ -58,20 +57,19 @@ function computeStats(tasks: DMAICTask[]) {
   const complete = tasks.filter((t) => t.status === 'complete').length
   const blocked = tasks.filter((t) => t.status === 'blocked').length
 
-  const phasePct = Object.fromEntries(
-    PHASES.map((phase) => {
-      const phaseTasks = tasks.filter((t) => t.phase === phase)
-      const completed = phaseTasks.filter((t) => t.status === 'complete').length
-      return [phase, phaseTasks.length ? Math.round((completed / phaseTasks.length) * 100) : 0]
-    })
-  )
+  const phaseStats = PHASES.map((phase) => {
+    const phaseTasks = tasks.filter((t) => t.phase === phase)
+    const completed = phaseTasks.filter((t) => t.status === 'complete').length
+    const pct = phaseTasks.length ? Math.round((completed / phaseTasks.length) * 100) : 0
+    return { phase, pct, count: phaseTasks.length }
+  })
 
   return {
     total,
     complete,
     blocked,
     pct: total ? Math.round((complete / total) * 100) : 0,
-    phasePct,
+    phaseStats,
   }
 }
 
@@ -91,10 +89,10 @@ function TaskCard({
 }) {
   const { light } = useHaptic()
   const statusColor = {
-    complete: tokens.green,
-    'in-progress': tokens.cyan,
-    'not-started': tokens.textDim,
-    blocked: tokens.red,
+    complete: (tokens as any).green,
+    'in-progress': (tokens as any).cyan,
+    'not-started': (tokens as any).textDim,
+    blocked: (tokens as any).red,
   }[task.status]
 
   return (
@@ -119,7 +117,7 @@ function TaskCard({
         <div className="flex items-center gap-3">
           <select
             value={task.status}
-            onChange={(e) => {
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
               light()
               onStatusChange(e.target.value as DMAICTask['status'])
             }}
@@ -153,15 +151,11 @@ function TaskCard({
    -------------------------------------------------------------------------- */
 export default function DMAICTracker() {
   const dispatch = useAppDispatch()
-  
-  // 🔥 PERBAIKAN 2: Gunakan selector '.selectAll' untuk mengekstrak array DMAICTask[] dari EntityState
   const tasks = useAppSelector(dmaicSelectors.selectAll)
-  
   const company = useAppStore((s) => s.company)
   const config = useConfigStore((s) => s.config)
   const { light, medium, success } = useHaptic()
 
-  // Persist tasks (State aslinya tetap dari store.modules.dmaic)
   const rawState = useAppSelector((s) => s.modules.dmaic)
   useModulePersist('dmaic_tasks', rawState, { debounceMs: 800 })
 
@@ -183,9 +177,12 @@ export default function DMAICTracker() {
     () => (activePhase === 'all' ? tasks : tasks.filter((t) => t.phase === activePhase)),
     [tasks, activePhase]
   )
-  const animated = config.ui.animationsEnabled
 
-  // ─── Handlers ──────────────────────────────────────────────────────────────
+  const animated = config.ui.animationsEnabled
+  const animProps = animated 
+    ? { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 } }
+    : { initial: false, animate: false }
+
   const openCreate = useCallback(() => {
     light()
     setDraft({
@@ -254,13 +251,7 @@ export default function DMAICTracker() {
   )
 
   return (
-    <motion.div
-      initial={animated ? { opacity: 0, y: 10 } : undefined}
-      animate={animated ? { opacity: 1, y: 0 } : undefined}
-      transition={{ duration: 0.3 }}
-      className="flex flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
-      {/* Header */}
+    <motion.div {...animProps} className="flex flex-col gap-6 p-4 md:p-6 lg:p-8">
       <Section
         subtitle="Module 3 — Project Management"
         title={`DMAIC Tracker — ${company.processName || 'Process Improvement'}`}
@@ -271,41 +262,49 @@ export default function DMAICTracker() {
         }
       />
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <KPICard label="Total Tasks" value={stats.total} color={tokens.cyan} />
         <KPICard label="Completed" value={stats.complete} color={tokens.green} />
         <KPICard label="Blocked" value={stats.blocked} color={tokens.red} />
-        <KPICard label="Progress" value={`${stats.pct}%`} color={tokens.yellow} />
+        <KPICard label="Overall Progress" value={`${stats.pct}%`} color={tokens.yellow} />
       </div>
 
-      {/* Phase Filter Buttons */}
-      <div className="flex flex-wrap gap-2 rounded-lg bg-panel p-2 border border-border">
+      {/* Top Tier Feature: Phase Progress Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
         <button
           onClick={() => setActivePhase('all')}
           className={cn(
-            'rounded-md px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider transition-all',
-            activePhase === 'all'
-              ? 'bg-cyan text-bg'
-              : 'text-ink-dim hover:bg-white/5 hover:text-ink'
+            'flex flex-col gap-2 rounded-lg border p-3 transition-all text-left',
+            activePhase === 'all' ? 'border-cyan bg-cyan/10' : 'border-border bg-panel hover:bg-white/5'
           )}
-          style={activePhase === 'all' ? { backgroundColor: tokens.cyan, color: tokens.bg } : {}}
         >
-          All Phases
+          <span className="font-mono text-[0.6rem] font-bold uppercase tracking-widest text-ink-dim">Filter</span>
+          <span className="text-xs font-bold font-display">All Phases</span>
         </button>
-        {PHASES.map((phase) => (
+
+        {stats.phaseStats.map(({ phase, pct, count }) => (
           <button
             key={phase}
-            onClick={() => setActivePhase(activePhase === phase ? 'all' : phase)}
+            onClick={() => setActivePhase(phase)}
             className={cn(
-              'rounded-md px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider transition-all',
-              activePhase === phase
-                ? 'bg-cyan text-bg'
-                : 'text-ink-dim hover:bg-white/5 hover:text-ink'
+              'flex flex-col gap-2 rounded-lg border p-3 transition-all text-left relative overflow-hidden',
+              activePhase === phase ? 'border-cyan bg-cyan/10' : 'border-border bg-panel hover:bg-white/5'
             )}
-            style={activePhase === phase ? { backgroundColor: tokens.cyan, color: tokens.bg } : {}}
           >
-            {PHASE_LABELS[phase]}
+            <div className="flex justify-between items-center z-10">
+              <span className="font-mono text-[0.6rem] font-bold uppercase tracking-widest text-ink-dim">{PHASE_LABELS[phase]}</span>
+              <span className="font-mono text-[0.6rem] font-bold text-cyan">{count}</span>
+            </div>
+            <span className="text-xs font-bold font-display z-10">{pct}% Complete</span>
+            {/* Tiny Progress Bar */}
+            <div className="absolute bottom-0 left-0 h-1 bg-cyan/20 w-full">
+              <motion.div 
+                className="h-full bg-cyan"
+                initial={{ width: 0 }}
+                animate={{ width: `${pct}%` }}
+                transition={{ duration: 1 }}
+              />
+            </div>
           </button>
         ))}
       </div>
@@ -342,7 +341,6 @@ export default function DMAICTracker() {
         )}
       </div>
 
-      {/* Task Form Modal */}
       <Modal
         isOpen={modalOpen}
         onClose={closeModal}
@@ -354,35 +352,35 @@ export default function DMAICTracker() {
           <Select
             label="Phase"
             value={draft.phase}
-            onChange={(e) => setDraft((d) => ({ ...d, phase: e.target.value as DMAICPhase }))}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setDraft((d) => ({ ...d, phase: e.target.value as DMAICPhase }))}
             options={PHASES.map((p) => ({ value: p, label: PHASE_LABELS[p] }))}
           />
           <Input
             label="Task Description"
             value={draft.task}
-            onChange={(e) => setDraft((d) => ({ ...d, task: e.target.value }))}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDraft((d) => ({ ...d, task: e.target.value }))}
             placeholder="e.g., Define project charter"
             required
           />
           <Textarea
             label="Notes"
-            value={draft.notes}
-            onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
+            value={draft.notes || ''}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDraft((d) => ({ ...d, notes: e.target.value }))}
             placeholder="Additional details..."
             rows={3}
           />
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="Owner"
-              value={draft.owner}
-              onChange={(e) => setDraft((d) => ({ ...d, owner: e.target.value }))}
+              value={draft.owner || ''}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDraft((d) => ({ ...d, owner: e.target.value }))}
               placeholder="Assignee name"
             />
             <Input
               label="Due Date"
               type="date"
-              value={draft.dueDate}
-              onChange={(e) => setDraft((d) => ({ ...d, dueDate: e.target.value }))}
+              value={draft.dueDate || ''}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDraft((d) => ({ ...d, dueDate: e.target.value }))}
             />
           </div>
           <div className="flex justify-end gap-3 pt-4 border-t border-border">
