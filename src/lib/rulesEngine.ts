@@ -1,21 +1,17 @@
 // src/lib/rulesEngine.ts
 
 import { feedback } from './feedback'
-import { withTimeout } from './resilience' // 🔥 IMPORT DARI RESILIENCE
+import { withTimeout } from './resilience' 
 
-/* --------------------------------------------------------------------------
-   TYPES
-   -------------------------------------------------------------------------- */
 export interface RuleMetadata {
   version: number
-  description?: string
-  tags?: string[]
-  author?: string
-  dependsOn?: string[]
-  condition?: (context: RuleContext) => boolean | Promise<boolean>
+  description?: string | undefined
+  tags?: string[] | undefined
+  author?: string | undefined
+  dependsOn?: string[] | undefined
+  condition?: ((context: RuleContext) => boolean | Promise<boolean>) | undefined
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface Rule<TInput = any, TOutput = any> {
   key: string
   metadata: RuleMetadata
@@ -36,21 +32,16 @@ export interface ExecutionOptions {
   timeoutMs?: number
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface ExecutionResult<T = any> {
   success: boolean
-  data?: T
+  data?: T | undefined
   errors: Array<{ ruleKey: string; error: string }>
   results: Map<string, unknown>
   duration: number
 }
 
-/* --------------------------------------------------------------------------
-   RULE REGISTRY
-   -------------------------------------------------------------------------- */
 class RuleRegistry {
   private rules = new Map<string, Rule>()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private validationSchemas = new Map<string, any>()
 
   register(rule: Rule): void {
@@ -80,9 +71,6 @@ class RuleRegistry {
 
 const registry = new RuleRegistry()
 
-/* --------------------------------------------------------------------------
-   HELPER: Topological sort for rule dependencies
-   -------------------------------------------------------------------------- */
 function topologicalSort(rules: Rule[]): Rule[] {
   const graph = new Map<string, Set<string>>()
   const inDegree = new Map<string, number>()
@@ -128,10 +116,6 @@ function topologicalSort(rules: Rule[]): Rule[] {
   return result
 }
 
-/* --------------------------------------------------------------------------
-   EXECUTION ENGINE
-   -------------------------------------------------------------------------- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function executeRules<T = any>(
   ruleKeys: string[],
   input: unknown,
@@ -192,10 +176,9 @@ export async function executeRules<T = any>(
       continue
     }
 
-    // 🔥 PERBAIKAN: Gunakan withTimeout dari resilience.ts
     let ruleResult: unknown
     try {
-      const computePromise = Promise.resolve(rule.compute(input, context)) // pastikan selalu promise
+      const computePromise = Promise.resolve(rule.compute(input, context))
       ruleResult = await withTimeout(computePromise, timeoutMs, `Rule "${rule.key}"`)
       
       results.set(rule.key, ruleResult)
@@ -222,9 +205,6 @@ export async function executeRules<T = any>(
   return { success, data: lastResult as T, errors, results, duration }
 }
 
-/* --------------------------------------------------------------------------
-   PUBLIC API
-   -------------------------------------------------------------------------- */
 export const rulesEngine = {
   register: (rule: Rule): void => registry.register(rule),
   get: (key: string): Rule | undefined => registry.get(key),
@@ -232,7 +212,6 @@ export const rulesEngine = {
   getAll: (): Rule[] => registry.getAll(),
   execute: executeRules,
   
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   executeOne: async <TInput = any, TOutput = any>(
     key: string,
     input: TInput,
@@ -241,21 +220,16 @@ export const rulesEngine = {
   ): Promise<TOutput> => {
     const result = await executeRules<TOutput>([key], input, config, options)
     if (!result.success && result.errors.length) {
-      throw new Error(result.errors[0].error)
+      throw new Error(result.errors[0]?.error ?? 'Unknown rule execution error')
     }
     return result.data as TOutput
   },
   
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   registerSchema: (key: string, schema: any): void => registry.registerSchema(key, schema),
   unregister: (key: string): boolean => registry.unregister(key),
   clear: (): void => registry.clear(),
 }
 
-/* --------------------------------------------------------------------------
-   HELPER: Create rule with defaults
-   -------------------------------------------------------------------------- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createRule<TInput = any, TOutput = any>(
   key: string,
   compute: (input: TInput, context: RuleContext) => TOutput | Promise<TOutput>,
