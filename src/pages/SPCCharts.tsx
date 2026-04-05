@@ -1,266 +1,440 @@
 // src/pages/SPCCharts.tsx
-import { useState, useMemo } from 'react'
+/**
+ * ============================================================================
+ * SPC CHARTS — STATISTICAL PROCESS CONTROL (I‑MR CHART)
+ * ============================================================================
+ */
+
+import { useState, useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts'
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceLine,
+  ResponsiveContainer,
+} from 'recharts'
+
 import { useAppStore } from '@/store/useAppStore'
 import { useAppDispatch, useAppSelector } from '@/store/store'
-import { addSPCPoint, deleteSPCPoint, setSPC, type SPCPoint } from '@/store/moduleSlice'
+import {
+  addSPCPoint,
+  deleteSPCPoint,
+  setSPC,
+  spcSelectors, // 🔥 PERBAIKAN 1: Import Selector EntityState
+  type SPCPoint,
+} from '@/store/moduleSlice'
+
 import { useConfigStore } from '@/lib/config'
 import { calcControlLimits, detectWECO } from '@/lib/sigma'
-import { useI18n } from '@/providers/I18nProvider'
-import { useFeedback } from '@/services/feedback'
-import { useModulePersist } from '@/hooks/hooks'
+import { feedback } from '@/lib/feedback'
+// 🔥 PERBAIKAN 2: Barrel import
+import { useHaptic, useModulePersist } from '@/hooks'
+
 import { Section, Panel, KPICard } from '@/components/charts'
-import { CHART_TOOLTIP_STYLE } from '@/components/charts'
 import { Button } from '@/components/ui/Button'
+import { Input, NumberInput } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { HelpTooltip } from '@/components/ui/Tooltip'
+import { ConfirmButton } from '@/components/ui/Confirm'
 import { tokens as T } from '@/lib/tokens'
 import { downloadCSV } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
-// Demo data - used if no user data
+/* --------------------------------------------------------------------------
+   CONSTANTS & FORMATTERS
+   -------------------------------------------------------------------------- */
 const DEMO_POINTS: SPCPoint[] = Array.from({ length: 20 }, (_, i) => ({
   id: `demo_${i}`,
   label: `W${i + 1}`,
-  value: 48 + Math.sin(i * 0.7) * 8 + (i === 12 ? 22 : 0), // W13 = spike
-  timestamp: new Date(Date.now() - (19 - i) * 7 * 24 * 60 * 60 * 1000).toISOString(),
+  value: 48 + Math.sin(i * 0.7) * 8 + (i === 12 ? 22 : 0), // Memasukkan 1 anomali di index 12
+  timestamp: new Date(Date.now() - (19 - i) * 7 * 86400000).toISOString(),
 }))
 
+// 🔥 PERBAIKAN 3: Native Formatter untuk keamanan Strict Mode
+const numFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 })
+const dateFormatter = new Intl.DateTimeFormat('en-US', { 
+  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+})
+
+// Style Tooltip Recharts agar senada dengan UI
+const chartTooltipStyle = {
+  contentStyle: {
+    background: T.panel,
+    border: `1px solid ${T.borderHi}`,
+    borderRadius: '8px',
+    fontFamily: T.mono,
+    fontSize: '11px',
+    color: T.text,
+    boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+  },
+  labelStyle: { color: T.cyan, fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' },
+  itemStyle: { color: T.textMid, fontSize: '11px', fontWeight: 'bold' },
+}
+
+/* --------------------------------------------------------------------------
+   MAIN COMPONENT
+   -------------------------------------------------------------------------- */
 export default function SPCCharts() {
-  const { company } = useAppStore()
-  const dispatch    = useAppDispatch()
-  const userPoints  = useAppSelector(s => s.modules.spc)
-  const { config }  = useConfigStore()
-  const { fmtNumber, fmtDate } = useI18n()
-  const toast       = useFeedback()
+  const company = useAppStore((s) => s.company)
+  const dispatch = useAppDispatch()
+  
+  // 🔥 PERBAIKAN 4: Ekstrak array dengan selector yang benar
+  const userPoints = useAppSelector(spcSelectors.selectAll)
+  const rawState = useAppSelector((s) => s.modules.spc)
+  
+  const config = useConfigStore((s) => s.config)
+  const { light, medium, success } = useHaptic()
 
   const [showDemo, setShowDemo] = useState(userPoints.length === 0)
-  const [newLabel, setNewLabel] = useState('')
-  const [newValue, setNewValue] = useState('')
-  const [newNote, setNewNote]   = useState('')
+  
+  // 🔥 PERBAIKAN 5: State aman untuk NumberInput (number | '')
+  const [form, setForm] = useState<{ label: string; value: number | ''; note: string }>({
+    label: '',
+    value: '',
+    note: '',
+  })
 
   const points = showDemo ? DEMO_POINTS : userPoints
-  useModulePersist('spc_points', userPoints)
+  
+  // Auto save ke IndexedDB
+  useModulePersist('spc_points', rawState, { debounceMs: 800 })
 
-  // ── Control limits + WECO violations ──────────────────────────────────────
+  // ─── CALCULATIONS (Memoized) ────────────────────────────────────────────
   const { limits, violations, chartData, mrData } = useMemo(() => {
-    const vals = points.map(p => p.value)
-    const lim  = calcControlLimits(vals)
-    const wecoViolations = config.weco.rule1 || config.weco.rule2 || config.weco.rule3
-      ? detectWECO(vals, lim.mean, (lim.ucl - lim.mean) / 3)
-      : []
+    const vals = points.map((p) => p.value)
+    if (vals.length < 2) {
+      return {
+        limits: { mean: 0, ucl: 0, lcl: 0, mrMean: 0, mrUcl: 0, sigma: 0 },
+        violations: [],
+        chartData: [],
+        mrData: [],
+      }
+    }
 
-    const violationSet = new Set(wecoViolations.map(v => v.index))
+    const lim = calcControlLimits(vals)
+    const sigmaS = (lim.ucl - lim.mean) / 3 // 1 standard deviation for WECO
 
-    const chart = points.map((p, i) => ({
-      name:    p.label,
-      value:   p.value,
-      ucl:     lim.ucl,
-      cl:      lim.mean,
-      lcl:     lim.lcl,
-      target:  company.target,
-      usl:     company.usl,
-      lsl:     company.lsl,
-      alarm:   violationSet.has(i) ? p.value : null,
+    // Evaluasi WECO Rules berdasarkan Config
+    const weco =
+      config.weco.rule1 || config.weco.rule2 || config.weco.rule3
+        ? detectWECO(vals, lim.mean, sigmaS)
+        : []
+
+    const violationSet = new Set(weco.map((v) => v.index))
+
+    const chart = points.map((p, idx) => ({
+      name: p.label,
+      value: p.value,
+      ucl: lim.ucl,
+      cl: lim.mean,
+      lcl: lim.lcl,
+      target: company.target,
+      alarm: violationSet.has(idx) ? p.value : null,
+      isViolation: violationSet.has(idx),
     }))
 
-    const mr = points.slice(1).map((p, i) => ({
-      name:    p.label,
-      mr:      +(Math.abs(p.value - points[i].value)).toFixed(3),
-      mrUcl:   lim.mrUcl,
-      mrMean:  lim.mrMean,
+    // Data Moving Range (Jarak Absolut antara titik N dan N-1)
+    const mr = points.slice(1).map((p, idx) => ({
+      name: p.label,
+      mr: Math.abs(p.value - points[idx].value),
+      mrUcl: lim.mrUcl,
+      mrMean: lim.mrMean,
     }))
 
-    return { limits: lim, violations: wecoViolations, chartData: chart, mrData: mr }
-  }, [points, config.weco, company])
-
-  // ── Add data point ─────────────────────────────────────────────────────────
-  const addPoint = () => {
-    const val = parseFloat(newValue)
-    if (!newLabel.trim() || isNaN(val)) { toast.error('Invalid', 'Label and numeric value required'); return }
-    if (showDemo) { setShowDemo(false) }
-    dispatch(addSPCPoint({ id: `spc_${Date.now()}`, label: newLabel.trim(), value: val, timestamp: new Date().toISOString(), note: newNote.trim() || undefined }))
-    setNewLabel(''); setNewValue(''); setNewNote('')
-    toast.success('Data point added', `${newLabel}: ${val} ${company.processUnit}`)
-  }
-
-  const resetData = () => { dispatch(setSPC([])); setShowDemo(true); toast.info('Reset to demo data') }
-  const exportCSV = () => { downloadCSV(points.map(p => ({ label: p.label, value: p.value, timestamp: p.timestamp })), 'spc-data.csv'); toast.success('Exported') }
+    return { limits: lim, violations: weco, chartData: chart, mrData: mr }
+  }, [points, config.weco, company.target])
 
   const outOfControl = violations.length > 0
+  const animated = config.ui.animationsEnabled
 
+  // ─── ACTIONS ────────────────────────────────────────────────────────────
+  const handleAddPoint = useCallback(() => {
+    const val = Number(form.value)
+    if (!form.label.trim() || isNaN(val) || form.value === '') {
+      light()
+      feedback.notifyWarning('Label and valid numeric value are required')
+      return
+    }
+
+    medium()
+    if (showDemo) setShowDemo(false)
+
+    dispatch(
+      addSPCPoint({
+        id: `spc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        label: form.label.trim(),
+        value: val,
+        timestamp: new Date().toISOString(),
+        note: form.note.trim() || undefined,
+      })
+    )
+
+    setForm({ label: '', value: '', note: '' })
+    success()
+    feedback.notifySuccess(`Point added: ${val}`)
+  }, [form, dispatch, showDemo, light, medium, success])
+
+  const handleResetDemo = useCallback(() => {
+    medium()
+    dispatch(setSPC([]))
+    setShowDemo(true)
+    feedback.notifyInfo('Reset to Demo Dataset')
+  }, [dispatch, medium])
+
+  const handleDelete = useCallback(
+    (id: string, label: string) => {
+      medium()
+      dispatch(deleteSPCPoint(id))
+      feedback.notifySuccess(`Deleted point: ${label}`)
+    },
+    [dispatch, medium]
+  )
+
+  const handleExport = useCallback(() => {
+    light()
+    const exportData = points.map((p) => ({
+      Label: p.label,
+      Value: p.value,
+      Timestamp: p.timestamp,
+      Note: p.note || '',
+    }))
+    const ok = downloadCSV(exportData, 'spc-data.csv')
+    if (ok) {
+      success()
+      feedback.notifySuccess('Data exported to CSV')
+    } else {
+      feedback.notifyError('Failed to export data')
+    }
+  }, [points, success, light])
+
+  // ─── RENDER ─────────────────────────────────────────────────────────────
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-      style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-
+    <motion.div
+      initial={animated ? { opacity: 0, y: 10 } : undefined}
+      animate={animated ? { opacity: 1, y: 0 } : undefined}
+      transition={{ duration: 0.3 }}
+      className="flex flex-col gap-6 p-4 md:p-6 lg:p-8"
+    >
+      {/* HEADER */}
       <Section
-        subtitle="Module 6 — Statistical Process Control"
-        title={`I-MR Control Chart — ${company.processName}`}
+        subtitle="Module 6 — Statistical Control"
+        title={`I-MR Chart — ${company.processName || 'Process Control'}`}
         action={
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            {showDemo && <Badge label="DEMO DATA" color="yellow" />}
-            {outOfControl && <Badge label={`${violations.length} VIOLATIONS`} color="red" glow />}
-            <Button size="xs" variant="ghost" onClick={exportCSV}>↓ CSV</Button>
-            <Button size="xs" variant="danger" onClick={resetData}>↺ Reset</Button>
+          <div className="flex items-center gap-3">
+            {showDemo && <Badge label="DEMO" color="yellow" size="sm" glow />}
+            {outOfControl && <Badge label={`${violations.length} ALERTS`} color="red" glow size="sm" />}
+            <Button size="sm" variant="outline" onClick={handleExport} icon="↓">CSV</Button>
+            {!showDemo && (
+              <Button size="sm" variant="danger" onClick={handleResetDemo} icon="↺">Reset</Button>
+            )}
           </div>
         }
       />
 
-      {/* ── KPIs ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
-        <KPICard label="Data Points"  value={points.length}                     color={T.cyan}   icon="·" />
-        <KPICard label="Mean (X̄)"     value={fmtNumber(limits.mean, 2)}          color={T.green}  icon="~" />
-        <KPICard label="UCL"          value={fmtNumber(limits.ucl, 2)}            color={T.red}    icon="▲" sub={`+3σ above CL`} />
-        <KPICard label="LCL"          value={fmtNumber(limits.lcl, 2)}            color={T.yellow} icon="▼" sub={`−3σ below CL`} />
-        <KPICard label="MR̄ (Avg Range)" value={fmtNumber(limits.mrMean, 2)}       color={T.cyan}   icon="↕" />
-        <KPICard label="WECO Alarms"  value={violations.length}
-          color={outOfControl ? T.red : T.green} icon={outOfControl ? '⚠' : '✓'}
-          sub={outOfControl ? 'Process unstable' : 'In control'} />
+      {/* KPI CARDS */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+        <KPICard label="Data Points" value={points.length} color={T.cyan} />
+        <KPICard label="Process Mean" value={numFormatter.format(limits.mean)} color={T.green} />
+        <KPICard label="Upper Control Limit" value={numFormatter.format(limits.ucl)} color={T.red} />
+        <KPICard label="Lower Control Limit" value={numFormatter.format(limits.lcl)} color={T.yellow} />
+        <KPICard
+          label="WECO Status"
+          value={outOfControl ? `${violations.length} Violations` : 'In Control'}
+          color={outOfControl ? T.red : T.green}
+          icon={outOfControl ? '⚠' : '✓'}
+        />
       </div>
 
-      {/* ── I Chart ── */}
-      <Panel>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <div>
-            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.52rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Individuals Chart (I)</div>
-            <div style={{ color: T.text, fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '0.9rem' }}>
-              {company.processUnit} per observation
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            {[
-              { color: T.green, label: 'CL' }, { color: T.red,    label: 'UCL/LCL' },
-              { color: T.yellow, label: 'Target' }, { color: T.red, label: '⚠ Alarm', dashed: true },
-            ].map(l => (
-              <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                <div style={{ width: 16, height: 2, background: l.color, borderTop: l.dashed ? `2px dashed ${l.color}` : undefined }} />
-                <span style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.52rem' }}>{l.label}</span>
-              </div>
-            ))}
-            <HelpTooltip title="I-MR Chart" description="I chart monitors individual values. Points outside UCL/LCL or matching WECO rules indicate an out-of-control process requiring investigation." />
-          </div>
-        </div>
-        <ResponsiveContainer width="100%" height={240}>
-          <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-            <XAxis dataKey="name" tick={{ fill: T.textDim, fontFamily: T.mono, fontSize: '0.55rem' }} />
-            <YAxis tick={{ fill: T.textDim, fontFamily: T.mono, fontSize: '0.55rem' }} />
-            <Tooltip {...CHART_TOOLTIP_STYLE} />
-            <ReferenceLine y={limits.ucl}  stroke={T.red}    strokeDasharray="5 3" label={{ value: 'UCL', fill: T.red,    fontFamily: T.mono, fontSize: '0.5rem', position: 'insideTopRight' }} />
-            <ReferenceLine y={limits.mean} stroke={T.green}  strokeWidth={1.5}     label={{ value: 'CL',  fill: T.green,  fontFamily: T.mono, fontSize: '0.5rem', position: 'insideTopRight' }} />
-            <ReferenceLine y={limits.lcl}  stroke={T.red}    strokeDasharray="5 3" label={{ value: 'LCL', fill: T.red,    fontFamily: T.mono, fontSize: '0.5rem', position: 'insideBottomRight' }} />
-            <ReferenceLine y={company.usl} stroke={T.orange} strokeDasharray="3 6" />
-            <ReferenceLine y={company.lsl} stroke={T.orange} strokeDasharray="3 6" />
-            {company.target > 0 && (
-              <ReferenceLine y={company.target} stroke={T.yellow} strokeDasharray="4 4" label={{ value: 'Target', fill: T.yellow, fontFamily: T.mono, fontSize: '0.5rem', position: 'insideTopLeft' }} />
-            )}
-            <Line type="monotone" dataKey="value" stroke={T.cyan} strokeWidth={2}
-              dot={({ cx, cy, index }: { cx: number; cy: number; index: number }) => (
-                <circle key={index} cx={cx} cy={cy} r={4}
-                  fill={violations.some(v => v.index === index) ? T.red : T.cyan}
-                  stroke={violations.some(v => v.index === index) ? T.red : 'transparent'}
-                  strokeWidth={violations.some(v => v.index === index) ? 2 : 0} />
-              )} />
-            <Bar dataKey="alarm" fill={T.red} fillOpacity={0.2} radius={[2,2,0,0]} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </Panel>
+      {/* CHARTS AREA */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        {/* I-Chart (Individual) */}
+        <Panel className="xl:col-span-12">
+          <Section
+            subtitle="I-Chart"
+            title="Individual Values"
+            color={T.cyan}
+            action={
+              <HelpTooltip
+                title="I-Chart"
+                description="Monitors process center over time. Red dashed = Limits (UCL/LCL). Green = Mean. Red dots = Out of Control (WECO)."
+              />
+            }
+          />
+          <div className="mt-4 h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} />
+                <YAxis tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} />
+                <Tooltip {...chartTooltipStyle} />
+                
+                <ReferenceLine y={limits.ucl} stroke={T.red} strokeDasharray="4 4" label={{ value: 'UCL', fill: T.red, fontSize: 10, position: 'insideTopLeft' }} />
+                <ReferenceLine y={limits.mean} stroke={T.green} label={{ value: 'MEAN', fill: T.green, fontSize: 10, position: 'insideTopLeft' }} />
+                <ReferenceLine y={limits.lcl} stroke={T.red} strokeDasharray="4 4" label={{ value: 'LCL', fill: T.red, fontSize: 10, position: 'insideBottomLeft' }} />
+                
+                {company.target > 0 && (
+                  <ReferenceLine y={company.target} stroke={T.cyan} strokeDasharray="2 2" label={{ value: 'TARGET', fill: T.cyan, fontSize: 10, position: 'insideTopRight' }} />
+                )}
 
-      {/* ── MR Chart ── */}
-      {mrData.length > 0 && (
-        <Panel>
-          <div style={{ marginBottom: '0.75rem' }}>
-            <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.52rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Moving Range Chart (MR)</div>
-            <div style={{ color: T.text, fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '0.85rem' }}>Process Variability Between Consecutive Points</div>
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  name="Value"
+                  stroke={T.cyan}
+                  strokeWidth={2}
+                  isAnimationActive={animated}
+                  // 🔥 PERBAIKAN 6: Typing aman untuk custom dot Recharts
+                  dot={(props: any) => {
+                    const { cx, cy, payload } = props
+                    if (isNaN(cx) || isNaN(cy)) return null
+                    return (
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={payload.isViolation ? 5 : 3}
+                        fill={payload.isViolation ? T.red : T.bg}
+                        stroke={payload.isViolation ? T.red : T.cyan}
+                        strokeWidth={2}
+                        className={payload.isViolation ? "animate-pulse" : ""}
+                      />
+                    )
+                  }}
+                  activeDot={{ r: 6, stroke: T.bg, strokeWidth: 2 }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
           </div>
-          <ResponsiveContainer width="100%" height={160}>
-            <ComposedChart data={mrData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: T.textDim, fontFamily: T.mono, fontSize: '0.55rem' }} />
-              <YAxis tick={{ fill: T.textDim, fontFamily: T.mono, fontSize: '0.55rem' }} />
-              <Tooltip {...CHART_TOOLTIP_STYLE} />
-              <ReferenceLine y={limits.mrUcl}  stroke={T.red}   strokeDasharray="5 3" label={{ value: 'UCL', fill: T.red, fontFamily: T.mono, fontSize: '0.5rem', position: 'insideTopRight' }} />
-              <ReferenceLine y={limits.mrMean} stroke={T.green} strokeWidth={1.5}     label={{ value: 'MR̄',  fill: T.green, fontFamily: T.mono, fontSize: '0.5rem', position: 'insideTopRight' }} />
-              <Bar dataKey="mr" fill={T.cyan} fillOpacity={0.6} radius={[2,2,0,0]} />
-            </ComposedChart>
-          </ResponsiveContainer>
         </Panel>
-      )}
 
-      {/* ── WECO violations ── */}
-      {violations.length > 0 && (
-        <Panel style={{ borderColor: `${T.red}44` }}>
-          <Section subtitle="WECO Violations" title="Out-of-Control Signals" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {violations.map((v, i) => (
-              <div key={i} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', background: `${T.red}08`, border: `1px solid ${T.red}25`, borderRadius: 6, padding: '0.5rem 0.75rem' }}>
-                <span style={{ color: T.red, fontFamily: T.mono, fontSize: '0.85rem' }}>⚠</span>
-                <div>
-                  <div style={{ color: T.red, fontFamily: T.mono, fontSize: '0.62rem', fontWeight: 700 }}>Rule {v.rule}: {points[v.index]?.label}</div>
-                  <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: '0.58rem' }}>{v.description}</div>
+        {/* MR-Chart (Moving Range) */}
+        {mrData.length > 0 && (
+          <Panel className="xl:col-span-12 border-t-4" style={{ borderColor: T.orange }}>
+            <Section subtitle="MR-Chart" title="Moving Range" color={T.orange} />
+            <div className="mt-4 h-[200px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={mrData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+                  <XAxis dataKey="name" tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} />
+                  <YAxis tick={{ fill: T.textDim, fontSize: 10, fontFamily: T.mono }} />
+                  <Tooltip {...chartTooltipStyle} />
+                  
+                  <ReferenceLine y={limits.mrUcl} stroke={T.red} strokeDasharray="4 4" label={{ value: 'MR UCL', fill: T.red, fontSize: 10, position: 'insideTopLeft' }} />
+                  <ReferenceLine y={limits.mrMean} stroke={T.green} label={{ value: 'MR MEAN', fill: T.green, fontSize: 10, position: 'insideTopLeft' }} />
+                  
+                  <Line 
+                    type="stepAfter" 
+                    dataKey="mr" 
+                    name="Moving Range" 
+                    stroke={T.orange} 
+                    strokeWidth={2} 
+                    dot={{ r: 3, fill: T.bg, stroke: T.orange, strokeWidth: 2 }} 
+                    isAnimationActive={animated}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </Panel>
+        )}
+      </div>
+
+      {/* DATA ENTRY & WECO LOGS */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        {/* WECO Violations Alert Box */}
+        {violations.length > 0 && (
+          <Panel className="lg:col-span-4 border-red/40 bg-red/5">
+            <Section subtitle="Out of Control" title="WECO Violations" color={T.red} />
+            <div className="mt-2 flex flex-col gap-3">
+              {violations.map((v, idx) => (
+                <div key={idx} className="flex flex-col gap-1 rounded-lg border border-red/20 bg-bg p-3 shadow-sm">
+                  <div className="flex items-center gap-2 font-mono text-xs font-bold" style={{ color: T.red }}>
+                    <span className="animate-pulse">⚠</span> RULE {v.rule}
+                  </div>
+                  <div className="font-mono text-[10px] text-ink-dim">
+                    <strong className="text-ink">Point {v.index + 1}:</strong> {v.description}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </Panel>
-      )}
-
-      {/* ── Add data point ── */}
-      <Panel>
-        <Section subtitle="Data Entry" title="Add Observation" />
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          {[
-            { label: 'Label / Period', val: newLabel, set: setNewLabel, placeholder: 'W21, Day 5…', type: 'text', flex: 1 },
-            { label: `Value (${company.processUnit})`, val: newValue, set: setNewValue, placeholder: '48.5', type: 'number', flex: 1 },
-            { label: 'Note (optional)', val: newNote, set: setNewNote, placeholder: 'Process change…', type: 'text', flex: 2 },
-          ].map(f => (
-            <div key={f.label} style={{ flex: f.flex, minWidth: 120 }}>
-              <label style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.55rem', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: '0.3rem' }}>{f.label}</label>
-              <input type={f.type} value={f.val} placeholder={f.placeholder}
-                onChange={e => f.set(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') addPoint() }}
-                style={{ width: '100%', background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: T.mono, fontSize: '0.72rem', padding: '0.4rem 0.65rem' }} />
+              ))}
             </div>
-          ))}
-          <Button variant="primary" size="sm" onClick={addPoint} hapticStyle="medium">+ Add</Button>
-        </div>
-      </Panel>
+          </Panel>
+        )}
 
-      {/* ── Data table ── */}
-      {!showDemo && userPoints.length > 0 && (
-        <Panel style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '0.75rem 1rem', borderBottom: `1px solid ${T.border}` }}>
-            <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: '0.6rem' }}>{userPoints.length} observations</span>
+        {/* Add Point Form */}
+        <Panel className={violations.length > 0 ? "lg:col-span-8" : "lg:col-span-12"}>
+          <Section subtitle="Data Entry" title="Add Measurement" />
+          <div className="mt-2 flex flex-wrap items-end gap-4">
+            <div className="flex-1 min-w-[120px]">
+              <Input
+                label="Sample Label"
+                value={form.label}
+                onChange={(e) => setForm({ ...form, label: e.target.value })}
+                placeholder="e.g., Batch 42"
+              />
+            </div>
+            <div className="w-32">
+              <NumberInput
+                label="Value"
+                value={form.value}
+                onChange={(e) => setForm({ ...form, value: e.target.value === '' ? '' : Number(e.target.value) })}
+                placeholder="Measurement"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddPoint() }}
+              />
+            </div>
+            <div className="flex-1 min-w-[150px]">
+              <Input
+                label="Note (Optional)"
+                value={form.note}
+                onChange={(e) => setForm({ ...form, note: e.target.value })}
+                placeholder="Special cause note..."
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddPoint() }}
+              />
+            </div>
+            <Button onClick={handleAddPoint} variant="primary" haptic="medium" className="mb-[2px]">
+              + Add Point
+            </Button>
           </div>
-          <div style={{ overflowX: 'auto', maxHeight: 300, overflowY: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: T.mono, fontSize: '0.62rem' }}>
-              <thead>
-                <tr>
-                  {['Label', 'Value', 'Date', 'Note', ''].map(h => (
-                    <th key={h} style={{ padding: '0.5rem 0.75rem', textAlign: 'left', color: T.textDim, fontSize: '0.52rem', textTransform: 'uppercase', letterSpacing: '0.1em', borderBottom: `1px solid ${T.border}`, background: T.bg }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[...userPoints].reverse().map((p, i) => (
-                  <tr key={p.id} style={{ background: i % 2 === 0 ? 'transparent' : `${T.surface}40` }}>
-                    <td style={{ padding: '0.45rem 0.75rem', color: T.text }}>{p.label}</td>
-                    <td style={{ padding: '0.45rem 0.75rem', color: T.cyan, fontWeight: 700 }}>{p.value}</td>
-                    <td style={{ padding: '0.45rem 0.75rem', color: T.textDim }}>{fmtDate(p.timestamp, 'short')}</td>
-                    <td style={{ padding: '0.45rem 0.75rem', color: T.textDim }}>{p.note ?? '—'}</td>
-                    <td style={{ padding: '0.45rem 0.75rem' }}>
-                      <button onClick={() => dispatch(deleteSPCPoint(p.id))}
-                        style={{ background: 'transparent', border: `1px solid ${T.red}33`, borderRadius: 4, color: T.red, padding: '0.15rem 0.4rem', cursor: 'pointer', fontFamily: T.mono, fontSize: '0.52rem' }}>
-                        ✕
-                      </button>
-                    </td>
+
+          {/* Data Table */}
+          {points.length > 0 && (
+            <div className="mt-8 overflow-x-auto rounded-lg border border-border">
+              <table className="w-full text-left font-mono text-xs">
+                <thead className="bg-surface text-ink-dim border-b border-border">
+                  <tr>
+                    <th className="p-3 font-semibold uppercase tracking-wider">#</th>
+                    <th className="p-3 font-semibold uppercase tracking-wider">Label</th>
+                    <th className="p-3 font-semibold uppercase tracking-wider">Value</th>
+                    <th className="p-3 font-semibold uppercase tracking-wider">Note</th>
+                    <th className="p-3 font-semibold uppercase tracking-wider text-right">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {points.map((p, index) => (
+                    <tr key={p.id} className="hover:bg-white/5 transition-colors">
+                      <td className="p-3 text-ink-dim">{index + 1}</td>
+                      <td className="p-3 font-bold text-ink">{p.label}</td>
+                      <td className="p-3 font-bold" style={{ color: T.cyan }}>{p.value}</td>
+                      <td className="p-3 text-ink-dim">{p.note || '—'}</td>
+                      <td className="p-3 text-right">
+                        <ConfirmButton
+                          variant="danger"
+                          label="✕"
+                          size="xs"
+                          message="Delete?"
+                          onConfirm={() => handleDelete(p.id, p.label)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Panel>
-      )}
+      </div>
     </motion.div>
   )
 }
