@@ -1,6 +1,6 @@
 // src/components/ui/Tooltip.tsx
 
-import {
+import React, {
   useState,
   useRef,
   useCallback,
@@ -21,16 +21,17 @@ export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right'
 
 export interface TooltipProps {
   title: string
-  description?: string
+  // Perbaikan: Menambahkan '| undefined' pada semua properti opsional
+  description?: string | undefined
   children: ReactNode
-  maxWidth?: number
-  delay?: number
-  followCursor?: boolean
-  placement?: TooltipPlacement
-  offset?: number
-  arrow?: boolean
-  className?: string
-  triggerClassName?: string
+  maxWidth?: number | undefined
+  delay?: number | undefined
+  followCursor?: boolean | undefined
+  placement?: TooltipPlacement | undefined
+  offset?: number | undefined
+  arrow?: boolean | undefined
+  className?: string | undefined
+  triggerClassName?: string | undefined
 }
 
 /* --------------------------------------------------------------------------
@@ -195,7 +196,6 @@ export function Tooltip({
 
   const hide = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current)
-    // 🔥 PERBAIKAN: Null-safety check untuk cancelAnimationFrame
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     setVisible(false)
     setTooltipRect(null)
@@ -238,7 +238,7 @@ export function Tooltip({
     const baseArrow: React.CSSProperties = {
       position: 'absolute', width: 0, height: 0, borderStyle: 'solid', pointerEvents: 'none',
     }
-    const color = tokens.panel || '#0B141E' // Fallback to safe dark color
+    const color = tokens.panel || '#0B141E'
     
     switch (position.placement) {
       case 'top':
@@ -325,8 +325,8 @@ export function Tooltip({
    -------------------------------------------------------------------------- */
 export interface HelpTooltipProps {
   title: string
-  description?: string
-  placement?: TooltipPlacement
+  description?: string | undefined
+  placement?: TooltipPlacement | undefined
 }
 
 export function HelpTooltip({ title, description, placement }: HelpTooltipProps) {
