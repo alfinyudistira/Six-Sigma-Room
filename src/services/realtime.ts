@@ -1,15 +1,6 @@
 // src/services/realtime.ts
-/**
- * ============================================================================
- * REALTIME SERVICE — SSE + WEBSOCKET WITH ROBUST RECONNECT & MOCK MODE
- * ============================================================================
- */
-
 import { feedback } from '@/lib/feedback' // 🔥 Pastikan path import benar
 
-/* --------------------------------------------------------------------------
-   TYPES
-   -------------------------------------------------------------------------- */
 export type RealtimeEventType =
   | 'process:update'
   | 'alert:sigma'
@@ -322,6 +313,20 @@ export class RealtimeService {
     this.cleanupWS()
     this.cleanupSSE()
     this.stopMockMode()
+  }
+}
+
+export interface RealtimeConnectionLike {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  on: <T = any>(event: string, callback: (data: T) => void) => () => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onRaw: (callback: (event: string, data: any) => void) => () => void
+}
+
+export function createRealtimeFromService(): RealtimeConnectionLike {
+  return {
+    on: (event, callback) => eventBus.on(event, (e) => callback(e.payload)),
+    onRaw: (callback) => eventBus.on('*', (e) => callback(e.type, e.payload)),
   }
 }
 
