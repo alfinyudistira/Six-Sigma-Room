@@ -27,7 +27,6 @@ interface RealtimeContextValue {
   reconnectAttempts: number
   latency: number | null
   
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   subscribe: (type: RealtimeEventType | '*', handler: (event: RealtimeEvent<any>) => void) => () => void
   send: (type: RealtimeEventType, payload: Record<string, unknown>) => void
 }
@@ -63,21 +62,13 @@ function reducer(state: LocalState, action: Action): LocalState {
   }
 }
 
-/* --------------------------------------------------------------------------
-   CONTEXT
-   -------------------------------------------------------------------------- */
 const RealtimeContext = createContext<RealtimeContextValue | null>(null)
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {
   const { config } = useConfigStore()
   const [localState, dispatch] = useReducer(reducer, initialState)
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handlersRef = useRef<Map<string, Set<(event: RealtimeEvent<any>) => void>>>(new Map())
-
-  // ---------- Subscription (stable) ----------
   const subscribe = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (type: RealtimeEventType | '*', handler: (event: RealtimeEvent<any>) => void) => {
       const key = type as string
 
@@ -88,13 +79,11 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       }
       set.add(handler)
 
-      // 🔥 PERBAIKAN: Gunakan format event utuh agar sesuai dengan expectasi Component
       const globalUnsub = eventBus.on(type, (eventObj) => {
         const currentSet = handlersRef.current.get(key)
         if (!currentSet) return
         currentSet.forEach((h) => {
           try {
-             // Pastikan handler menerima event lengkap (bukan cuma payload)
             h(eventObj as RealtimeEvent)
           } catch (err) {
             console.error(`[RealtimeProvider] Handler error for ${type}:`, err)
@@ -126,7 +115,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   // ---------- Sync local state with realtimeService ----------
   useEffect(() => {
-    const enabled = config.features.webSockets || config.features.liveOps
+    const enabled = config.features.webSockets || config.features.liveOps || config.features.mockRealtime
     if (!enabled) return
 
     const unsubState = realtimeService.onStateChange((svcState) => {
@@ -145,14 +134,14 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     if (config.features.mockRealtime) {
       realtimeService.startMockMode()
     } else if (config.features.webSockets) {
-      const wsUrl = import.meta.env.VITE_REALTIME_WS_URL
+      const wsUrl = import.meta.env['VITE_REALTIME_WS_URL']
       if (wsUrl) {
         realtimeService.connect({ ws: wsUrl })
       } else {
         realtimeService.startMockMode()
       }
     } else if (config.features.liveOps) {
-      const sseUrl = import.meta.env.VITE_REALTIME_SSE_URL
+      const sseUrl = import.meta.env['VITE_REALTIME_SSE_URL']
       if (sseUrl) {
         realtimeService.connect({ sse: sseUrl })
       } else {
@@ -187,9 +176,6 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   return <RealtimeContext.Provider value={contextValue}>{children}</RealtimeContext.Provider>
 }
 
-/* --------------------------------------------------------------------------
-   HOOKS
-   -------------------------------------------------------------------------- */
 export function useRealtime(): RealtimeContextValue {
   const ctx = useContext(RealtimeContext)
   if (!ctx) {
