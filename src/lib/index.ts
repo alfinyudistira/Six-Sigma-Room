@@ -13,7 +13,7 @@ export const sigma = sigmaModule
 
 export const resilience = resilienceModule
 export type { SigmaResult, SigmaOptions } from './sigma'
-export type { ResilienceOptions, RetryConfig } from './resilience'
+export type { ResilientCallOptions, RetryOptions } from './resilience' 
 
 export async function loadPluginSystem() {
   const mod = await import(/* webpackChunkName: "pluginSystem" */ './pluginSystem')
