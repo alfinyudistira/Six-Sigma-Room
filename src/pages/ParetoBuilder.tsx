@@ -127,7 +127,7 @@ export default function ParetoBuilder() {
     }
 
     const newId = `par_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-    const newColor = COLOR_PALETTE[userItems.length % COLOR_PALETTE.length]
+    const newColor = COLOR_PALETTE[userItems.length % COLOR_PALETTE.length] || tokens.cyan
 
     dispatch(
       addParetoItem({
@@ -182,9 +182,8 @@ export default function ParetoBuilder() {
 
   // ─── RENDER ─────────────────────────────────────────────────────────────
   return (
-    <motion.div
-      initial={animated ? { opacity: 0, y: 10 } : undefined}
-      animate={animated ? { opacity: 1, y: 0 } : undefined}
+        <motion.div
+      {...(animated ? { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 } } : {})}
       transition={{ duration: 0.3 }}
       className="flex flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
@@ -267,9 +266,9 @@ export default function ParetoBuilder() {
                     onKeyDown={(e) => { if (e.key === 'Enter') handleAdd() }}
                   />
                 </div>
-                <Button onClick={handleAdd} variant="primary" haptic="medium" className="mb-[2px]">
-                  + Add
-                </Button>
+                <Button onClick={handleAdd} variant="primary" className="mb-[2px]">
+  + Add
+</Button>
               </div>
             </div>
           </Panel>
