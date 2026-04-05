@@ -3,14 +3,14 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { tokens } from '@/lib/tokens'
 
 export interface LoadingFallbackProps {
-  message?: string
-  subtitle?: string
-  mini?: boolean
-  fullScreen?: boolean
-  noSpinner?: boolean
-  accentColor?: string
-  hint?: string
-  staticPhase?: boolean
+  message?: string | undefined
+  subtitle?: string | undefined
+  mini?: boolean | undefined
+  fullScreen?: boolean | undefined
+  noSpinner?: boolean | undefined
+  accentColor?: string | undefined
+  hint?: string | undefined
+  staticPhase?: boolean | undefined
 }
 
 function useReducedMotion(): boolean {
@@ -21,12 +21,14 @@ function useReducedMotion(): boolean {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)')
     setReduced(media.matches)
     
+    // Perbaikan: Menangani cleanup secara konsisten agar tidak TS7030
+    const listener = (e: MediaQueryListEvent) => setReduced(e.matches)
+    
     if (media.addEventListener) {
-      const listener = (e: MediaQueryListEvent) => setReduced(e.matches)
       media.addEventListener('change', listener)
       return () => media.removeEventListener('change', listener)
-    } else if (media.addListener) {
-      const listener = (e: MediaQueryListEvent) => setReduced(e.matches)
+    } else {
+      // Fallback untuk browser lama (Legacy)
       media.addListener(listener)
       return () => media.removeListener(listener)
     }
@@ -48,7 +50,7 @@ export default function LoadingFallback({
   mini = false,
   fullScreen = true,
   noSpinner = false,
-  accentColor = tokens?.cyan ?? '#00D4FF',
+  accentColor = (tokens as any)?.cyan ?? '#00D4FF',
   hint,
   staticPhase = false,
 }: LoadingFallbackProps) {
@@ -76,7 +78,7 @@ export default function LoadingFallback({
 
   const accent = accentColor
   const glowStyle = { textShadow: `0 0 15px ${accent}` }
-  const bgColor = tokens?.bg ?? '#050A0F'
+  const bgColor = (tokens as any)?.bg ?? '#050A0F'
 
   const containerClasses = [
     'flex flex-col items-center justify-center font-mono pointer-events-none select-none',
@@ -135,18 +137,15 @@ export default function LoadingFallback({
 
         <p
           className={`mt-2 ${subtitleSize} tracking-widest opacity-70 uppercase`}
-          style={{ color: tokens?.green ?? '#00FF9C' }}
+          style={{ color: (tokens as any)?.green ?? '#00FF9C' }}
         >
           {subtitle}
         </p>
 
-        {/* PERBAIKAN: Menggunakan Framer Motion/CSS transisi standar alih-alih 
-            menginjeksi tag <style> berulang-ulang 
-        */}
         {!mini && !noSpinner && !reducedMotion && (
            <div className="mt-4 w-40 h-[2px] bg-cyan-900/40 overflow-hidden rounded relative">
              <div 
-               className="absolute inset-y-0 w-[40%] bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-[ping_2s_linear_infinite]"
+               className="absolute inset-y-0 w-[40%] bg-gradient-to-r from-transparent via-cyan-400 to-transparent"
                style={{ 
                   animation: 'spin 2s linear infinite', 
                   transformOrigin: 'left center' 
