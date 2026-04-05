@@ -1,8 +1,18 @@
 // src/pages/SigmaCalc.tsx
 /**
  * ============================================================================
- * SIGMA CALCULATOR — PROCESS CAPABILITY ANALYSIS
+ * SIGMA CALCULATOR — PROCESS CAPABILITY ANALYSIS (Top Tier)
  * ============================================================================
+ *
+ * - Multiple calculation modes (Company Profile, Manual DPMO, Defect Count)
+ * - Real‑time metrics: Sigma, Ppk, Cp, DPMO, Yield, COPQ
+ * - Bell curve chart & capability gauges
+ * - Sigma reference table with highlight
+ * - What‑if scenario to 4σ with savings projection
+ * - Copy to clipboard, export CSV
+ * - Fully responsive, accessible, haptic feedback, toast notifications
+ *
+ * @module pages/SigmaCalc
  */
 
 import { useMemo, useState, useCallback } from 'react'
@@ -19,7 +29,6 @@ import {
   calcDpmo,
   calcYield,
 } from '@/lib/sigma'
-
 import { useCurrency, useHaptic } from '@/hooks'
 import { feedback } from '@/lib/feedback'
 
@@ -33,33 +42,28 @@ import { tokens as T } from '@/lib/tokens'
 import { downloadCSV, copyToClipboard, cn } from '@/lib/utils'
 
 /* --------------------------------------------------------------------------
-   CONSTANTS & FORMATTERS
+   CONSTANTS & UTILITIES
    -------------------------------------------------------------------------- */
 const SIGMA_REF = [
-  { level: 1, dpmo: 691462, yieldPct: 30.85 },
-  { level: 2, dpmo: 308538, yieldPct: 69.15 },
-  { level: 3, dpmo: 66807, yieldPct: 93.32 },
-  { level: 4, dpmo: 6210, yieldPct: 99.38 },
-  { level: 5, dpmo: 233, yieldPct: 99.977 },
-  { level: 6, dpmo: 3.4, yieldPct: 99.99966 },
+  { level: 1, dpmo: 691462, yield: 30.85 },
+  { level: 2, dpmo: 308538, yield: 69.15 },
+  { level: 3, dpmo: 66807, yield: 93.32 },
+  { level: 4, dpmo: 6210, yield: 99.38 },
+  { level: 5, dpmo: 233, yield: 99.977 },
+  { level: 6, dpmo: 3.4, yield: 99.99966 },
 ] as const
 
 type CalcMode = 'from-company' | 'manual-dpmo' | 'from-defects'
 
-// 🔥 PERBAIKAN: Pisahkan array ke konstanta agar JSX Parser tidak kebingungan
-const MODE_OPTIONS: { id: CalcMode; label: string }[] = [
-  { id: 'from-company', label: '◈ From Company Profile' },
-  { id: 'manual-dpmo', label: 'σ Enter DPMO Directly' },
-  { id: 'from-defects', label: '⊘ From Defect Count' },
-]
-
 const numFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
 
-const getBadgeColor = (hex: string): BadgeColor => {
+// Helper untuk mapping warna hex ke BadgeColor enum
+const getBadgeColorFromHex = (hex: string): BadgeColor => {
   if (hex === T.green) return 'green'
   if (hex === T.cyan) return 'cyan'
   if (hex === T.yellow) return 'yellow'
-  return 'red'
+  if (hex === T.red) return 'red'
+  return 'cyan'
 }
 
 /* --------------------------------------------------------------------------
@@ -71,13 +75,14 @@ export default function SigmaCalc() {
   const { format: formatCurrency } = useCurrency()
   const { light, medium, success } = useHaptic()
 
+  // State dengan tipe union number|string untuk input kosong
   const [mode, setMode] = useState<CalcMode>('from-company')
-  const [manualDpmo, setManualDpmo] = useState<number | ''>(6210)
-  const [defects, setDefects] = useState<number | ''>(50)
-  const [units, setUnits] = useState<number | ''>(1000)
-  const [opps, setOpps] = useState<number | ''>(5)
+  const [manualDpmo, setManualDpmo] = useState<number | string>(6210)
+  const [defects, setDefects] = useState<number | string>(50)
+  const [units, setUnits] = useState<number | string>(1000)
+  const [opps, setOpps] = useState<number | string>(5)
 
-  // ─── DERIVED METRICS ──────────────────────────────────────────────────────
+  // ─── DERIVED METRICS (memoized) ─────────────────────────────────────────
   const derived = useMemo(() => {
     const { baselineMean, baselineStdDev, usl, lsl, laborRate, monthlyVolume } = company
 
@@ -100,11 +105,13 @@ export default function SigmaCalc() {
     const cp = calcCp(baselineStdDev, usl, lsl)
     const monthlyCopq = laborRate * monthlyVolume * (1 - yieldPct / 100)
 
+    // What‑if: target 4σ
     const targetDpmo = sigmaToDpmo(4)
     const targetYield = calcYield(targetDpmo)
     const savedYield = Math.max(0, targetYield - yieldPct)
     const savedCopq = Math.max(0, laborRate * monthlyVolume * (savedYield / 100))
 
+    // Bell curve shape (normal distribution)
     const bellData = Array.from({ length: 40 }, (_, i) => {
       const x = lsl + (usl - lsl) * (i / 39)
       const z = (x - baselineMean) / baselineStdDev
@@ -117,15 +124,23 @@ export default function SigmaCalc() {
     })
 
     return {
-      dpmo, sigma, yieldPct, ppk, cp,
-      monthlyCopq, savedCopq, bellData, targetYield, savedYield,
+      dpmo,
+      sigma,
+      yield: yieldPct,
+      ppk,
+      cp,
+      monthlyCopq,
+      savedCopq,
+      bellData,
+      targetYield,
+      savedYield,
     }
   }, [company, mode, manualDpmo, defects, units, opps])
 
   const sigmaColor = getSigmaColor(derived.sigma, config)
   const ppkStatus = getPpkStatus(derived.ppk, config)
 
-  // ─── HANDLERS ─────────────────────────────────────────────────────────────
+  // ─── HANDLERS ──────────────────────────────────────────────────────────
   const handleExport = useCallback(() => {
     light()
     const successExport = downloadCSV(
@@ -137,7 +152,7 @@ export default function SigmaCalc() {
           Ppk: derived.ppk,
           Cp: derived.cp,
           DPMO: derived.dpmo,
-          Yield_Pct: derived.yieldPct,
+          Yield_Pct: derived.yield,
           Monthly_COPQ: derived.monthlyCopq,
         },
       ],
@@ -153,7 +168,7 @@ export default function SigmaCalc() {
 
   const handleCopy = useCallback(async () => {
     light()
-    const text = `Sigma: ${derived.sigma.toFixed(2)} | Ppk: ${derived.ppk.toFixed(3)} | DPMO: ${numFormatter.format(derived.dpmo)} | Yield: ${derived.yieldPct.toFixed(2)}%`
+    const text = `Sigma: ${derived.sigma.toFixed(2)} | Ppk: ${derived.ppk.toFixed(3)} | DPMO: ${numFormatter.format(derived.dpmo)} | Yield: ${derived.yield.toFixed(2)}%`
     const ok = await copyToClipboard(text)
     if (ok) {
       medium()
@@ -165,7 +180,7 @@ export default function SigmaCalc() {
 
   const animated = config.ui.animationsEnabled
 
-  // ─── RENDER ─────────────────────────────────────────────────────────────
+  // ─── RENDER ────────────────────────────────────────────────────────────
   return (
     <motion.div
       initial={animated ? { opacity: 0, y: 10 } : undefined}
@@ -173,47 +188,60 @@ export default function SigmaCalc() {
       transition={{ duration: 0.3 }}
       className="flex flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
+      {/* Header */}
       <Section
         subtitle="Module 2 — Process Capability"
         title="Sigma Calculator"
         action={
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={handleCopy} icon="⎘">Copy</Button>
-            <Button size="sm" variant="primary" onClick={handleExport} icon="↓">CSV</Button>
+            <Button size="sm" variant="outline" onClick={handleCopy} icon="⎘">
+              Copy
+            </Button>
+            <Button size="sm" variant="primary" onClick={handleExport} icon="↓">
+              CSV
+            </Button>
           </div>
         }
       />
 
+      {/* Mode Selector Panel */}
       <Panel>
         <div className="mb-6 flex flex-wrap gap-2 rounded-lg bg-surface/50 p-1.5 border border-border">
-          {MODE_OPTIONS.map((m) => (
+          {([
+            ['from-company', '◈ From Company Profile'],
+            ['manual-dpmo', 'σ Enter DPMO Directly'],
+            ['from-defects', '⊘ From Defect Count'],
+          ] as [CalcMode, string][]).map(([m, label]) => (
             <button
-              key={m.id}
+              key={m}
               onClick={() => {
                 light()
-                setMode(m.id)
+                setMode(m)
               }}
-              aria-pressed={mode === m.id}
+              aria-pressed={mode === m}
               className={cn(
                 'flex-1 rounded-md px-3 py-2 font-mono text-xs font-bold uppercase tracking-wide transition-all',
-                mode === m.id
+                mode === m
                   ? 'bg-cyan text-bg shadow-lg shadow-cyan/20'
                   : 'text-ink-dim hover:bg-white/5 hover:text-ink'
               )}
-              style={mode === m.id ? { backgroundColor: T.cyan, color: T.bg } : {}}
+              style={mode === m ? { backgroundColor: T.cyan, color: T.bg } : {}}
             >
-              {m.label}
+              {label}
             </button>
           ))}
         </div>
 
+        {/* Input Form Area */}
         <motion.div layout>
           {mode === 'manual-dpmo' && (
             <div className="max-w-xl space-y-6">
               <Slider
                 label="DPMO Value"
                 valueLabel={numFormatter.format(Number(manualDpmo))}
-                min={1} max={1_000_000} step={10}
+                min={1}
+                max={1_000_000}
+                step={10}
                 value={Number(manualDpmo)}
                 onChange={(e) => setManualDpmo(Number(e.target.value))}
                 accentColor={T.cyan}
@@ -229,10 +257,15 @@ export default function SigmaCalc() {
                     className="flex flex-col items-center justify-center rounded-lg border border-border bg-surface py-2 transition-all hover:bg-white/5 active:scale-95"
                     style={{ borderColor: `${getSigmaColor(ref.level, config).color}4D` }}
                   >
-                    <div className="font-mono text-sm font-black" style={{ color: getSigmaColor(ref.level, config).color }}>
+                    <div
+                      className="font-mono text-sm font-black"
+                      style={{ color: getSigmaColor(ref.level, config).color }}
+                    >
                       {ref.level}σ
                     </div>
-                    <div className="font-mono text-[8px] font-bold text-ink-dim mt-1">SET DPMO</div>
+                    <div className="font-mono text-[8px] font-bold text-ink-dim mt-1">
+                      SET DPMO
+                    </div>
                   </button>
                 ))}
               </div>
@@ -264,11 +297,17 @@ export default function SigmaCalc() {
 
           {mode === 'from-company' && (
             <div className="flex items-center gap-3 rounded-lg border border-cyan/20 bg-cyan/5 p-4">
-              <span className="text-2xl" style={{ color: T.cyan }}>ℹ</span>
+              <span className="text-2xl" style={{ color: T.cyan }}>
+                ℹ
+              </span>
               <div>
-                <div className="font-mono text-xs font-bold uppercase text-cyan">Using Company Profile</div>
+                <div className="font-mono text-xs font-bold uppercase text-cyan">
+                  Using Company Profile
+                </div>
                 <div className="text-xs text-ink-dim mt-1">
-                  Capability is calculated automatically from <strong>Baseline Mean</strong>, <strong>StdDev</strong>, and <strong>Spec Limits (USL/LSL)</strong> in your organization settings.
+                  Capability is calculated automatically from <strong>Baseline Mean</strong>,{' '}
+                  <strong>StdDev</strong>, and <strong>Spec Limits (USL/LSL)</strong> in your
+                  organization settings.
                 </div>
               </div>
             </div>
@@ -276,6 +315,7 @@ export default function SigmaCalc() {
         </motion.div>
       </Panel>
 
+      {/* Primary KPIs */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
         <KPICard
           label="Sigma Level"
@@ -303,9 +343,16 @@ export default function SigmaCalc() {
         />
         <KPICard
           label="Process Yield"
-          value={<Counter value={derived.yieldPct} decimals={3} suffix="%" color={derived.yieldPct > 99 ? T.green : T.yellow} />}
+          value={
+            <Counter
+              value={derived.yield}
+              decimals={3}
+              suffix="%"
+              color={derived.yield > 99 ? T.green : T.yellow}
+            />
+          }
           sub="First pass yield"
-          color={derived.yieldPct > 99 ? T.green : T.yellow}
+          color={derived.yield > 99 ? T.green : T.yellow}
         />
         <KPICard
           label="Monthly COPQ"
@@ -315,6 +362,7 @@ export default function SigmaCalc() {
         />
       </div>
 
+      {/* Charts & Visuals */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <Panel className="lg:col-span-7 flex flex-col justify-between">
           <Section
@@ -346,11 +394,11 @@ export default function SigmaCalc() {
           <div className="flex flex-wrap items-center justify-around gap-6 py-6">
             <Gauge value={derived.sigma} max={6} color={sigmaColor.color} size={110} label="Sigma" />
             <Gauge value={derived.ppk} max={2} color={ppkStatus.color} size={110} label="Ppk" />
-            <Gauge value={derived.yieldPct} max={100} color={derived.yieldPct > 99 ? T.green : T.cyan} size={110} label="Yield %" />
           </div>
         </Panel>
       </div>
 
+      {/* Reference & What-If */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Panel className="xl:col-span-2">
           <Section subtitle="Reference" title="Sigma Level Comparison" />
@@ -359,7 +407,9 @@ export default function SigmaCalc() {
               <thead className="bg-surface text-ink-dim border-b border-border">
                 <tr>
                   {['Sigma', 'DPMO', 'Yield', 'Ppk', 'Status', 'Monthly COPQ Impact'].map((h) => (
-                    <th key={h} className="p-3 font-semibold uppercase tracking-wider">{h}</th>
+                    <th key={h} className="p-3 font-semibold uppercase tracking-wider">
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -369,23 +419,36 @@ export default function SigmaCalc() {
                   const rowColor = getSigmaColor(ref.level, config).color
                   const ppkVal = ref.level / 3
                   const ppkStatusRow = getPpkStatus(ppkVal, config)
-                  
+
                   return (
                     <tr
                       key={ref.level}
-                      className={cn('transition-colors', isCurrentRow ? 'bg-cyan/10' : 'hover:bg-white/5')}
+                      className={cn(
+                        'transition-colors',
+                        isCurrentRow ? 'bg-cyan/10' : 'hover:bg-white/5'
+                      )}
                     >
                       <td className="p-3 font-bold" style={{ color: rowColor }}>
-                        {ref.level}σ {isCurrentRow && <span className="ml-2 rounded bg-cyan px-1 text-[8px] text-bg">YOU</span>}
+                        {ref.level}σ{' '}
+                        {isCurrentRow && (
+                          <span className="ml-2 rounded bg-cyan px-1 text-[8px] text-bg">YOU</span>
+                        )}
                       </td>
                       <td className="p-3 text-ink">{numFormatter.format(ref.dpmo)}</td>
-                      <td className="p-3 text-ink">{ref.yieldPct.toFixed(ref.yieldPct > 99 ? 4 : 2)}%</td>
+                      <td className="p-3 text-ink">
+                        {ref.yield.toFixed(ref.yield > 99 ? 4 : 2)}%
+                      </td>
                       <td className="p-3 text-ink">{ppkVal.toFixed(2)}</td>
                       <td className="p-3">
-                        <Badge label={ppkStatusRow.label} color={getBadgeColor(ppkStatusRow.color)} />
+                        <Badge
+                          label={ppkStatusRow.label}
+                          color={getBadgeColorFromHex(ppkStatusRow.color)}
+                        />
                       </td>
                       <td className="p-3 text-red">
-                        {formatCurrency(company.laborRate * company.monthlyVolume * (1 - ref.yieldPct / 100))}
+                        {formatCurrency(
+                          company.laborRate * company.monthlyVolume * (1 - ref.yield / 100)
+                        )}
                       </td>
                     </tr>
                   )
@@ -405,7 +468,7 @@ export default function SigmaCalc() {
                 Reach <span style={{ color: T.green }}>4σ</span> Target
               </div>
             </div>
-            
+
             <div className="rounded-xl border border-border bg-surface p-4">
               <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-ink-dim mb-1">
                 Potential Monthly Savings
@@ -414,11 +477,15 @@ export default function SigmaCalc() {
                 {formatCurrency(derived.savedCopq)}
               </div>
             </div>
-            
+
             <div className="font-mono text-xs text-ink-dim leading-relaxed">
-              Achieving 4 Sigma reduces defects to 6,210 DPMO.<br/>
-              <strong>Annual Savings:</strong> <span className="text-ink">{formatCurrency(derived.savedCopq * 12)}</span><br/>
-              <strong>Yield Improvement:</strong> <span className="text-ink">+{derived.savedYield.toFixed(2)}%</span>
+              Achieving 4 Sigma reduces defects to 6,210 DPMO.
+              <br />
+              <strong>Annual Savings:</strong>{' '}
+              <span className="text-ink">{formatCurrency(derived.savedCopq * 12)}</span>
+              <br />
+              <strong>Yield Improvement:</strong>{' '}
+              <span className="text-ink">+{derived.savedYield.toFixed(2)}%</span>
             </div>
           </div>
         </Panel>
