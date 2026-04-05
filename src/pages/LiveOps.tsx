@@ -1,17 +1,29 @@
 // src/pages/LiveOps.tsx
-import { useState, useEffect } from 'react'
+/**
+ * ============================================================================
+ * LIVE OPS CENTER — REAL‑TIME PERFORMANCE DASHBOARD
+ * ============================================================================
+ */
+
+import { useState, useMemo, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+
 import { useAppStore } from '@/store/useAppStore'
 import { useConfigStore, getSigmaColor } from '@/lib/config'
 import { useRealtime, useRealtimeEvent } from '@/providers/RealtimeProvider'
-import { useI18n } from '@/providers/I18nProvider'
-import { useFeedback } from '@/services/feedback'
+// 🔥 PERBAIKAN 1: Gunakan barrel import untuk hooks
+import { useHaptic } from '@/hooks'
+import { feedback } from '@/lib/feedback'
+
 import { Section, Panel, KPICard, SimpleLineChart } from '@/components/charts'
 import { ConnectionIndicator } from '@/components/feedback/ConnectionIndicator'
 import { Badge } from '@/components/ui/Badge'
-import { tokens as T } from '@/lib/tokens'
-import { formatNumber } from '@/lib/utils'
+import { tokens } from '@/lib/tokens'
+import { cn } from '@/lib/utils'
 
+/* --------------------------------------------------------------------------
+   TYPES & INTERFACES (STRICT MODE SAFE)
+   -------------------------------------------------------------------------- */
 interface Snapshot {
   timestamp: number
   sigma: number
@@ -21,150 +33,281 @@ interface Snapshot {
   throughput: number
 }
 
+interface AlertEvent {
+  id: string
+  time: number
+  rule: string
+  message: string
+}
+
+// Mendefinisikan bentuk event agar tidak dianggap 'any'
+interface RealtimeSnapshotEvent {
+  timestamp: number
+  payload: {
+    sigma: number
+    dpmo: number
+    activeAlerts: number
+    queueDepth: number
+    throughput: number
+  }
+}
+
+interface RealtimeAlertEvent {
+  timestamp: number
+  payload: {
+    rule: string
+    message: string
+  }
+}
+
+/* --------------------------------------------------------------------------
+   HELPERS
+   -------------------------------------------------------------------------- */
+function getTrend(snapshots: Snapshot[], key: keyof Snapshot): 'up' | 'down' | 'stable' {
+  if (snapshots.length < 2) return 'stable'
+  const a = snapshots[snapshots.length - 2][key] as number
+  const b = snapshots[snapshots.length - 1][key] as number
+  if (b > a) return 'up'
+  if (b < a) return 'down'
+  return 'stable'
+}
+
+function generateAlertId(): string {
+  return `alert_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+}
+
+// 🔥 PERBAIKAN 2: Gunakan native Intl API untuk menjamin keamanan tipe data
+const numFormatter = new Intl.NumberFormat('en-US')
+const pctFormatter = new Intl.NumberFormat('en-US', { style: 'percent', minimumFractionDigits: 1 })
+
+/* --------------------------------------------------------------------------
+   MAIN COMPONENT
+   -------------------------------------------------------------------------- */
 export default function LiveOps() {
-  const { company }   = useAppStore()
-  const { config }    = useConfigStore()
-  const { isMockMode } = useRealtime()
-  const { fmtCurrency } = useI18n()
-  const toast         = useFeedback()
+  const company = useAppStore((s) => s.company)
+  const config = useConfigStore((s) => s.config)
+  
+  // 🔥 PERBAIKAN 3: Fallback ke object kosong jika useRealtime() belum siap
+  const realtimeContext = useRealtime() || {}
+  const isMockMode = realtimeContext.isMockMode ?? false
+
+  const { light } = useHaptic()
 
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
-  const [alerts, setAlerts]       = useState<{ time:number; rule:string; message:string }[]>([])
-  const [current, setCurrent]     = useState<Snapshot | null>(null)
+  const [alerts, setAlerts] = useState<AlertEvent[]>([])
+  const [current, setCurrent] = useState<Snapshot | null>(null)
 
-  // Subscribe to live KPI snapshots
-  useRealtimeEvent('kpi:snapshot', (e) => {
+  // ─── REALTIME EVENT HANDLERS ──────────────────────────────────────────
+  useRealtimeEvent('kpi:snapshot', (rawEvent: unknown) => {
+    const event = rawEvent as RealtimeSnapshotEvent
     const snap: Snapshot = {
-      timestamp:    e.timestamp,
-      sigma:        e.payload.sigma as number,
-      dpmo:         e.payload.dpmo as number,
-      activeAlerts: e.payload.activeAlerts as number,
-      queueDepth:   e.payload.queueDepth as number,
-      throughput:   e.payload.throughput as number,
+      timestamp: event.timestamp,
+      sigma: event.payload.sigma,
+      dpmo: event.payload.dpmo,
+      activeAlerts: event.payload.activeAlerts,
+      queueDepth: event.payload.queueDepth,
+      throughput: event.payload.throughput,
     }
     setCurrent(snap)
-    setSnapshots(prev => [...prev.slice(-29), snap]) // keep last 30 points
+    setSnapshots((prev) => {
+      const next = [...prev, snap]
+      return next.length > 30 ? next.slice(-30) : next
+    })
   }, [])
 
-  // Subscribe to SPC alerts
-  useRealtimeEvent('alert:spc', (e) => {
-    const alert = { time: e.timestamp, rule: e.payload.rule as string, message: e.payload.message as string }
-    setAlerts(prev => [alert, ...prev.slice(0, 9)])
-    toast.warning('SPC Alert', alert.message)
-  }, [toast])
+  useRealtimeEvent('alert:spc', (rawEvent: unknown) => {
+    const event = rawEvent as RealtimeAlertEvent
+    const alertEvent: AlertEvent = {
+      id: generateAlertId(),
+      time: event.timestamp,
+      rule: event.payload.rule,
+      message: event.payload.message,
+    }
+    setAlerts((prev) => [alertEvent, ...prev.slice(0, 9)])
+    
+    feedback.notifyWarning(`SPC Rule ${alertEvent.rule} Violation`, {
+      description: alertEvent.message,
+      duration: 5000,
+    })
+    light()
+  }, [light])
 
-  // Chart data from snapshots
-  const chartData = snapshots.map((s, i) => ({
-    t: `T-${snapshots.length - i - 1}`,
-    sigma: s.sigma,
-    throughput: +(s.throughput * 100).toFixed(1),
-    queue: s.queueDepth,
-  }))
+  // ─── DERIVED DATA ─────────────────────────────────────────────────────
+  const chartData = useMemo(
+    () =>
+      snapshots.map((s, idx) => ({
+        index: idx,
+        sigma: s.sigma,
+        throughput: +(s.throughput * 100).toFixed(1),
+        queue: s.queueDepth,
+      })),
+    [snapshots]
+  )
 
-  const sigmaColor = current ? getSigmaColor(current.sigma, config) : T.textDim
+  const sigmaColor = current ? getSigmaColor(current.sigma, config).color : tokens.textDim
+  const sigmaTrend = getTrend(snapshots, 'sigma')
+  const isFresh = current && Date.now() - current.timestamp < 8000
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      setSnapshots([])
+      setAlerts([])
+    }
+  }, [])
+
+  // ─── RENDER ───────────────────────────────────────────────────────────
   return (
-    <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }}
-      style={{ display:'flex', flexDirection:'column', gap:'1.5rem' }}>
-
+    <motion.div
+      initial={config.ui.animationsEnabled ? { opacity: 0, y: 10 } : undefined}
+      animate={config.ui.animationsEnabled ? { opacity: 1, y: 0 } : undefined}
+      transition={{ duration: 0.3 }}
+      className="flex flex-col gap-6 p-4 md:p-6 lg:p-8"
+    >
+      {/* Header */}
       <Section
-        subtitle="Module 11 — Real-time Operations"
+        subtitle="Module 11 — Real‑time Operations"
         title={`Live Ops Center — ${company.name}`}
         action={
-          <div style={{ display:'flex', gap:'0.75rem', alignItems:'center' }}>
+          <div className="flex items-center gap-4 rounded-lg border border-border bg-panel px-3 py-1.5 shadow-sm">
+            <div className="flex items-center gap-2 font-mono text-[0.65rem] font-bold tracking-wider uppercase">
+              <span
+                className={cn(
+                  'h-2 w-2 rounded-full',
+                  isFresh ? 'animate-pulse bg-green shadow-[0_0_8px_rgba(0,255,156,0.8)]' : 'bg-yellow'
+                )}
+                style={{ backgroundColor: isFresh ? tokens.green : tokens.yellow }}
+              />
+              <span style={{ color: isFresh ? tokens.green : tokens.yellow }}>
+                {isFresh ? 'LIVE' : 'STALE'}
+              </span>
+            </div>
+            <div className="h-4 w-px bg-border" />
             <ConnectionIndicator />
-            {isMockMode && <Badge label="SIMULATION" color="yellow" />}
+            {isMockMode && <Badge label="SIMULATION" color="yellow" size="sm" glow />}
           </div>
         }
       />
 
-      {/* ── Live KPIs ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:'0.75rem' }}>
+      {/* KPI Grid */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
         <KPICard
-          label="Live Sigma"
+          label="Sigma"
           value={current ? current.sigma.toFixed(2) : '—'}
           color={sigmaColor}
-          icon="σ"
-          sub={current ? (Date.now() - current.timestamp < 10000 ? 'Just updated' : 'Last update') : 'Awaiting data'}
+          icon={sigmaTrend === 'up' ? '↗' : sigmaTrend === 'down' ? '↘' : 'σ'}
+          sub={isFresh ? 'Real‑time' : 'Delayed'}
         />
-        <KPICard label="Live DPMO"      value={current ? formatNumber(current.dpmo) : '—'}  color={current && current.dpmo < 6210 ? T.green : T.red}    icon="⊘" />
-        <KPICard label="Active Alerts"  value={current?.activeAlerts ?? '—'}                 color={current && current.activeAlerts > 0 ? T.red : T.green} icon="⚠" />
-        <KPICard label="Queue Depth"    value={current?.queueDepth ?? '—'}                   color={current && current.queueDepth > 40 ? T.red : T.cyan}   icon="≡" sub={`${company.processUnit} pending`} />
-        <KPICard label="Throughput"     value={current ? `${(current.throughput * 100).toFixed(1)}%` : '—'} color={current && current.throughput > 0.95 ? T.green : T.yellow} icon="⚡" />
-        <KPICard label="Snapshots Recv" value={snapshots.length}                             color={T.cyan} icon="·" sub="last 30 points" />
+        <KPICard
+          label="DPMO"
+          value={current ? numFormatter.format(current.dpmo) : '—'}
+          color={current && current.dpmo < 6210 ? tokens.green : tokens.red}
+          icon="⊘"
+        />
+        <KPICard
+          label="Active Alerts"
+          value={current?.activeAlerts ?? '—'}
+          color={current && current.activeAlerts > 0 ? tokens.red : tokens.green}
+          icon="⚠"
+        />
+        <KPICard
+          label="Queue Depth"
+          value={current?.queueDepth ?? '—'}
+          color={current && current.queueDepth > 40 ? tokens.red : tokens.cyan}
+          icon="≡"
+          sub={company.processUnit}
+        />
+        <KPICard
+          label="Throughput"
+          value={current ? pctFormatter.format(current.throughput) : '—'}
+          color={current && current.throughput > 0.95 ? tokens.green : tokens.yellow}
+          icon="⚡"
+        />
       </div>
 
-      {/* ── Charts row ── */}
+      {/* Charts */}
       {snapshots.length > 1 && (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))', gap:'1rem' }}>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Panel>
-            <div style={{ color:T.textDim, fontFamily:T.mono, fontSize:'0.52rem', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:'0.5rem' }}>Live Sigma Trend</div>
-            <SimpleLineChart data={chartData} xKey="t"
-              lines={[{ key:'sigma', color:sigmaColor, label:'Sigma' }]}
+            <Section subtitle="Sigma Stream" title="Performance Trend" color={tokens.cyan} />
+            <SimpleLineChart
+              data={chartData}
+              xKey="index"
+              lines={[{ key: 'sigma', color: sigmaColor, label: 'Sigma' }]}
               referenceLines={[
-                { value: config.sigma.excellent,  color:T.green,  label:'4σ' },
-                { value: config.sigma.acceptable, color:T.yellow, label:'3σ' },
+                { value: config.sigma.excellent, color: tokens.green, label: '4σ' },
+                { value: config.sigma.acceptable, color: tokens.yellow, label: '3σ' },
               ]}
-              height={180} areas />
+              height={240}
+              areas
+            />
           </Panel>
           <Panel>
-            <div style={{ color:T.textDim, fontFamily:T.mono, fontSize:'0.52rem', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:'0.5rem' }}>Queue Depth & Throughput</div>
-            <SimpleLineChart data={chartData} xKey="t"
+            <Section subtitle="Flow Metrics" title="Queue vs Throughput" color={tokens.orange} />
+            <SimpleLineChart
+              data={chartData}
+              xKey="index"
               lines={[
-                { key:'queue',      color:T.orange, label:'Queue' },
-                { key:'throughput', color:T.green,  label:'Throughput %' },
+                { key: 'queue', color: tokens.orange, label: 'Queue Depth' },
+                { key: 'throughput', color: tokens.green, label: 'Throughput %' },
               ]}
-              height={180} />
+              height={240}
+            />
           </Panel>
         </div>
       )}
 
-      {/* No data yet */}
+      {/* Empty State */}
       {snapshots.length === 0 && (
-        <Panel style={{ textAlign:'center', padding:'3rem' }}>
-          <div style={{ color:T.cyan, fontSize:'2rem', marginBottom:'0.75rem' }}>⚡</div>
-          <div style={{ color:T.text, fontFamily:'Syne, sans-serif', fontWeight:700, fontSize:'1rem', marginBottom:'0.5rem' }}>Waiting for live data…</div>
-          <div style={{ color:T.textDim, fontFamily:T.mono, fontSize:'0.65rem' }}>
-            {isMockMode ? 'Mock data will arrive in ~8 seconds' : 'Connect to a real-time data source to see live metrics'}
+        <Panel className="flex flex-col items-center justify-center py-20 text-center">
+          <motion.div
+            animate={{ opacity: [0.3, 1, 0.3] }}
+            transition={{ repeat: Infinity, duration: 1.5 }}
+            className="mb-4 text-5xl"
+          >
+            ⚡
+          </motion.div>
+          <div className="font-display text-lg font-bold text-ink">Awaiting Live Stream…</div>
+          <div className="mt-2 font-mono text-xs uppercase tracking-widest text-ink-dim">
+            {isMockMode ? 'Simulation starting shortly' : 'Connect to realtime data source'}
           </div>
         </Panel>
       )}
 
-      {/* ── Alert feed ── */}
+      {/* Alert Feed */}
       <Panel>
-        <Section subtitle="Event Feed" title="Real-time Alerts" />
-        {alerts.length === 0 ? (
-          <div style={{ color:T.textDim, fontFamily:T.mono, fontSize:'0.65rem', padding:'1rem 0', textAlign:'center' }}>
-            No alerts yet. {isMockMode ? 'Alerts will appear as simulation runs.' : 'Monitoring active processes.'}
-          </div>
-        ) : (
-          <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-            <AnimatePresence>
-              {alerts.map((a, i) => (
-                <motion.div key={a.time} initial={{ opacity:0, x:-10 }} animate={{ opacity:1, x:0 }}
-                  style={{ display:'flex', gap:'0.75rem', alignItems:'center', background:`${T.yellow}06`, border:`1px solid ${T.yellow}25`, borderRadius:6, padding:'0.5rem 0.75rem' }}>
-                  <span style={{ color:T.yellow, fontFamily:T.mono, fontSize:'0.7rem' }}>⚠</span>
-                  <div style={{ flex:1 }}>
-                    <div style={{ color:T.yellow, fontFamily:T.mono, fontSize:'0.6rem', fontWeight:700 }}>Rule {a.rule}</div>
-                    <div style={{ color:T.textMid, fontFamily:T.mono, fontSize:'0.58rem' }}>{a.message}</div>
-                  </div>
-                  <span style={{ color:T.textDim, fontFamily:T.mono, fontSize:'0.52rem' }}>
-                    {new Date(a.time).toLocaleTimeString()}
-                  </span>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+        <Section subtitle="Event Stream" title="Alerts Feed" color={tokens.red} />
+        <AnimatePresence mode="popLayout">
+          {alerts.map((alert) => (
+            <motion.div
+              key={alert.id}
+              layout
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="mb-3 flex flex-col gap-1 rounded-lg border p-3 shadow-sm transition-all"
+              style={{ borderColor: `${tokens.yellow}40`, backgroundColor: `${tokens.yellow}1A` }}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs font-bold uppercase tracking-wider" style={{ color: tokens.yellow }}>
+                  Rule {alert.rule}
+                </span>
+                <span className="font-mono text-[10px] uppercase opacity-60" style={{ color: tokens.textDim }}>
+                  {new Date(alert.time).toLocaleTimeString()}
+                </span>
+              </div>
+              <div className="font-mono text-xs font-medium" style={{ color: tokens.textMid }}>
+                {alert.message}
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        
+        {alerts.length === 0 && (
+          <div className="py-10 text-center font-mono text-xs font-bold uppercase tracking-widest opacity-30" style={{ color: tokens.textDim }}>
+            No alerts received yet.
           </div>
         )}
-      </Panel>
-
-      {/* ── Info ── */}
-      <Panel style={{ background:`${T.cyan}04`, borderColor:`${T.cyan}33` }}>
-        <div style={{ color:T.textMid, fontFamily:T.mono, fontSize:'0.6rem', lineHeight:1.8 }}>
-          <strong style={{ color:T.cyan }}>ℹ Live Ops</strong> streams real-time process metrics via Server-Sent Events (SSE) or WebSocket.
-          {isMockMode && ' Currently running in <strong>simulation mode</strong> — no server required. Replace with realtimeService.connectSSE("/api/events") in production.'}
-          {` Alerts trigger on WECO violations and sigma drops below threshold (${config.sigma.acceptable}σ).`}
-        </div>
       </Panel>
     </motion.div>
   )
