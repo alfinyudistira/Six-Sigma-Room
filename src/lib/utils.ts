@@ -13,7 +13,6 @@ export interface DebouncedFunction<T extends (...args: any[]) => any> {
   flush: () => void
 }
 
-
 export function debounce<T extends (...args: any[]) => any>(
   fn: T,
   delay: number,
@@ -123,7 +122,6 @@ function getNumberFormatter(options: Intl.NumberFormatOptions): Intl.NumberForma
 
 /**
  * Format a number with fixed decimal places.
- * @example formatNumber(1234.567, 2) → "1,234.57"
  */
 export function formatNumber(n: number, decimals: number = 0): string {
   if (!Number.isFinite(n)) return '0'
@@ -135,7 +133,6 @@ export function formatNumber(n: number, decimals: number = 0): string {
 
 /**
  * Format a number in compact notation (K, M, B).
- * @example formatCompact(1250000) → "1.3M"
  */
 export function formatCompact(n: number): string {
   if (!Number.isFinite(n)) return '0'
@@ -146,23 +143,27 @@ export function formatCompact(n: number): string {
 }
 
 /**
- * Format as currency using Intl (recommended for most cases).
- * @param n - amount
- * @param currency - ISO currency code (e.g., 'USD', 'IDR')
- * @param compact - use compact notation (K, M, B) if true
+ * Format as currency using Intl.
  */
 export function formatCurrency(n: number, currency: string, compact: boolean = true): string {
   if (!Number.isFinite(n)) return `${currency} 0`
-  return getNumberFormatter({
+  
+  // Perbaikan: Hindari undefined pada notation untuk mendukung exactOptionalPropertyTypes
+  const options: Intl.NumberFormatOptions = {
     style: 'currency',
     currency,
-    notation: compact ? 'compact' : undefined,
     maximumFractionDigits: compact ? 1 : 0,
-  }).format(n)
+  }
+  
+  if (compact) {
+    options.notation = 'compact'
+  }
+  
+  return getNumberFormatter(options).format(n)
 }
 
 /**
- * Legacy IDR formatter (for quick use). Prefer `formatCurrency(n, 'IDR')` for consistency.
+ * Legacy IDR formatter.
  */
 export function formatIDR(n: number): string {
   if (!Number.isFinite(n)) return 'Rp0'
@@ -176,12 +177,11 @@ export function formatIDR(n: number): string {
 }
 
 /**
- * Create a currency formatter object for a specific currency.
- * Returns { sym, fmt, fmtFull }.
+ * Create a currency formatter object.
  */
 export function createCurrencyFmt(currencyCode: string) {
   const sym =
-    {
+    ({
       USD: '$',
       IDR: 'Rp',
       EUR: '€',
@@ -190,21 +190,19 @@ export function createCurrencyFmt(currencyCode: string) {
       AUD: 'A$',
       JPY: '¥',
       MYR: 'RM',
-    }[currencyCode] ?? `${currencyCode} `
+    } as Record<string, string>)[currencyCode] ?? `${currencyCode} `
 
-  const fmt = (n: number) => formatCurrency(n, currencyCode, true)
-  const fmtFull = (n: number) => formatCurrency(n, currencyCode, false)
-
-  return { sym, fmt, fmtFull }
+  return { 
+    sym, 
+    fmt: (n: number) => formatCurrency(n, currencyCode, true),
+    fmtFull: (n: number) => formatCurrency(n, currencyCode, false)
+  }
 }
 
 /* --------------------------------------------------------------------------
    FUZZY MATCHING & TYPO CORRECTION
    -------------------------------------------------------------------------- */
 
-/**
- * Normalize header string: lowercase, remove non-alphanumeric.
- */
 export function normalizeHeader(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '')
 }
@@ -217,10 +215,6 @@ function bigrams(s: string): Set<string> {
   return set
 }
 
-/**
- * Fuzzy match a header against a list of candidates using bigram similarity.
- * @returns best match or null if none above threshold.
- */
 export function fuzzyMatchHeader(
   header: string,
   candidates: string[],
@@ -265,30 +259,23 @@ const TYPO_MAP: Record<string, string> = {
   mesurment: 'measurement',
 }
 
-/**
- * Autocorrect common typos in text.
- */
 export function autoCorrectTypo(text: string): string {
   if (typeof text !== 'string') return ''
   return text.replace(/\b\w+\b/g, (word) => TYPO_MAP[word.toLowerCase()] ?? word)
 }
 
 /* --------------------------------------------------------------------------
-   STORAGE KEY (versioned)
+   STORAGE KEY
    -------------------------------------------------------------------------- */
 
 const STORAGE_PREFIX = 'ss_v3'
 
-/**
- * Generate a consistent, versioned storage key.
- * @example storageKey('fmea', 'rows') → 'ss_v3:fmea:rows'
- */
 export function storageKey(module: string, key: string): string {
   return `${STORAGE_PREFIX}:${module}:${key}`
 }
 
 /* --------------------------------------------------------------------------
-   CSV EXPORT (with BOM, empty check, URL cleanup)
+   CSV EXPORT
    -------------------------------------------------------------------------- */
 
 function csvEscapeCell(value: unknown): string {
@@ -300,13 +287,15 @@ function csvEscapeCell(value: unknown): string {
 }
 
 /**
- * Download data as CSV file. Returns true if successful.
- * @param rows - Array of objects with same keys
- * @param filename - e.g., 'export.csv'
+ * Download data as CSV file.
  */
 export function downloadCSV(rows: Record<string, unknown>[], filename: string): boolean {
+  // Perbaikan: Tambahkan pengecekan eksistensi baris pertama secara eksplisit (TS2769)
   if (!Array.isArray(rows) || rows.length === 0) return false
-  const headers = Object.keys(rows[0])
+  const firstRow = rows[0]
+  if (!firstRow) return false
+
+  const headers = Object.keys(firstRow)
   const lines = [
     headers.join(','),
     ...rows.map((r) => headers.map((h) => csvEscapeCell(r[h])).join(',')),
@@ -328,13 +317,9 @@ export function downloadCSV(rows: Record<string, unknown>[], filename: string): 
 }
 
 /* --------------------------------------------------------------------------
-   CLIPBOARD COPY (with fallback and selection restore)
+   CLIPBOARD COPY
    -------------------------------------------------------------------------- */
 
-/**
- * Copy text to clipboard using modern API or fallback.
- * @returns true if successful
- */
 export async function copyToClipboard(text: string): Promise<boolean> {
   if (typeof navigator === 'undefined') return false
   try {
@@ -342,7 +327,6 @@ export async function copyToClipboard(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text)
       return true
     }
-    // Fallback using textarea
     const textarea = document.createElement('textarea')
     textarea.value = text
     textarea.setAttribute('readonly', '')
@@ -368,14 +352,8 @@ export async function copyToClipboard(text: string): Promise<boolean> {
    MISCELLANEOUS UTILITIES
    -------------------------------------------------------------------------- */
 
-/**
- * Sleep for a given number of milliseconds.
- */
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/**
- * Generate a random ID (crypto.randomUUID if available, fallback to Math.random).
- */
 export function randomId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID()
@@ -383,23 +361,14 @@ export function randomId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
 }
 
-/**
- * Capitalize first letter of a string.
- */
 export function capitalize(str: string): string {
   if (!str) return ''
   return str.charAt(0).toUpperCase() + str.slice(1)
 }
 
-/**
- * Truncate string to max length, add ellipsis.
- */
 export function truncate(str: string, maxLength: number, ellipsis: string = '…'): string {
   if (str.length <= maxLength) return str
   return str.slice(0, maxLength - ellipsis.length) + ellipsis
 }
 
-/**
- * Check if code is running in browser environment.
- */
 export const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined'
