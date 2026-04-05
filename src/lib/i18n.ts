@@ -178,7 +178,7 @@ export function fmtDate(
     medium: { year: 'numeric', month: 'short', day: 'numeric' },
     long: { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' },
   }
-  return getDateFormatter(loc, optionsMap[style]).format(date)
+  return getDateFormatter(loc, optionsMap[style]!).format(date)
 }
 
 export function fmtRelative(d: Date | string | number, locale?: SupportedLocale): string {
