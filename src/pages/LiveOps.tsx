@@ -158,8 +158,6 @@ export default function LiveOps() {
     }
   }, [])
 
-  // ─── RENDER ───────────────────────────────────────────────────────────
-  // 🚀 PERBAIKAN 2: Menggunakan Spread Operator untuk menghindari error `undefined` pada exactOptionalPropertyTypes
   return (
     <motion.div
       {...(config.ui.animationsEnabled 
@@ -200,11 +198,12 @@ export default function LiveOps() {
         }
       />
 
-      {/* KPI Grid (Staggered Animation Level Enterprise) */}
+            {/* KPI Grid (Staggered Animation Level Enterprise) */}
       <motion.div 
-        variants={config.ui.animationsEnabled ? containerVariants : undefined}
-        initial="hidden"
-        animate="show"
+        {...(config.ui.animationsEnabled 
+          ? { variants: containerVariants, initial: "hidden", animate: "show" } 
+          : {}
+        )}
         className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5"
       >
         <motion.div variants={itemVariants}>
