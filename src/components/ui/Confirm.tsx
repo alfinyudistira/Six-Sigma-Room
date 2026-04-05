@@ -10,13 +10,15 @@ export type ConfirmVariant = 'danger' | 'warning' | 'primary'
 
 export interface ConfirmButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   onConfirm: () => void
-  label?: React.ReactNode
-  confirmLabel?: string
-  cancelLabel?: string
-  message?: React.ReactNode
-  variant?: ConfirmVariant
-  icon?: React.ReactNode
-  'data-testid'?: string
+  label?: React.ReactNode | undefined
+  confirmLabel?: string | undefined
+  cancelLabel?: string | undefined
+  message?: React.ReactNode | undefined
+  variant?: ConfirmVariant | undefined
+  icon?: React.ReactNode | undefined
+  'data-testid'?: string | undefined
+  // Perbaikan: Menambahkan size agar tidak error di halaman lain (seperti DMAICTracker)
+  size?: string | undefined
 }
 
 const variantStyles: Record<ConfirmVariant, { bg: string; border: string; text: string; confirmBg: string }> = {
@@ -70,6 +72,7 @@ export function ConfirmButton({
   className,
   'data-testid': dataTestId,
   disabled,
+  size, // Destructure size agar tidak diteruskan ke elemen button murni
   ...btnProps
 }: ConfirmButtonProps) {
   const [confirming, setConfirming] = useState(false)
@@ -79,7 +82,6 @@ export function ConfirmButton({
   const prefersReducedMotion = usePrefersReducedMotion()
   const styles = variantStyles[variant]
 
-  // Auto‑focus confirm button
   useEffect(() => {
     if (confirming) {
       const timer = setTimeout(() => confirmRef.current?.focus(), 50)
@@ -87,7 +89,6 @@ export function ConfirmButton({
     }
   }, [confirming])
 
-  // Escape to cancel
   useEffect(() => {
     if (!confirming) return
     const onKey = (e: KeyboardEvent) => {
@@ -100,7 +101,6 @@ export function ConfirmButton({
     return () => window.removeEventListener('keydown', onKey)
   }, [confirming, light])
 
-  // Click outside to cancel
   useEffect(() => {
     if (!confirming) return
     const onPointerDown = (e: PointerEvent) => {
@@ -187,7 +187,7 @@ export function ConfirmButton({
                 'inline-flex items-center rounded-md px-3 py-1 text-[10px] font-bold uppercase tracking-tighter text-bg transition-transform active:scale-90',
                 styles.confirmBg
               )}
-              style={{ backgroundColor: tokens[variant === 'primary' ? 'cyan' : variant === 'danger' ? 'red' : 'yellow'] }}
+              style={{ backgroundColor: (tokens as any)[variant === 'primary' ? 'cyan' : variant === 'danger' ? 'red' : 'yellow'] }}
               data-testid={dataTestId ?? 'confirm-yes'}
             >
               {confirmLabel}
