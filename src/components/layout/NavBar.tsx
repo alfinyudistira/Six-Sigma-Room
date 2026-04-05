@@ -1,9 +1,12 @@
 // src/components/layout/NavBar.tsx
-import { useState, useCallback } from 'react'
+
+import { useState, useCallback, useMemo, memo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore, type TabId } from '@/store/useAppStore'
-import { haptic, viewTransition } from '@/lib/utils'
+import { useHaptic } from '@/hooks/useHaptic'
+import { viewTransition } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 interface NavTab {
   id: TabId
@@ -13,7 +16,7 @@ interface NavTab {
   key: string
 }
 
-const TABS: NavTab[] = [
+const TABS: readonly NavTab[] = [
   { id: 'overview',   label: 'Overview',      shortLabel: 'OVR',  icon: '◈', key: '1' },
   { id: 'sigma',      label: 'Sigma Calc',    shortLabel: 'SIG',  icon: 'σ', key: '2' },
   { id: 'dmaic',      label: 'DMAIC',         shortLabel: 'DMC',  icon: '⊕', key: '3' },
@@ -26,85 +29,82 @@ const TABS: NavTab[] = [
   { id: 'universal',  label: 'Universal',     shortLabel: 'UNI',  icon: '∞', key: '0' },
   { id: 'ops',        label: 'Live Ops',      shortLabel: 'OPS',  icon: '⚡', key: '-' },
   { id: 'settings',   label: 'Settings',      shortLabel: 'CFG',  icon: '⚙', key: '=' },
-]
+] as const
 
-export function NavBar() {
+export interface NavBarProps {
+  onItemHover?: (tabId: TabId) => void
+}
+
+export const NavBar = memo(function NavBar({ onItemHover }: NavBarProps) {
   const { activeTab, setActiveTab } = useAppStore()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [, setSearchParams] = useSearchParams()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const { light: hapticLight } = useHaptic()
 
-  const navigate = useCallback((tabId: TabId) => {
-    haptic.light()
-    void viewTransition(() => {
-      setActiveTab(tabId)
-      // URL-driven state — tab is reflected in URL
-      setSearchParams({ tab: tabId }, { replace: true })
-      setMobileOpen(false)
-    })
-  }, [setActiveTab, setSearchParams])
+  const navigate = useCallback(
+    (tabId: TabId) => {
+      hapticLight()
+      void viewTransition(() => {
+        setActiveTab(tabId)
+        setSearchParams({ tab: tabId }, { replace: true })
+        setMobileOpen(false)
+      })
+    },
+    [hapticLight, setActiveTab, setSearchParams]
+  )
+
+  // Handle hover (for prefetch)
+  const handleHover = useCallback(
+    (tabId: TabId) => {
+      onItemHover?.(tabId)
+    },
+    [onItemHover]
+  )
+
+  // Find current tab (memoized)
+  const currentTab = useMemo(
+    () => TABS.find((t) => t.id === activeTab) ?? TABS[0],
+    [activeTab]
+  )
 
   return (
     <>
-      {/* ─── Desktop Nav ──────────────────────────────────────────────────── */}
+      {/* ─── DESKTOP NAVIGATION ─────────────────────────────────────────── */}
       <nav
-        role="navigation"
+        role="tablist"
         aria-label="Module navigation"
-        className="desktop-nav"
-        style={{
-          background: '#050A0F',
-          borderBottom: '1px solid #112233',
-          padding: '0 1rem',
-          display: 'flex',
-          gap: '0',
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
-          flexShrink: 0,
-        }}
+        className="hidden md:flex shrink-0 gap-0 overflow-x-auto border-b border-border bg-bg px-4 scrollbar-none"
+        style={{ scrollbarWidth: 'none' }}
       >
         {TABS.map((tab) => {
           const isActive = activeTab === tab.id
           return (
             <button
               key={tab.id}
-              onClick={() => navigate(tab.id)}
               role="tab"
               aria-selected={isActive}
               aria-controls={`panel-${tab.id}`}
               title={`${tab.label} [${tab.key}]`}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                borderBottom: isActive ? '2px solid #00D4FF' : '2px solid transparent',
-                color: isActive ? '#00D4FF' : '#4A6785',
-                padding: '0.65rem 0.85rem',
-                fontFamily: 'Space Mono, monospace',
-                fontSize: '0.6rem',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                transition: 'all 0.15s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                flexShrink: 0,
-                marginBottom: -1,
-              }}
-              onMouseEnter={e => {
-                if (!isActive) (e.currentTarget as HTMLButtonElement).style.color = '#7A99B8'
-              }}
-              onMouseLeave={e => {
-                if (!isActive) (e.currentTarget as HTMLButtonElement).style.color = '#4A6785'
-              }}
+              onClick={() => navigate(tab.id)}
+              onMouseEnter={() => handleHover(tab.id)}
+              className={cn(
+                'group flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 font-mono text-[0.6rem] font-medium uppercase tracking-wide transition-all',
+                isActive
+                  ? 'border-cyan text-cyan'
+                  : 'border-transparent text-ink-dim hover:text-ink-mid'
+              )}
             >
-              <span style={{ opacity: isActive ? 1 : 0.6 }}>{tab.icon}</span>
-              <span>{tab.label}</span>
-              <span style={{
-                background: '#112233', color: '#4A6785',
-                borderRadius: 2, padding: '0 0.2rem',
-                fontSize: '0.48rem', lineHeight: '1.4',
-                opacity: 0.6,
-              }}>
+              <span className={cn('text-sm', isActive ? 'opacity-100' : 'opacity-60')}>
+                {tab.icon}
+              </span>
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="inline sm:hidden">{tab.shortLabel}</span>
+              <span
+                className={cn(
+                  'ml-0.5 rounded-sm bg-border/60 px-1 text-[0.48rem] leading-tight text-ink-dim/60',
+                  isActive && 'bg-cyan/20 text-cyan'
+                )}
+              >
                 {tab.key}
               </span>
             </button>
@@ -112,48 +112,40 @@ export function NavBar() {
         })}
       </nav>
 
-      {/* ─── Mobile Nav ────────────────────────────────────────────────────── */}
-      <div
-        className="mobile-nav"
-        style={{
-          background: '#080E14',
-          borderBottom: '1px solid #112233',
-          flexShrink: 0,
-        }}
-      >
-        {/* Current tab bar + hamburger */}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '0.5rem 1rem', gap: '0.75rem' }}>
-          <div style={{ flex: 1 }}>
-            {(() => {
-              const t = TABS.find(t => t.id === activeTab)!
-              return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{ color: '#00D4FF', fontSize: '1rem' }}>{t.icon}</span>
-                  <div>
-                    <div style={{ color: '#4A6785', fontFamily: 'Space Mono', fontSize: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Current Module</div>
-                    <div style={{ color: '#E2EEF9', fontFamily: 'Syne, sans-serif', fontSize: '0.85rem', fontWeight: 700 }}>{t.label}</div>
-                  </div>
-                </div>
-              )
-            })()}
+      {/* ─── MOBILE NAVIGATION ──────────────────────────────────────────── */}
+      <div className="block shrink-0 border-b border-border bg-panel md:hidden">
+        {/* Mobile header: current tab + hamburger */}
+        <div className="flex items-center gap-3 px-4 py-2">
+          <div className="flex flex-1 items-center gap-3">
+            <span className="text-xl text-cyan">{currentTab.icon}</span>
+            <div>
+              <div className="font-mono text-[0.5rem] uppercase tracking-wider text-ink-dim">
+                Current Module
+              </div>
+              <div className="font-display text-sm font-bold text-ink">
+                {currentTab.label}
+              </div>
+            </div>
           </div>
           <button
-            onClick={() => { haptic.light(); setMobileOpen(o => !o) }}
+            onClick={() => {
+              hapticLight()
+              setMobileOpen((v) => !v)
+            }}
             aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
             aria-expanded={mobileOpen}
-            style={{
-              background: mobileOpen ? 'rgba(0,212,255,0.1)' : 'transparent',
-              border: '1px solid #112233', borderRadius: 6,
-              color: mobileOpen ? '#00D4FF' : '#7A99B8',
-              padding: '0.4rem 0.6rem',
-              fontFamily: 'Space Mono', fontSize: '0.65rem', cursor: 'pointer',
-            }}
+            className={cn(
+              'rounded-md border px-2 py-1.5 font-mono text-xs transition-colors',
+              mobileOpen
+                ? 'border-cyan bg-cyan/10 text-cyan'
+                : 'border-border text-ink-dim hover:border-cyan/50'
+            )}
           >
             {mobileOpen ? '✕' : '☰'}
           </button>
         </div>
 
-        {/* Mobile dropdown */}
+        {/* Mobile dropdown (grid) */}
         <AnimatePresence>
           {mobileOpen && (
             <motion.div
@@ -161,29 +153,26 @@ export function NavBar() {
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              style={{ overflow: 'hidden', borderTop: '1px solid #112233' }}
+              className="overflow-hidden border-t border-border"
             >
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: '#112233' }}>
-                {TABS.map(tab => {
+              <div className="grid grid-cols-3 gap-px bg-border">
+                {TABS.map((tab) => {
                   const isActive = activeTab === tab.id
                   return (
                     <button
                       key={tab.id}
                       onClick={() => navigate(tab.id)}
+                      onMouseEnter={() => handleHover(tab.id)}
                       aria-selected={isActive}
-                      style={{
-                        background: isActive ? 'rgba(0,212,255,0.12)' : '#050A0F',
-                        border: 'none',
-                        color: isActive ? '#00D4FF' : '#7A99B8',
-                        padding: '0.75rem 0.5rem',
-                        fontFamily: 'Space Mono', fontSize: '0.58rem',
-                        cursor: 'pointer', textAlign: 'center',
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem',
-                        transition: 'all 0.15s',
-                      }}
+                      className={cn(
+                        'flex flex-col items-center gap-1 py-3 text-center font-mono text-[0.6rem] uppercase transition-colors',
+                        isActive
+                          ? 'bg-cyan/10 text-cyan'
+                          : 'bg-bg text-ink-dim hover:bg-white/5'
+                      )}
                     >
-                      <span style={{ fontSize: '1rem' }}>{tab.icon}</span>
-                      <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: 1.2 }}>{tab.shortLabel}</span>
+                      <span className="text-base">{tab.icon}</span>
+                      <span>{tab.shortLabel}</span>
                     </button>
                   )
                 })}
@@ -192,15 +181,6 @@ export function NavBar() {
           )}
         </AnimatePresence>
       </div>
-
-      <style>{`
-        .desktop-nav { display: flex !important; }
-        .mobile-nav  { display: none !important; }
-        @media (max-width: 768px) {
-          .desktop-nav { display: none !important; }
-          .mobile-nav  { display: block !important; }
-        }
-      `}</style>
     </>
   )
-}
+})
