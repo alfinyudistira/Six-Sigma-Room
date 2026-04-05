@@ -1,9 +1,4 @@
 // src/pages/ParetoBuilder.tsx
-/**
- * ============================================================================
- * PARETO BUILDER — 80/20 ANALYSIS
- * ============================================================================
- */
 
 import { useState, useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion'
@@ -13,7 +8,7 @@ import {
   addParetoItem,
   deleteParetoItem,
   setPareto,
-  paretoSelectors, // 🔥 PERBAIKAN 1: Import selector untuk EntityState
+  paretoSelectors,
   type ParetoItem,
 } from '@/store/moduleSlice'
 
@@ -29,9 +24,6 @@ import { tokens } from '@/lib/tokens'
 import { downloadCSV } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
-/* --------------------------------------------------------------------------
-   CONSTANTS
-   -------------------------------------------------------------------------- */
 const COLOR_PALETTE = [
   tokens.red,
   tokens.orange,
@@ -53,18 +45,11 @@ const DEMO_ITEMS: ParetoItem[] = [
   { id: 'd5', category: 'Integration Error', count: 54, color: tokens.green },
 ]
 
-/* --------------------------------------------------------------------------
-   HELPER
-   -------------------------------------------------------------------------- */
 const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0)
 
-/* --------------------------------------------------------------------------
-   MAIN COMPONENT
-   -------------------------------------------------------------------------- */
 export default function ParetoBuilder() {
   const dispatch = useAppDispatch()
-  
-  // 🔥 PERBAIKAN 2: Gunakan selector agar dapet Array dari EntityState
+
   const userItems = useAppSelector(paretoSelectors.selectAll)
   const rawState = useAppSelector((state) => state.modules.pareto)
   
