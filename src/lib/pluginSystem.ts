@@ -1,26 +1,17 @@
 import { feedback } from './feedback'
 
 export interface PluginContext {
-  /** Dependency injection container */
   getService: <T>(name: string) => T | undefined
-  /** Register service yang bisa dipakai plugin lain */
   registerService: <T>(name: string, service: T) => void
-  /** Feedback engine untuk notifikasi */
   notify: typeof feedback.notify
-  /** Plugin metadata */
   pluginName: string
 }
 
 export interface PluginLifecycle {
-  /** Called when plugin is registered (before dependency resolution) */
   onRegister?: (ctx: PluginContext) => void | Promise<void>
-  /** Called after all plugins are registered (before start) */
   onInit?: (ctx: PluginContext) => void | Promise<void>
-  /** Called when app starts (after all onInit) */
   onStart?: (ctx: PluginContext) => void | Promise<void>
-  /** Called when plugin is stopped (e.g., user logout) */
   onStop?: (ctx: PluginContext) => void | Promise<void>
-  /** Called when app destroys (cleanup) */
   onDestroy?: (ctx: PluginContext) => void | Promise<void>
 }
 
@@ -29,7 +20,6 @@ export interface PluginMetadata {
   version: string
   author?: string
   description?: string
-  /** Plugin dependencies (nama plugin lain yang harus di-load duluan) */
   dependencies?: string[]
 }
 
@@ -59,9 +49,6 @@ class ServiceContainer {
   }
 }
 
-/* --------------------------------------------------------------------------
-   PLUGIN REGISTRY
-   -------------------------------------------------------------------------- */
 interface RegisteredPlugin {
   definition: PluginDefinition
   status: 'registered' | 'initialized' | 'started' | 'stopped' | 'destroyed' | 'error'
@@ -248,86 +235,58 @@ class PluginRegistry {
     this.isStarted = false
   }
 
-  /**
-   * Get plugin status (for debugging)
-   */
   getStatus(name: string): RegisteredPlugin['status'] | undefined {
     return this.plugins.get(name)?.status
   }
 
-  /**
-   * Get all plugin statuses
-   */
   getAllStatuses(): Record<string, { status: string; error?: string }> {
     const result: Record<string, { status: string; error?: string }> = {}
+    
     for (const [name, reg] of this.plugins) {
-      result[name] = { status: reg.status, error: reg.error?.message }
+      const info: { status: string; error?: string } = { 
+        status: reg.status 
+      }
+      
+      if (reg.error) {
+        info.error = reg.error.message
+      }
+      
+      result[name] = info
     }
+    
     return result
   }
-}
 
-/* --------------------------------------------------------------------------
-   SINGLETON INSTANCE
-   -------------------------------------------------------------------------- */
 const registry = new PluginRegistry()
 
-/* --------------------------------------------------------------------------
-   PUBLIC API
-   -------------------------------------------------------------------------- */
-
-/**
- * Register a plugin
- */
 export function registerPlugin(plugin: PluginDefinition): void {
   registry.register(plugin)
 }
 
-/**
- * Initialize all plugins (call once after all registrations)
- */
 export async function initPlugins(): Promise<void> {
   await registry.init()
 }
 
-/**
- * Start all plugins (after init)
- */
 export async function startPlugins(): Promise<void> {
   await registry.start()
 }
 
-/**
- * Stop all plugins (e.g., on logout)
- */
 export async function stopPlugins(): Promise<void> {
   await registry.stop()
 }
 
-/**
- * Destroy all plugins (cleanup)
- */
 export async function destroyPlugins(): Promise<void> {
   await registry.destroy()
 }
 
-/**
- * Get status of a specific plugin
- */
 export function getPluginStatus(name: string): string | undefined {
   return registry.getStatus(name)
 }
 
-/**
- * Get all plugin statuses (for devtools)
- */
 export function getAllPluginStatuses(): Record<string, { status: string; error?: string }> {
   return registry.getAllStatuses()
 }
 
-/* --------------------------------------------------------------------------
-   HELPER: Create plugin definition with metadata
-   -------------------------------------------------------------------------- */
 export function createPlugin(
   metadata: PluginMetadata,
   lifecycle: PluginLifecycle,
@@ -335,11 +294,7 @@ export function createPlugin(
   return { metadata, lifecycle }
 }
 
-/* --------------------------------------------------------------------------
-   DEVELOPMENT TOOLS (optional)
-   -------------------------------------------------------------------------- */
 if (import.meta.env.DEV) {
-  // Expose for debugging via window
   ;(window as any).__pluginSystem = {
     getStatus: getAllPluginStatuses,
     registry,
