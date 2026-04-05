@@ -17,7 +17,6 @@ export interface RealtimeEvent<T = any> {
   source: 'sse' | 'ws' | 'mock'
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type EventHandler<T = any> = (event: RealtimeEvent<T>) => void
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error' | 'degraded'
@@ -28,25 +27,19 @@ export interface RealtimeState {
   reconnectAttempts: number
   transport: 'sse' | 'ws' | 'mock' | null
   latency: number | null
-  lastError?: string
+  lastError?: string | undefined
 }
 
-/* --------------------------------------------------------------------------
-   EVENT BUS (HIGH PERFORMANCE)
-   -------------------------------------------------------------------------- */
 class EventBus {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private listeners = new Map<string, Set<EventHandler<any>>>()
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   on<T = any>(type: RealtimeEventType | '*', handler: EventHandler<T>): () => void {
     const key = type as string
     if (!this.listeners.has(key)) this.listeners.set(key, new Set())
     this.listeners.get(key)!.add(handler)
-    return () => this.off(key, handler)
+    return () => this.off(key as RealtimeEventType, handler)
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   once<T = any>(type: RealtimeEventType | '*', handler: EventHandler<T>): () => void {
     const unsub = this.on(type, (e) => {
       handler(e)
@@ -55,12 +48,10 @@ class EventBus {
     return unsub
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   off(type: RealtimeEventType | '*', handler: EventHandler<any>): void {
     this.listeners.get(type as string)?.delete(handler)
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   emit<T = any>(event: RealtimeEvent<T>): void {
     const byType = this.listeners.get(event.type)
     if (byType) {
@@ -79,15 +70,9 @@ class EventBus {
 
 export const eventBus = new EventBus()
 
-/* --------------------------------------------------------------------------
-   HELPER FUNCTIONS
-   -------------------------------------------------------------------------- */
 const now = () => Date.now()
 const jitter = (ms: number) => Math.round(ms * (0.8 + Math.random() * 0.4))
 
-/* --------------------------------------------------------------------------
-   REALTIME SERVICE
-   -------------------------------------------------------------------------- */
 export class RealtimeService {
   private sse: EventSource | null = null
   private ws: WebSocket | null = null
@@ -317,15 +302,13 @@ export class RealtimeService {
 }
 
 export interface RealtimeConnectionLike {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   on: <T = any>(event: string, callback: (data: T) => void) => () => void
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onRaw: (callback: (event: string, data: any) => void) => () => void
 }
 
 export function createRealtimeFromService(): RealtimeConnectionLike {
   return {
-    on: (event, callback) => eventBus.on(event, (e) => callback(e.payload)),
+    on: (event, callback) => eventBus.on(event as RealtimeEventType, (e) => callback(e.payload)),
     onRaw: (callback) => eventBus.on('*', (e) => callback(e.type, e.payload)),
   }
 }
