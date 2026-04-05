@@ -1,9 +1,4 @@
 // src/pages/Settings.tsx
-/**
- * ============================================================================
- * SETTINGS — GLOBAL APPLICATION CONFIGURATION
- * ============================================================================
- */
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
@@ -22,9 +17,6 @@ import { Badge } from '@/components/ui/Badge'
 import { NumberInput } from '@/components/ui/Input'
 import { tokens as T } from '@/lib/tokens'
 
-/* --------------------------------------------------------------------------
-   REUSABLE COMPONENTS
-   -------------------------------------------------------------------------- */
 function Toggle({
   label,
   checked,
@@ -86,9 +78,6 @@ function Divider({ label }: { label: string }) {
   )
 }
 
-/* --------------------------------------------------------------------------
-   MAIN COMPONENT
-   -------------------------------------------------------------------------- */
 export default function Settings() {
   const { config, setConfig, resetConfig } = useConfigStore()
   const { medium, heavy } = useHaptic()
@@ -111,10 +100,9 @@ export default function Settings() {
 
   const animated = config.ui.animationsEnabled
 
-  return (
+    return (
     <motion.div
-      initial={animated ? { opacity: 0, y: 10 } : undefined}
-      animate={animated ? { opacity: 1, y: 0 } : undefined}
+      {...(animated ? { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 } } : {})}
       transition={{ duration: 0.3 }}
       className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
