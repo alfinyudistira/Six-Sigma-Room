@@ -14,19 +14,17 @@ export const tokens = {
   cyan: '#00D4FF',
   cyanDim: '#00D4FF44',
   
-  // 🔥 Mapping status warna agar sesuai dengan pencarian Error Boundary & Indicator
-  green: '#00FF9C',    // Sebelumnya emerald
+  green: '#00FF9C',  
   greenDim: '#00FF9C33',
-  red: '#FF3B5C',      // Sebelumnya danger
+  red: '#FF3B5C',  
   redDim: '#FF3B5C44',
-  yellow: '#FFD60A',   // Sebelumnya warn
+  yellow: '#FFD60A',
   yellowDim: '#FFD60A44',
-  orange: '#FF9500',   // Sebelumnya amber
+  orange: '#FF9500',  
   
-  // 🔥 Mapping Nama Text agar sesuai dengan pencarian App.tsx & Charts
-  text: '#E2EEF9',     // Alias untuk ink
-  textMid: '#A0B4C8',  // Alias untuk inkMid
-  textDim: '#4A6785',  // Alias untuk inkDim
+  text: '#E2EEF9',  
+  textMid: '#A0B4C8', 
+  textDim: '#4A6785', 
 
   // ─── TYPOGRAPHY ────────────────────────────────────────────────────────────
   font: {
