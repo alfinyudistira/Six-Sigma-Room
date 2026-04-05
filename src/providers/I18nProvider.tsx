@@ -1,70 +1,123 @@
 // src/providers/I18nProvider.tsx
-// ─── I18n React Context — injects formatters into component tree ──────────────
-import { createContext, useContext, useMemo, useEffect, useState, ReactNode } from 'react'
+
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  ReactNode,
+  useMemo,
+} from 'react'
+
 import {
   type SupportedLocale,
-  type SupportedCurrency,
-  type I18nFormatters,
   type TranslationKey,
-  detectLocale,
-  createI18n,
-  translate,
   LOCALE_META,
+  getLocale as getGlobalLocale,
+  setLocale as setGlobalLocale,
+  subscribeLocale,
+  t as translateFn,
+  fmtNumber,
+  fmtPercent,
+  fmtDate,
+  fmtRelative,
+  fmtCompact,
 } from '@/lib/i18n'
+
 import { useConfigStore } from '@/lib/config'
 import { useAppStore } from '@/store/useAppStore'
 
-interface I18nContextValue extends I18nFormatters {
-  t: (key: TranslationKey) => string
-  setLocale: (l: SupportedLocale) => void
-  availableLocales: SupportedLocale[]
+export interface I18nContextValue {
+  locale: SupportedLocale
+  availableLocales: readonly SupportedLocale[]
+  setLocale: (locale: SupportedLocale) => void
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string
+  
+  // Formatters
+  fmtNumber: (n: number, decimals?: number) => string
+  fmtCurrency: (n: number, compact?: boolean) => string
+  fmtPercent: (n: number, decimals?: number) => string
+  fmtDate: (d: Date | string | number, style?: 'short' | 'medium' | 'long') => string
+  fmtRelative: (d: Date | string | number) => string
+  fmtCompact: (n: number) => string
 }
-
-const I18nContext = createContext<I18nContextValue | null>(null)
-
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const currency = useAppStore(s => s.company.currency) as SupportedCurrency
-  const { config, setConfig } = useConfigStore()
+  // Ambil currency dari profile perusahaan agar format uang selalu akurat
+  const companyCurrency = useAppStore((state) => state.company.currency)
+  const setConfig = useConfigStore((state) => state.setConfig)
 
-  const [locale, setLocaleState] = useState<SupportedLocale>(() => {
-    if (config.locale !== 'auto') return config.locale as SupportedLocale
-    return detectLocale()
-  })
+  const [locale, setLocaleState] = useState<SupportedLocale>(getGlobalLocale())
 
-  // Sync html[lang] and html[dir] for accessibility
+  // Sinkronisasi dengan Event Bus dari lib/i18n
   useEffect(() => {
+    // Saat inisialisasi, pastikan HTML tag benar
     document.documentElement.lang = locale
-    document.documentElement.dir  = LOCALE_META[locale]?.rtl ? 'rtl' : 'ltr'
+    document.documentElement.dir = LOCALE_META[locale]?.rtl ? 'rtl' : 'ltr'
+
+    const unsub = subscribeLocale((newLocale) => {
+      setLocaleState(newLocale)
+      document.documentElement.lang = newLocale
+      document.documentElement.dir = LOCALE_META[newLocale]?.rtl ? 'rtl' : 'ltr'
+    })
+
+    return unsub
   }, [locale])
 
-  const formatters = useMemo(
-    () => createI18n(locale, currency as SupportedCurrency),
-    [locale, currency],
+  // Fungsi untuk mengganti bahasa (mengubah config dan storage sekaligus)
+  const handleSetLocale = useCallback(
+    (newLocale: SupportedLocale) => {
+      setConfig({ locale: newLocale })
+      setGlobalLocale(newLocale) // Ini akan men-trigger subscribeLocale di atas
+    },
+    [setConfig],
   )
 
-  const t = useMemo(
-    () => (key: TranslationKey) => translate(locale, key),
+  // Wrapper untuk translasi agar terikat dengan locale React saat ini
+  const t = useCallback(
+    (key: TranslationKey, params?: Record<string, string | number>) => {
+      return translateFn(key, params, locale)
+    },
     [locale],
   )
 
-  const setLocale = (l: SupportedLocale) => {
-    setLocaleState(l)
-    setConfig({ locale: l })
-    localStorage.setItem('ss_locale', l)
-  }
-
-  const value: I18nContextValue = {
-    ...formatters,
-    t,
-    setLocale,
-    availableLocales: Object.keys(LOCALE_META) as SupportedLocale[],
-  }
+  // Memoize semua formatters agar child components tidak re-render tanpa alasan
+  const value: I18nContextValue = useMemo(
+    () => ({
+      locale,
+      availableLocales: Object.keys(LOCALE_META) as readonly SupportedLocale[],
+      setLocale: handleSetLocale,
+      t,
+      fmtNumber: (n, dec) => fmtNumber(n, dec, locale),
+      // 🔥 Khusus Currency, kita paksa pakai mata uang dari Company Profile
+      fmtCurrency: (n, compact = true) => {
+        return new Intl.NumberFormat(locale, {
+          style: 'currency',
+          currency: companyCurrency || LOCALE_META[locale].defaultCurrency,
+          notation: compact ? 'compact' : undefined,
+          maximumFractionDigits: compact ? 1 : 0,
+        }).format(n)
+      },
+      fmtPercent: (n, dec) => fmtPercent(n, dec, locale),
+      fmtDate: (d, style) => fmtDate(d, style, locale),
+      fmtRelative: (d) => fmtRelative(d, locale),
+      fmtCompact: (n) => fmtCompact(n, locale),
+    }),
+    [locale, companyCurrency, handleSetLocale, t],
+  )
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
 }
 
+/* --------------------------------------------------------------------------
+   CONTEXT HOOK
+   -------------------------------------------------------------------------- */
+const I18nContext = createContext<I18nContextValue | null>(null)
+
 export function useI18n(): I18nContextValue {
   const ctx = useContext(I18nContext)
-  if (!ctx) throw new Error('useI18n must be used within I18nProvider')
+  if (!ctx) {
+    throw new Error('useI18n must be used within an I18nProvider')
+  }
   return ctx
 }
