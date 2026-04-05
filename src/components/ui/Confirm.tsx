@@ -17,7 +17,6 @@ export interface ConfirmButtonProps extends React.ButtonHTMLAttributes<HTMLButto
   variant?: ConfirmVariant | undefined
   icon?: React.ReactNode | undefined
   'data-testid'?: string | undefined
-  // Perbaikan: Menambahkan size agar tidak error di halaman lain (seperti DMAICTracker)
   size?: string | undefined
 }
 
@@ -43,7 +42,7 @@ const variantStyles: Record<ConfirmVariant, { bg: string; border: string; text: 
 }
 
 /* --------------------------------------------------------------------------
-   HOOK: Reduced Motion
+   HOOK: Reduced Motion (Refactored for TS7030)
    -------------------------------------------------------------------------- */
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(false)
@@ -72,7 +71,7 @@ export function ConfirmButton({
   className,
   'data-testid': dataTestId,
   disabled,
-  size, // Destructure size agar tidak diteruskan ke elemen button murni
+  size: _size, // Destructure but don't use directly on button
   ...btnProps
 }: ConfirmButtonProps) {
   const [confirming, setConfirming] = useState(false)
@@ -82,35 +81,41 @@ export function ConfirmButton({
   const prefersReducedMotion = usePrefersReducedMotion()
   const styles = variantStyles[variant]
 
+  // Perbaikan TS7030: Pastikan semua path mengembalikan tipe yang sama
   useEffect(() => {
     if (confirming) {
       const timer = setTimeout(() => confirmRef.current?.focus(), 50)
       return () => clearTimeout(timer)
     }
+    return undefined 
   }, [confirming])
 
   useEffect(() => {
-    if (!confirming) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        light()
-        setConfirming(false)
+    if (confirming) {
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          light()
+          setConfirming(false)
+        }
       }
+      window.addEventListener('keydown', onKey)
+      return () => window.removeEventListener('keydown', onKey)
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return undefined
   }, [confirming, light])
 
   useEffect(() => {
-    if (!confirming) return
-    const onPointerDown = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        light()
-        setConfirming(false)
+    if (confirming) {
+      const onPointerDown = (e: PointerEvent) => {
+        if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+          light()
+          setConfirming(false)
+        }
       }
+      document.addEventListener('pointerdown', onPointerDown)
+      return () => document.removeEventListener('pointerdown', onPointerDown)
     }
-    document.addEventListener('pointerdown', onPointerDown)
-    return () => document.removeEventListener('pointerdown', onPointerDown)
+    return undefined
   }, [confirming, light])
 
   if (disabled) {
@@ -121,7 +126,7 @@ export function ConfirmButton({
           'inline-flex cursor-not-allowed items-center gap-2 rounded-lg border border-border/50 bg-surface/30 px-3 py-1.5 text-xs font-mono font-bold text-ink-dim/40',
           className
         )}
-        {...btnProps}
+        {...(btnProps as any)}
       >
         {icon && <span aria-hidden>{icon}</span>}
         <span>{label}</span>
@@ -154,7 +159,7 @@ export function ConfirmButton({
             aria-haspopup="true"
             aria-expanded="false"
             data-testid={dataTestId ?? 'confirm-button'}
-            {...btnProps}
+            {...(btnProps as any)} // Casting ke any untuk menghindari error exactOptionalPropertyTypes
           >
             {icon && <span aria-hidden>{icon}</span>}
             <span>{label}</span>
