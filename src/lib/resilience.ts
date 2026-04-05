@@ -52,9 +52,6 @@ export async function withRetry<T>(
   throw lastError
 }
 
-/* --------------------------------------------------------------------------
-   CIRCUIT BREAKER (with event emitter)
-   -------------------------------------------------------------------------- */
 export type CircuitState = 'closed' | 'open' | 'half-open'
 
 export interface CircuitBreakerEvents {
@@ -80,13 +77,13 @@ export class CircuitBreaker {
   private readonly timeout: number
   public readonly name: string
   private listeners: Map<keyof CircuitBreakerEvents, Set<Function>> = new Map()
-  private options?: CircuitBreakerOptions // 🔥 Deklarasi
+  private options?: CircuitBreakerOptions
 
   constructor(opts: CircuitBreakerOptions = {}) {
     this.threshold = opts.failureThreshold ?? 5
     this.timeout = opts.resetTimeoutMs ?? 30000
     this.name = opts.name ?? `circuit-${Date.now()}`
-    this.options = opts // 🔥 PERBAIKAN: Pastikan options disimpan!
+    this.options = opts 
   }
 
   on<K extends keyof CircuitBreakerEvents>(
@@ -178,9 +175,6 @@ export const aiCircuit = new CircuitBreaker({ name: 'ai-api', failureThreshold: 
 export const storageCircuit = new CircuitBreaker({ name: 'idb', failureThreshold: 5, resetTimeoutMs: 15000 })
 export const realtimeCircuit = new CircuitBreaker({ name: 'realtime', failureThreshold: 5, resetTimeoutMs: 30000 })
 
-/* --------------------------------------------------------------------------
-   BULKHEAD (limit concurrent executions)
-   -------------------------------------------------------------------------- */
 export interface BulkheadOptions {
   maxConcurrent?: number
   maxQueueSize?: number
@@ -240,7 +234,7 @@ export class Bulkhead {
     if (next) {
       this.active++
       next.fn()
-        .then((result) => next.resolve(result))
+        .then((result) => next.resolve(Promise.resolve(result)))
         .catch((err) => next.reject(err))
         .finally(() => {
           this.active--
@@ -253,9 +247,6 @@ export class Bulkhead {
   getQueueLength(): number { return this.queue.length }
 }
 
-/* --------------------------------------------------------------------------
-   RATE LIMITER (sliding window)
-   -------------------------------------------------------------------------- */
 export interface RateLimiterOptions {
   maxRequests: number
   windowMs?: number
@@ -276,7 +267,7 @@ export class RateLimiter {
     this.timestamps = this.timestamps.filter((ts) => now - ts < this.windowMs)
 
     if (this.timestamps.length >= this.maxRequests) {
-      const oldest = this.timestamps[0]
+      const oldest = this.timestamps[0] ?? now
       const waitTime = this.windowMs - (now - oldest) + 10
       await new Promise((resolve) => setTimeout(resolve, waitTime))
       return this.execute(fn) 
@@ -293,9 +284,7 @@ export class RateLimiter {
   }
 }
 
-/* --------------------------------------------------------------------------
-   TIMEOUT WRAPPER & SAFE ASYNC
-   -------------------------------------------------------------------------- */
+
 export function withTimeout<T>(promise: Promise<T>, ms: number, label = 'Operation'): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout>
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -313,9 +302,6 @@ export async function safeAsync<T>(fn: () => Promise<T>): Promise<{ data: T; err
   }
 }
 
-/* --------------------------------------------------------------------------
-   COMBINED PATTERNS
-   -------------------------------------------------------------------------- */
 export interface ResilientCallOptions {
   retry?: RetryOptions
   circuitBreaker?: CircuitBreaker
