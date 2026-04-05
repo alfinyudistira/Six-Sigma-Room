@@ -1,23 +1,21 @@
 // src/components/onboarding/Onboarding.tsx
 // ─── Onboarding / Discoverability Layer ───────────────────────────────────────
-// First-time users get a guided tour. Returning users see nothing.
-// Steps are config-driven and skippable at any point.
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { haptic } from '@/lib/utils'
-// 🔥 IMPORT HOOK DARI FONDASI YANG SUDAH KITA BUAT
 import { useOnboarding } from '@/hooks'
+import { tokens } from '@/lib/tokens'
 
 // ─── Step definitions ─────────────────────────────────────────────────────────
 interface OnboardingStep {
   id: string
   title: string
   body: string
-  targetSelector?: string  // CSS selector to highlight
-  position?: 'top' | 'bottom' | 'left' | 'right' | 'center'
-  action?: string          // CTA label
+  targetSelector?: string | undefined
+  position?: 'top' | 'bottom' | 'left' | 'right' | 'center' | undefined
+  action?: string | undefined
 }
 
 const STEPS: OnboardingStep[] = [
@@ -68,7 +66,8 @@ const STEPS: OnboardingStep[] = [
 ]
 
 // ─── Spotlight highlight ───────────────────────────────────────────────────────
-function Spotlight({ selector }: { selector?: string }) {
+// Perbaikan 2: Samakan tipe data prop selector dengan interface OnboardingStep
+function Spotlight({ selector }: { selector?: string | undefined }) {
   const [rect, setRect] = useState<DOMRect | null>(null)
 
   useEffect(() => {
@@ -76,7 +75,6 @@ function Spotlight({ selector }: { selector?: string }) {
       setRect(null)
       return
     }
-    // Timeout untuk memberi waktu DOM render jika selector ada di komponen yang lazy load
     const timer = setTimeout(() => {
       const el = document.querySelector(selector)
       if (el) {
@@ -106,11 +104,9 @@ function Spotlight({ selector }: { selector?: string }) {
 
 // ─── Main onboarding overlay ──────────────────────────────────────────────────
 export function OnboardingOverlay() {
-  // 🔥 Panggil sistem onboarding inti
   const { firstTime, isLoading, markAsSeen } = useOnboarding()
   const [currentStep, setCurrentStep] = useState(0)
 
-  // Jika sedang loading pengecekan storage, atau user sudah pernah melihatnya, hilangkan komponen
   if (isLoading || !firstTime) return null
 
   const step = STEPS[currentStep]
@@ -122,7 +118,7 @@ export function OnboardingOverlay() {
   const next = () => {
     haptic.light()
     if (isLast) {
-      markAsSeen() // Simpan status 'selesai' ke Storage utama
+      markAsSeen()
     } else {
       setCurrentStep(currentStep + 1)
     }
@@ -130,21 +126,19 @@ export function OnboardingOverlay() {
 
   const skip = () => {
     haptic.light()
-    markAsSeen() // Skip = dianggap selesai melihat
+    markAsSeen()
   }
 
   return createPortal(
     <>
       <Spotlight selector={step.targetSelector} />
 
-      {/* Backdrop (click to skip) */}
       <div
         style={{ position: 'fixed', inset: 0, zIndex: 99991 }}
         onClick={skip}
         aria-hidden="true"
       />
 
-      {/* Dialog */}
       <AnimatePresence mode="wait">
         <motion.div
           key={step.id}
@@ -171,7 +165,6 @@ export function OnboardingOverlay() {
             pointerEvents: 'auto',
           }}
         >
-          {/* Step counter */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <div style={{ display: 'flex', gap: '0.3rem' }}>
               {STEPS.map((_, i) => (
@@ -179,7 +172,7 @@ export function OnboardingOverlay() {
                   key={i}
                   style={{
                     width: i === currentStep ? 16 : 6, height: 6, borderRadius: 3,
-                    background: i === currentStep ? '#00D4FF' : i < currentStep ? '#00FF9C' : '#112233',
+                    background: i === currentStep ? (tokens as any).cyan : i < currentStep ? (tokens as any).green : '#112233',
                     transition: 'all 0.3s',
                   }}
                 />
@@ -197,7 +190,6 @@ export function OnboardingOverlay() {
             </button>
           </div>
 
-          {/* Content */}
           <h2
             id="onboarding-title"
             style={{ color: '#E2EEF9', fontFamily: 'Syne, sans-serif', fontSize: '1rem', fontWeight: 700, margin: '0 0 0.6rem' }}
@@ -208,7 +200,6 @@ export function OnboardingOverlay() {
             {step.body}
           </p>
 
-          {/* Actions */}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <motion.button
               onClick={next}
