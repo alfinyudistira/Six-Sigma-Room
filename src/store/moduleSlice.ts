@@ -1,22 +1,12 @@
 // src/store/moduleSlice.ts
-/**
- * ============================================================================
- * MODULE SLICE — NORMALIZED STATE MANAGEMENT (REDUX TOOLKIT)
- * ============================================================================
- */
-
 import {
   createSlice,
   createAsyncThunk,
   createEntityAdapter,
   PayloadAction,
 } from '@reduxjs/toolkit'
-// Pastikan file ini ada!
 import { persist, retrieve } from '@/lib/storage'
 
-/* --------------------------------------------------------------------------
-   DOMAIN TYPES
-   -------------------------------------------------------------------------- */
 export interface FMEARow {
   id: string; process: string; failureMode: string; effect: string;
   cause: string; severity: number; occurrence: number; detection: number;
@@ -44,14 +34,25 @@ export interface RootCauseNode {
   id: string; text: string; parentId: string | null; category?: string; verified: boolean;
 }
 
-/* --------------------------------------------------------------------------
-   NORMALIZED STATE (Entity Adapters)
-   -------------------------------------------------------------------------- */
-const fmeaAdapter = createEntityAdapter<FMEARow>({ selectId: (item) => item.id })
-const dmaicAdapter = createEntityAdapter<DMAICTask>({ selectId: (item) => item.id })
-const spcAdapter = createEntityAdapter<SPCPoint>({ selectId: (item) => item.id })
-const paretoAdapter = createEntityAdapter<ParetoItem>({ selectId: (item) => item.id })
-const rootCauseAdapter = createEntityAdapter<RootCauseNode>({ selectId: (item) => item.id })
+const fmeaAdapter = createEntityAdapter<FMEARow>({
+  selectId: (item) => item.id
+})
+
+const dmaicAdapter = createEntityAdapter<DMAICTask>({
+  selectId: (item) => item.id
+})
+
+const spcAdapter = createEntityAdapter<SPCPoint>({
+  selectId: (item) => item.id
+})
+
+const paretoAdapter = createEntityAdapter<ParetoItem>({
+  selectId: (item) => item.id
+})
+
+const rootCauseAdapter = createEntityAdapter<RootCauseNode>({
+  selectId: (item) => item.id
+})
 
 export interface ModuleState {
   fmea: ReturnType<typeof fmeaAdapter.getInitialState>
