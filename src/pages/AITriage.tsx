@@ -40,7 +40,8 @@ export default function AITriage() {
   const { company } = useAppStore()
   const { config }  = useConfigStore()
   const toast       = useFeedback()
-  const { heavy, notification } = useHaptic()
+  // PERBAIKAN 1: notification diubah menjadi notify
+  const { heavy, notify } = useHaptic()
 
   const [problem, setProblem] = useState('')
   const [context, setContext] = useState('')
@@ -56,10 +57,11 @@ export default function AITriage() {
     if (!loading) return
     const phases = ['Connecting to Neural Net...', 'Analyzing Process Data...', 'Running Six Sigma Models...', 'Generating Action Plan...']
     let i = 0
-    setLoadingText(phases[0])
+    // PERBAIKAN 2: Tambahkan fallback string kosong
+    setLoadingText(phases[0] || '')
     const interval = setInterval(() => {
       i = Math.min(i + 1, phases.length - 1)
-      setLoadingText(phases[i])
+      setLoadingText(phases[i] || '')
     }, 800)
     return () => clearInterval(interval)
   }, [loading])
@@ -68,12 +70,12 @@ export default function AITriage() {
     try {
       const text = `[${res.priority} PRIORITY] Sigma: ${res.sigma} | DPMO: ${res.dpmo}\nRecommendation: ${res.recommendation}\nActions:\n${res.actions.map(a => `- ${a}`).join('\n')}`
       await navigator.clipboard.writeText(text)
-      notification('success')
+      notify('success') // Pakai notify
       toast.success('Copied to clipboard', 'Action plan ready to share.')
     } catch (err) {
       toast.error('Copy failed', 'Please try selecting the text manually.')
     }
-  }, [notification, toast])
+  }, [notify, toast])
 
   // ─── AI ANALYSIS ENGINE ───────────────────────────────────────────────
   const analyze = useCallback(async () => {
@@ -123,11 +125,11 @@ Respond ONLY with valid JSON (no markdown):
         const text = data.content?.[0]?.text ?? ''
         return JSON.parse(text.replace(/```json|```/g, '').trim()) as TriageResult
       }, () => ({
-        // Fallback jika API gagal/terblokir CORS
+        // PERBAIKAN 3: Tambahkan `as TriageResult` di akhir object fallback ini
         priority: 'MEDIUM', sigma: 3.1, dpmo: 54000, color: T.yellow,
         recommendation: 'AI uplink timeout. Local heuristic suggests immediate process parameter review.',
         actions: ['Define exact problem boundary', 'Measure current defect rate manually', 'Isolate affected sub-processes', 'Implement standard containment']
-      }))
+      } as TriageResult))
 
       // Styling & State Update
       const final: TriageResult = { ...res, color: PRIORITY_COLORS[res.priority] ?? T.cyan }
@@ -138,15 +140,15 @@ Respond ONLY with valid JSON (no markdown):
       setResult(final)
       setHistory(prev => [{ id: crypto.randomUUID(), problem, timestamp: Date.now(), result: final }, ...prev].slice(0, 5))
       
-      notification('success') // Haptic sukses
+      notify('success') // Pakai notify
       toast.success('Analysis Complete', `Severity: ${final.priority}`)
     } catch (e) {
       toast.error('Neural Net Error', (e as Error).message)
-      notification('error')
+      notify('error') // Pakai notify
     } finally {
       setLoading(false)
     }
-  }, [problem, context, company, toast, heavy, notification])
+  }, [problem, context, company, toast, heavy, notify])
 
   // ─── RENDER ───────────────────────────────────────────────────────────
   return (
@@ -189,9 +191,9 @@ Respond ONLY with valid JSON (no markdown):
               />
             </div>
 
-            {/* ERROR FIX: hapticStyle dihapus dari komponen Button */}
+            {/* PERBAIKAN 4: Ganti variant agar tidak pakai 'secondary' jika memang tidak didukung */}
             <Button 
-              variant={loading ? "secondary" : "primary"} 
+              variant="primary" 
               loading={loading} 
               onClick={analyze} 
               size="md"
