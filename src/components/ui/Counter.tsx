@@ -1,17 +1,8 @@
 // src/components/ui/Counter.tsx
-/**
- * ============================================================================
- * COUNTER — SMOOTH NUMBER ANIMATION WITH PRECISION LOGIC
- * ============================================================================
- */
-
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { useHaptic } from '@/hooks'
 import { tokens } from '@/lib/tokens'
 
-/* --------------------------------------------------------------------------
-   TYPES
-   -------------------------------------------------------------------------- */
 export interface CounterProps {
   value: number
   decimals?: number | undefined
@@ -28,9 +19,6 @@ export interface CounterProps {
   ariaLabel?: string | undefined
 }
 
-/* --------------------------------------------------------------------------
-   LOCAL HOOK: Reduced Motion (Safety Fix)
-   -------------------------------------------------------------------------- */
 function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false)
   useEffect(() => {
@@ -46,9 +34,6 @@ function useReducedMotion(): boolean {
 
 const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3)
 
-/* --------------------------------------------------------------------------
-   COUNTER COMPONENT
-   -------------------------------------------------------------------------- */
 export function Counter({
   value,
   decimals = 0,
