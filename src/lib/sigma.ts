@@ -1,4 +1,15 @@
 // src/lib/sigma.ts
+export interface SigmaOptions {
+  shift?: number;
+  precision?: number;
+}
+
+export interface SigmaResult {
+  sigma: number;
+  dpmo: number;
+  yield: number;
+  defectRate: number;
+}
 
 const SIGMA_TABLE: readonly [number, number][] = [
   [3.4, 6.0],
@@ -12,7 +23,7 @@ const SIGMA_TABLE: readonly [number, number][] = [
 
 const MILLION = 1_000_000
 const EPS = Number.EPSILON
-const D2 = 1.128 // moving range constant for n=2
+const D2 = 1.128 
 const D4 = 3.267
 
 const clamp = (n: number, min: number, max: number): number =>
@@ -31,16 +42,12 @@ const validateFinite = (...values: number[]): void => {
   }
 }
 
-/**
- * Convert DPMO to Sigma level using log-space linear interpolation.
- */
 export function dpmoToSigma(dpmo: number): number {
   if (!Number.isFinite(dpmo)) throw new TypeError('dpmo must be finite')
-  if (dpmo <= 0) return SIGMA_TABLE[0]![1] // 6.0
+  if (dpmo <= 0) return SIGMA_TABLE[0]![1] 
   if (dpmo >= MILLION) return 0
 
   for (let i = 0; i < SIGMA_TABLE.length - 1; i++) {
-    // Perbaikan: Tambahkan non-null assertion (!) agar TS yakin data ada
     const rowLo = SIGMA_TABLE[i]!
     const rowHi = SIGMA_TABLE[i + 1]!
     
@@ -51,7 +58,6 @@ export function dpmoToSigma(dpmo: number): number {
       if (Math.abs(dpmo - dpLo) < EPS) return sigmaHi
       if (Math.abs(dpmo - dpHi) < EPS) return sigmaLo
 
-      // Perbaikan: Pastikan tidak log(0)
       const logDpmo = Math.log(Math.max(dpmo, EPS))
       const logDpLo = Math.log(Math.max(dpLo, EPS))
       const logDpHi = Math.log(Math.max(dpHi, EPS))
@@ -64,9 +70,6 @@ export function dpmoToSigma(dpmo: number): number {
   return 0
 }
 
-/**
- * Convert Sigma level to DPMO.
- */
 export function sigmaToDpmo(sigma: number): number {
   if (!Number.isFinite(sigma)) throw new TypeError('sigma must be finite')
 
