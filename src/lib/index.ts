@@ -20,11 +20,6 @@ export async function loadPluginSystem() {
   return mod
 }
 
-export async function loadRealtime() {
-  const mod = await import(/* webpackChunkName: "realtime" */ './realtime')
-  return mod
-}
-
 export async function loadRulesEngine() {
   const mod = await import(/* webpackChunkName: "rulesEngine" */ './rulesEngine')
   return mod
