@@ -1,10 +1,4 @@
 // src/pages/SPCCharts.tsx
-/**
- * ============================================================================
- * SPC CHARTS — STATISTICAL PROCESS CONTROL (I‑MR CHART)
- * ============================================================================
- */
-
 import React, { useState, useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import {
@@ -42,9 +36,6 @@ import { ConfirmButton } from '@/components/ui/Confirm'
 import { tokens as T } from '@/lib/tokens'
 import { downloadCSV, cn } from '@/lib/utils'
 
-/* --------------------------------------------------------------------------
-   CONSTANTS & FORMATTERS
-   -------------------------------------------------------------------------- */
 const DEMO_POINTS: SPCPoint[] = Array.from({ length: 20 }, (_, i) => ({
   id: `demo_${i}`,
   label: `W${i + 1}`,
@@ -151,13 +142,14 @@ export default function SPCCharts() {
     medium()
     if (showDemo) setShowDemo(false)
 
+        const newNote = form.note.trim();
     dispatch(
       addSPCPoint({
         id: `spc_${Date.now()}`,
         label: form.label.trim(),
         value: val,
         timestamp: new Date().toISOString(),
-        note: form.note.trim() || undefined,
+        ...(newNote ? { note: newNote } : {}),
       })
     )
 
