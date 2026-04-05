@@ -1,304 +1,438 @@
 // src/pages/SigmaCalc.tsx
-import { useMemo, useState } from 'react'
+/**
+ * ============================================================================
+ * SIGMA CALCULATOR — PROCESS CAPABILITY ANALYSIS
+ * ============================================================================
+ */
+
+import { useMemo, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
+import { useShallow } from 'zustand/react/shallow'
+
 import { useAppStore } from '@/store/useAppStore'
 import { useConfigStore, getSigmaColor, getPpkStatus } from '@/lib/config'
-import { calcPpk, calcCp, dpmoToSigma, sigmaToDpmo, calcDpmo, calcYield } from '@/lib/sigma'
-import { useI18n } from '@/providers/I18nProvider'
-import { useFeedback } from '@/services/feedback'
+import {
+  calcPpk,
+  calcCp,
+  dpmoToSigma,
+  sigmaToDpmo,
+  calcDpmo,
+  calcYield,
+} from '@/lib/sigma'
+
+// 🔥 PERBAIKAN 1: Import dari barrel hooks
+import { useCurrency, useHaptic } from '@/hooks'
+import { feedback } from '@/lib/feedback'
+
 import { KPICard, Section, Panel, SimpleLineChart, Gauge } from '@/components/charts'
 import { Counter } from '@/components/ui/Counter'
-import { Badge } from '@/components/ui/Badge'
+import { Badge, type BadgeColor } from '@/components/ui/Badge'
 import { HelpTooltip } from '@/components/ui/Tooltip'
-import { Slider } from '@/components/ui/Input'
+import { Slider, NumberInput } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { tokens as T } from '@/lib/tokens'
-import { downloadCSV, copyToClipboard } from '@/lib/utils'
+import { downloadCSV, copyToClipboard, cn } from '@/lib/utils'
 
-// ─── Sigma reference table — config-driven ────────────────────────────────────
+/* --------------------------------------------------------------------------
+   CONSTANTS & FORMATTERS
+   -------------------------------------------------------------------------- */
 const SIGMA_REF = [
-  { level: 1, dpmo: 691462, yld: 30.85 },
-  { level: 2, dpmo: 308538, yld: 69.15 },
-  { level: 3, dpmo:  66807, yld: 93.32 },
-  { level: 4, dpmo:   6210, yld: 99.38 },
-  { level: 5, dpmo:    233, yld: 99.977 },
-  { level: 6, dpmo:    3.4, yld: 99.99966 },
-]
+  { level: 1, dpmo: 691462, yield: 30.85 },
+  { level: 2, dpmo: 308538, yield: 69.15 },
+  { level: 3, dpmo: 66807, yield: 93.32 },
+  { level: 4, dpmo: 6210, yield: 99.38 },
+  { level: 5, dpmo: 233, yield: 99.977 },
+  { level: 6, dpmo: 3.4, yield: 99.99966 },
+] as const
 
 type CalcMode = 'from-company' | 'manual-dpmo' | 'from-defects'
 
+// 🔥 PERBAIKAN 2: Native formatter agar Strict Mode aman
+const numFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
+
+// Helper mapping warna hex ke BadgeColor enum
+const getBadgeColor = (hex: string): BadgeColor => {
+  if (hex === T.green) return 'green'
+  if (hex === T.cyan) return 'cyan'
+  if (hex === T.yellow) return 'yellow'
+  return 'red'
+}
+
+/* --------------------------------------------------------------------------
+   MAIN COMPONENT
+   -------------------------------------------------------------------------- */
 export default function SigmaCalc() {
-  const { company } = useAppStore()
-  const { config }  = useConfigStore()
-  const { fmtNumber, fmtCurrency } = useI18n()
-  const toast = useFeedback()
+  const company = useAppStore(useShallow((s) => s.company))
+  const config = useConfigStore((s) => s.config)
+  const { format: formatCurrency } = useCurrency()
+  const { light, medium, success } = useHaptic()
 
-  const [mode, setMode]   = useState<CalcMode>('from-company')
-  const [manualDpmo, setManualDpmo] = useState(6210)
-  const [defects, setDefects]   = useState(50)
-  const [units, setUnits]       = useState(1000)
-  const [opps, setOpps]         = useState(5)
+  // ─── STATE (Aman untuk Input kosong) ────────────────────────────────────
+  const [mode, setMode] = useState<CalcMode>('from-company')
+  const [manualDpmo, setManualDpmo] = useState<number | ''>(6210)
+  const [defects, setDefects] = useState<number | ''>(50)
+  const [units, setUnits] = useState<number | ''>(1000)
+  const [opps, setOpps] = useState<number | ''>(5)
 
-  // ── Derived metrics ────────────────────────────────────────────────────────
+  // ─── DERIVED METRICS ──────────────────────────────────────────────────────
   const derived = useMemo(() => {
     const { baselineMean, baselineStdDev, usl, lsl, laborRate, monthlyVolume } = company
 
-    let dpmo: number
+    let dpmo: number = 0
     if (mode === 'from-company') {
       const specRange = usl - lsl
-      dpmo = specRange > 0 && baselineStdDev > 0
-        ? Math.round(Math.max(0, (1 - specRange / (6 * baselineStdDev)) * 1_000_000))
-        : 0
+      dpmo =
+        specRange > 0 && baselineStdDev > 0
+          ? Math.round(Math.max(0, (1 - specRange / (6 * baselineStdDev))) * 1_000_000)
+          : 0
     } else if (mode === 'manual-dpmo') {
-      dpmo = manualDpmo
+      dpmo = Number(manualDpmo) || 0
     } else {
-      dpmo = calcDpmo(defects, opps, units)
+      dpmo = calcDpmo(Number(defects) || 0, Number(opps) || 1, Number(units) || 1)
     }
 
-    const sigma  = dpmoToSigma(dpmo)
-    const yld    = calcYield(dpmo)
-    const ppk    = calcPpk(baselineMean, baselineStdDev, usl, lsl)
-    const cp     = calcCp(baselineStdDev, usl, lsl)
-    const monthlyCopq = laborRate * monthlyVolume * (1 - yld / 100)
+    const sigma = dpmoToSigma(dpmo)
+    const yieldPct = calcYield(dpmo)
+    const ppk = calcPpk(baselineMean, baselineStdDev, usl, lsl)
+    const cp = calcCp(baselineStdDev, usl, lsl)
+    const monthlyCopq = laborRate * monthlyVolume * (1 - yieldPct / 100)
 
     // What-if: target 4σ
-    const targetDpmo  = sigmaToDpmo(4)
+    const targetDpmo = sigmaToDpmo(4)
     const targetYield = calcYield(targetDpmo)
-    const savedYield  = targetYield - yld
-    const savedCopq   = laborRate * monthlyVolume * (savedYield / 100)
+    
+    // 🔥 PERBAIKAN 3: Jangan tampilkan minus jika proses sudah > 4 Sigma
+    const savedYield = Math.max(0, targetYield - yieldPct)
+    const savedCopq = Math.max(0, laborRate * monthlyVolume * (savedYield / 100))
 
-    // Bell curve shape data
+    // Bell curve shape (normal distribution)
     const bellData = Array.from({ length: 40 }, (_, i) => {
       const x = lsl + (usl - lsl) * (i / 39)
       const z = (x - baselineMean) / baselineStdDev
       const y = Math.exp(-0.5 * z * z) / (baselineStdDev * Math.sqrt(2 * Math.PI))
-      return { x: +x.toFixed(1), normal: +y.toFixed(6), spec: x >= lsl && x <= usl ? y : 0 }
+      return {
+        x: Number(x.toFixed(1)),
+        normal: Number(y.toFixed(6)),
+        spec: x >= lsl && x <= usl ? y : 0,
+      }
     })
 
-    return { dpmo, sigma, yld, ppk, cp, monthlyCopq, savedCopq, bellData }
+    return {
+      dpmo, sigma, yield: yieldPct, ppk, cp,
+      monthlyCopq, savedCopq, bellData, targetYield, savedYield,
+    }
   }, [company, mode, manualDpmo, defects, units, opps])
 
   const sigmaColor = getSigmaColor(derived.sigma, config)
-  const ppkStatus  = getPpkStatus(derived.ppk, config)
+  const ppkStatus = getPpkStatus(derived.ppk, config)
 
-  const handleExport = () => {
-    downloadCSV([{
-      company: company.name, process: company.processName,
-      sigma: derived.sigma, ppk: derived.ppk, cp: derived.cp,
-      dpmo: derived.dpmo, yield_pct: derived.yld, monthly_copq: derived.monthlyCopq,
-    }], `sigma-results-${Date.now()}.csv`)
-    toast.success('Exported', 'Sigma results saved to CSV')
-  }
+  // ─── HANDLERS ─────────────────────────────────────────────────────────────
+  const handleExport = useCallback(() => {
+    light()
+    const successExport = downloadCSV(
+      [
+        {
+          Company: company.name,
+          Process: company.processName,
+          Sigma: derived.sigma,
+          Ppk: derived.ppk,
+          Cp: derived.cp,
+          DPMO: derived.dpmo,
+          Yield_Pct: derived.yield,
+          Monthly_COPQ: derived.monthlyCopq,
+        },
+      ],
+      `sigma-results-${Date.now()}.csv`
+    )
+    if (successExport) {
+      success()
+      feedback.notifySuccess('Sigma results saved to CSV')
+    } else {
+      feedback.notifyError('Export failed')
+    }
+  }, [company, derived, success, light])
 
-  const handleCopy = async () => {
-    const text = `Sigma: ${derived.sigma.toFixed(2)} | Ppk: ${derived.ppk.toFixed(3)} | DPMO: ${derived.dpmo} | Yield: ${derived.yld.toFixed(2)}%`
-    await copyToClipboard(text)
-    toast.success('Copied!', 'Results copied to clipboard')
-  }
+  const handleCopy = useCallback(async () => {
+    light()
+    const text = `Sigma: ${derived.sigma.toFixed(2)} | Ppk: ${derived.ppk.toFixed(3)} | DPMO: ${numFormatter.format(derived.dpmo)} | Yield: ${derived.yield.toFixed(2)}%`
+    const ok = await copyToClipboard(text)
+    if (ok) {
+      medium()
+      feedback.notifySuccess('Results copied to clipboard')
+    } else {
+      feedback.notifyError('Copy failed')
+    }
+  }, [derived, medium, light])
 
+  const animated = config.ui.animationsEnabled
+
+  // ─── RENDER ─────────────────────────────────────────────────────────────
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-      style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-
+    <motion.div
+      initial={animated ? { opacity: 0, y: 10 } : undefined}
+      animate={animated ? { opacity: 1, y: 0 } : undefined}
+      transition={{ duration: 0.3 }}
+      className="flex flex-col gap-6 p-4 md:p-6 lg:p-8"
+    >
+      {/* Header */}
       <Section
-        subtitle="Module 2 — Sigma Calculator"
-        title="Process Capability Analysis"
+        subtitle="Module 2 — Process Capability"
+        title="Sigma Calculator"
         action={
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <Button size="xs" variant="ghost" onClick={handleCopy}>⊕ Copy</Button>
-            <Button size="xs" variant="primary" onClick={handleExport}>↓ Export CSV</Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={handleCopy} icon="⎘">Copy</Button>
+            <Button size="sm" variant="primary" onClick={handleExport} icon="↓">CSV</Button>
           </div>
         }
       />
 
-      {/* ── Mode selector ── */}
+      {/* Mode Selector Panel */}
       <Panel>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
-          {([
+        <div className="mb-6 flex flex-wrap gap-2 rounded-lg bg-surface/50 p-1.5 border border-border">
+          {[
             ['from-company', '◈ From Company Profile'],
-            ['manual-dpmo',  'σ Enter DPMO Directly'],
+            ['manual-dpmo', 'σ Enter DPMO Directly'],
             ['from-defects', '⊘ From Defect Count'],
-          ] as [CalcMode, string][]).map(([m, label]) => (
+          ] as [CalcMode, string][].map(([m, label]) => (
             <button
               key={m}
-              onClick={() => setMode(m)}
-              aria-pressed={mode === m}
-              style={{
-                background: mode === m ? `${T.cyan}18` : 'transparent',
-                border: `1px solid ${mode === m ? T.cyan : T.border}`,
-                color: mode === m ? T.cyan : T.textDim,
-                padding: '0.4rem 0.85rem', borderRadius: 6, cursor: 'pointer',
-                fontFamily: T.mono, fontSize: '0.62rem', letterSpacing: '0.05em',
-                transition: 'all 0.15s',
+              onClick={() => {
+                light()
+                setMode(m)
               }}
+              aria-pressed={mode === m}
+              className={cn(
+                'flex-1 rounded-md px-3 py-2 font-mono text-xs font-bold uppercase tracking-wide transition-all',
+                mode === m
+                  ? 'bg-cyan text-bg shadow-lg shadow-cyan/20'
+                  : 'text-ink-dim hover:bg-white/5 hover:text-ink'
+              )}
+              style={mode === m ? { backgroundColor: T.cyan, color: T.bg } : {}}
             >
               {label}
             </button>
           ))}
         </div>
 
-        {/* Manual DPMO */}
-        {mode === 'manual-dpmo' && (
-          <div style={{ maxWidth: 400 }}>
-            <Slider
-              label="DPMO Value"
-              valueLabel={fmtNumber(manualDpmo)}
-              min={1} max={1000000} step={100}
-              value={manualDpmo}
-              onChange={e => setManualDpmo(+e.target.value)}
-              accentColor={T.cyan}
-            />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', marginTop: '0.75rem' }}>
-              {SIGMA_REF.map(r => (
-                <button key={r.level}
-                  onClick={() => setManualDpmo(r.dpmo)}
-                  style={{
-                    background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6,
-                    padding: '0.4rem', cursor: 'pointer', textAlign: 'center',
-                    fontFamily: T.mono, fontSize: '0.58rem', color: T.textMid,
-                    transition: 'all 0.15s',
-                  }}>
-                  <div style={{ color: getSigmaColor(r.level, config), fontWeight: 700 }}>{r.level}σ</div>
-                  <div style={{ color: T.textDim, fontSize: '0.52rem' }}>{fmtNumber(r.dpmo)} DPMO</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* From defects */}
-        {mode === 'from-defects' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', maxWidth: 480 }}>
-            {[
-              { label: 'Defects', value: defects, set: setDefects, min: 0, max: 10000 },
-              { label: 'Units Inspected', value: units, set: setUnits, min: 1, max: 1000000 },
-              { label: 'Opportunities/Unit', value: opps, set: setOpps, min: 1, max: 100 },
-            ].map(f => (
-              <div key={f.label}>
-                <label style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.55rem', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: '0.3rem' }}>
-                  {f.label}
-                </label>
-                <input
-                  type="number" value={f.value} min={f.min} max={f.max}
-                  onChange={e => f.set(+e.target.value)}
-                  style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: T.mono, fontSize: '0.75rem', padding: '0.4rem 0.6rem', width: '100%' }}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-      </Panel>
-
-      {/* ── Primary KPIs ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem' }}>
-        <KPICard label="Sigma Level" icon="σ"
-          value={<Counter value={derived.sigma} decimals={2} color={sigmaColor} />}
-          sub={derived.sigma >= config.sigma.excellent ? 'Excellent' : 'Needs Improvement'}
-          color={sigmaColor} />
-        <KPICard label="Ppk Index" icon="◈"
-          value={<Counter value={derived.ppk} decimals={3} color={ppkStatus.color} />}
-          sub={ppkStatus.label} color={ppkStatus.color} />
-        <KPICard label="Cp (Potential)" icon="⊕"
-          value={<Counter value={derived.cp} decimals={3} color={T.cyan} />}
-          sub="Centered capability" color={T.cyan} />
-        <KPICard label="DPMO" icon="⊘"
-          value={<Counter value={derived.dpmo} color={derived.dpmo < 6210 ? T.green : T.red} />}
-          sub="Defects per million" color={derived.dpmo < 6210 ? T.green : T.red} />
-        <KPICard label="Process Yield" icon="✓"
-          value={<Counter value={derived.yld} decimals={3} suffix="%" color={derived.yld > 99 ? T.green : T.yellow} />}
-          sub="First pass yield" color={derived.yld > 99 ? T.green : T.yellow} />
-        <KPICard label="Monthly COPQ" icon="$"
-          value={fmtCurrency(derived.monthlyCopq)}
-          sub="Cost of poor quality" color={T.red} />
-      </div>
-
-      {/* ── Charts row ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
-        {/* Bell curve */}
-        <Panel>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-            <div>
-              <div style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.52rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Normal Distribution</div>
-              <div style={{ color: T.text, fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '0.9rem' }}>vs Spec Limits</div>
-            </div>
-            <HelpTooltip title="Process Distribution" description="Shows where your process output falls relative to spec limits (USL/LSL). Green area = within spec. Red tails = defects." />
-          </div>
-          <SimpleLineChart
-            data={derived.bellData} xKey="x"
-            lines={[
-              { key: 'normal', color: T.cyan,  label: 'Distribution' },
-              { key: 'spec',   color: T.green, label: 'Within Spec' },
-            ]}
-            areas
-            referenceLines={[
-              { value: 0, color: T.border, label: '' },
-            ]}
-          />
-        </Panel>
-
-        {/* Gauges */}
-        <Panel>
-          <Section subtitle="Visual" title="Capability Gauges" />
-          <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '0.5rem 0' }}>
-            <Gauge value={derived.sigma} max={6} color={sigmaColor} size={100} label="Sigma" />
-            <Gauge value={derived.ppk} max={2} color={ppkStatus.color} size={100} label="Ppk" />
-            <Gauge value={derived.yld} max={100} color={derived.yld > 99 ? T.green : T.cyan} size={100} label="Yield %" />
-          </div>
-        </Panel>
-      </div>
-
-      {/* ── Reference table ── */}
-      <Panel>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <Section subtitle="Reference" title="Sigma Level Comparison" />
-        </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: T.mono, fontSize: '0.65rem' }}>
-            <thead>
-              <tr>
-                {['Sigma', 'DPMO', 'Yield', 'Ppk', 'Status', 'Monthly COPQ Impact'].map(h => (
-                  <th key={h} style={{ padding: '0.5rem 0.75rem', textAlign: 'left', color: T.textDim, fontSize: '0.55rem', letterSpacing: '0.1em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}` }}>{h}</th>
+        {/* Input Form Area */}
+        <motion.div layout>
+          {mode === 'manual-dpmo' && (
+            <div className="max-w-xl space-y-6">
+              <Slider
+                label="DPMO Value"
+                valueLabel={numFormatter.format(Number(manualDpmo))}
+                min={1} max={1_000_000} step={10}
+                value={Number(manualDpmo)}
+                onChange={(e) => setManualDpmo(Number(e.target.value))}
+                accentColor={T.cyan}
+              />
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {SIGMA_REF.map((ref) => (
+                  <button
+                    key={ref.level}
+                    onClick={() => {
+                      light()
+                      setManualDpmo(ref.dpmo)
+                    }}
+                    className="flex flex-col items-center justify-center rounded-lg border border-border bg-surface py-2 transition-all hover:bg-white/5 active:scale-95"
+                    style={{ borderColor: `${getSigmaColor(ref.level, config).color}4D` }}
+                  >
+                    <div className="font-mono text-sm font-black" style={{ color: getSigmaColor(ref.level, config).color }}>
+                      {ref.level}σ
+                    </div>
+                    <div className="font-mono text-[8px] font-bold text-ink-dim mt-1">SET DPMO</div>
+                  </button>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {SIGMA_REF.map((r, i) => {
-                const isCurrentRow = Math.abs(derived.sigma - r.level) < 0.5
-                const sc = getSigmaColor(r.level, config)
-                const ps = getPpkStatus(r.level / 3, config)
-                return (
-                  <tr key={r.level} style={{ background: isCurrentRow ? `${T.cyan}08` : i % 2 === 0 ? 'transparent' : `${T.surface}50` }}>
-                    <td style={{ padding: '0.5rem 0.75rem', color: sc, fontWeight: 700 }}>{r.level}σ {isCurrentRow && '← YOU'}</td>
-                    <td style={{ padding: '0.5rem 0.75rem', color: T.text }}>{fmtNumber(r.dpmo)}</td>
-                    <td style={{ padding: '0.5rem 0.75rem', color: T.text }}>{r.yld.toFixed(r.yld > 99 ? 5 : 2)}%</td>
-                    <td style={{ padding: '0.5rem 0.75rem', color: T.text }}>{(r.level / 3).toFixed(2)}</td>
-                    <td style={{ padding: '0.5rem 0.75rem' }}><Badge label={ps.label} color={ps.color === T.green ? 'green' : ps.color === T.cyan ? 'cyan' : ps.color === T.yellow ? 'yellow' : 'red'} /></td>
-                    <td style={{ padding: '0.5rem 0.75rem', color: T.red }}>{fmtCurrency(company.laborRate * company.monthlyVolume * (1 - r.yld / 100))}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+              </div>
+            </div>
+          )}
+
+          {mode === 'from-defects' && (
+            <div className="grid max-w-2xl grid-cols-1 gap-4 sm:grid-cols-3">
+              <NumberInput
+                label="Defects Found"
+                value={defects}
+                onChange={(e) => setDefects(Number(e.target.value))}
+                min={0}
+              />
+              <NumberInput
+                label="Units Inspected"
+                value={units}
+                onChange={(e) => setUnits(Number(e.target.value))}
+                min={1}
+              />
+              <NumberInput
+                label="Opps / Unit"
+                value={opps}
+                onChange={(e) => setOpps(Number(e.target.value))}
+                min={1}
+              />
+            </div>
+          )}
+
+          {mode === 'from-company' && (
+            <div className="flex items-center gap-3 rounded-lg border border-cyan/20 bg-cyan/5 p-4">
+              <span className="text-2xl" style={{ color: T.cyan }}>ℹ</span>
+              <div>
+                <div className="font-mono text-xs font-bold uppercase text-cyan">Using Company Profile</div>
+                <div className="text-xs text-ink-dim mt-1">
+                  Capability is calculated automatically from <strong>Baseline Mean</strong>, <strong>StdDev</strong>, and <strong>Spec Limits (USL/LSL)</strong> in your organization settings.
+                </div>
+              </div>
+            </div>
+          )}
+        </motion.div>
       </Panel>
 
-      {/* ── What-if improvement box ── */}
-      <Panel style={{ borderColor: T.green + '44', background: `${T.green}06` }}>
-        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div>
-            <div style={{ color: T.green, fontFamily: T.mono, fontSize: '0.52rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
-              💡 What-If: Reach 4σ
+      {/* Primary KPIs */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+        <KPICard
+          label="Sigma Level"
+          value={<Counter value={derived.sigma} decimals={2} color={sigmaColor.color} />}
+          sub={sigmaColor.label}
+          color={sigmaColor.color}
+        />
+        <KPICard
+          label="Ppk Index"
+          value={<Counter value={derived.ppk} decimals={3} color={ppkStatus.color} />}
+          sub={ppkStatus.label}
+          color={ppkStatus.color}
+        />
+        <KPICard
+          label="Cp (Potential)"
+          value={<Counter value={derived.cp} decimals={3} color={T.cyan} />}
+          sub="Centered capability"
+          color={T.cyan}
+        />
+        <KPICard
+          label="DPMO"
+          value={<Counter value={derived.dpmo} color={derived.dpmo < 6210 ? T.green : T.red} />}
+          sub="Defects per million"
+          color={derived.dpmo < 6210 ? T.green : T.red}
+        />
+        <KPICard
+          label="Process Yield"
+          value={<Counter value={derived.yield} decimals={3} suffix="%" color={derived.yield > 99 ? T.green : T.yellow} />}
+          sub="First pass yield"
+          color={derived.yield > 99 ? T.green : T.yellow}
+        />
+        <KPICard
+          label="Monthly COPQ"
+          value={formatCurrency(derived.monthlyCopq)}
+          sub="Est. Cost of Poor Quality"
+          color={derived.monthlyCopq > 0 ? T.red : T.green}
+        />
+      </div>
+
+      {/* Charts & Visuals */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <Panel className="lg:col-span-7 flex flex-col justify-between">
+          <Section
+            subtitle="Normal Distribution"
+            title="Process vs Specifications"
+            action={
+              <HelpTooltip
+                title="Process Distribution"
+                description="Shows where your process falls relative to Spec Limits. Green area is within spec. Red tails mean defects."
+              />
+            }
+          />
+          <div className="mt-4 flex-1">
+            <SimpleLineChart
+              data={derived.bellData}
+              xKey="x"
+              lines={[
+                { key: 'normal', color: T.cyan, label: 'Distribution' },
+                { key: 'spec', color: T.green, label: 'Within Spec' },
+              ]}
+              areas
+              height={260}
+            />
+          </div>
+        </Panel>
+
+        <Panel className="lg:col-span-5">
+          <Section subtitle="Visual" title="Capability Gauges" />
+          <div className="flex flex-wrap items-center justify-around gap-6 py-6">
+            <Gauge value={derived.sigma} max={6} color={sigmaColor.color} size={110} label="Sigma" />
+            <Gauge value={derived.ppk} max={2} color={ppkStatus.color} size={110} label="Ppk" />
+          </div>
+        </Panel>
+      </div>
+
+      {/* Reference & What-If */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <Panel className="xl:col-span-2">
+          <Section subtitle="Reference" title="Sigma Level Comparison" />
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-left font-mono text-xs">
+              <thead className="bg-surface text-ink-dim border-b border-border">
+                <tr>
+                  {['Sigma', 'DPMO', 'Yield', 'Ppk', 'Status', 'Monthly COPQ Impact'].map((h) => (
+                    <th key={h} className="p-3 font-semibold uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {SIGMA_REF.map((ref) => {
+                  const isCurrentRow = Math.abs(derived.sigma - ref.level) < 0.5
+                  const rowColor = getSigmaColor(ref.level, config).color
+                  const ppkVal = ref.level / 3
+                  const ppkStatusRow = getPpkStatus(ppkVal, config)
+                  
+                  return (
+                    <tr
+                      key={ref.level}
+                      className={cn('transition-colors', isCurrentRow ? 'bg-cyan/10' : 'hover:bg-white/5')}
+                    >
+                      <td className="p-3 font-bold" style={{ color: rowColor }}>
+                        {ref.level}σ {isCurrentRow && <span className="ml-2 rounded bg-cyan px-1 text-[8px] text-bg">YOU</span>}
+                      </td>
+                      <td className="p-3 text-ink">{numFormatter.format(ref.dpmo)}</td>
+                      <td className="p-3 text-ink">{ref.yield.toFixed(ref.yield > 99 ? 4 : 2)}%</td>
+                      <td className="p-3 text-ink">{ppkVal.toFixed(2)}</td>
+                      <td className="p-3">
+                        <Badge label={ppkStatusRow.label} color={getBadgeColor(ppkStatusRow.color)} />
+                      </td>
+                      <td className="p-3 text-red">
+                        {formatCurrency(company.laborRate * company.monthlyVolume * (1 - ref.yield / 100))}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+
+        <Panel className="border-t-4 flex flex-col justify-center" style={{ borderColor: T.green }}>
+          <div className="flex flex-col gap-4">
+            <div>
+              <div className="font-mono text-xs font-bold uppercase tracking-widest" style={{ color: T.green }}>
+                💡 What-If Scenario
+              </div>
+              <div className="mt-1 font-display text-2xl font-black text-ink">
+                Reach <span style={{ color: T.green }}>4σ</span> Target
+              </div>
             </div>
-            <div style={{ color: T.text, fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '1.1rem' }}>
-              Potential Monthly Savings: <span style={{ color: T.green }}>{fmtCurrency(derived.savedCopq)}</span>
+            
+            <div className="rounded-xl border border-border bg-surface p-4">
+              <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-ink-dim mb-1">
+                Potential Monthly Savings
+              </div>
+              <div className="font-mono text-3xl font-bold" style={{ color: T.green }}>
+                {formatCurrency(derived.savedCopq)}
+              </div>
             </div>
-            <div style={{ color: T.textMid, fontFamily: T.mono, fontSize: '0.62rem', marginTop: '0.25rem' }}>
-              Annual: {fmtCurrency(derived.savedCopq * 12)} · Yield improvement: +{((calcYield(sigmaToDpmo(4)) - derived.yld)).toFixed(2)}%
+            
+            <div className="font-mono text-xs text-ink-dim leading-relaxed">
+              Achieving 4 Sigma reduces defects to 6,210 DPMO.<br/>
+              <strong>Annual Savings:</strong> <span className="text-ink">{formatCurrency(derived.savedCopq * 12)}</span><br/>
+              <strong>Yield Improvement:</strong> <span className="text-ink">+{derived.savedYield.toFixed(2)}%</span>
             </div>
           </div>
-          <Badge label="4σ TARGET" color="green" glow />
-        </div>
-      </Panel>
+        </Panel>
+      </div>
     </motion.div>
   )
 }
