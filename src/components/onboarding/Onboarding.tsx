@@ -3,39 +3,12 @@
 // First-time users get a guided tour. Returning users see nothing.
 // Steps are config-driven and skippable at any point.
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { create } from 'zustand'
-import { persist as persistMiddleware, createJSONStorage } from 'zustand/middleware'
 import { haptic } from '@/lib/utils'
-
-// ─── Onboarding state ─────────────────────────────────────────────────────────
-interface OnboardingState {
-  completed: boolean
-  currentStep: number
-  skipped: boolean
-  setStep: (n: number) => void
-  complete: () => void
-  skip: () => void
-  restart: () => void
-}
-
-export const useOnboarding = create<OnboardingState>()(
-  persistMiddleware(
-    (set) => ({
-      completed: false,
-      currentStep: 0,
-      skipped: false,
-
-      setStep: (n) => set({ currentStep: n }),
-      complete: () => set({ completed: true, currentStep: 0 }),
-      skip: () => set({ skipped: true, completed: true }),
-      restart: () => set({ completed: false, skipped: false, currentStep: 0 }),
-    }),
-    { name: 'sigma-onboarding-v1', storage: createJSONStorage(() => localStorage) },
-  ),
-)
+// 🔥 IMPORT HOOK DARI FONDASI YANG SUDAH KITA BUAT
+import { useOnboarding } from '@/hooks'
 
 // ─── Step definitions ─────────────────────────────────────────────────────────
 interface OnboardingStep {
@@ -51,7 +24,7 @@ const STEPS: OnboardingStep[] = [
   {
     id: 'welcome',
     title: '👋 Welcome to DMAIC War Room',
-    body: 'A professional Six Sigma analytics platform. Built for Black Belts, usable by anyone. Let\'s take a 60-second tour.',
+    body: "A professional Six Sigma analytics platform. Built for Black Belts, usable by anyone. Let's take a 60-second tour.",
     position: 'center',
     action: 'Start Tour',
   },
@@ -87,7 +60,7 @@ const STEPS: OnboardingStep[] = [
   },
   {
     id: 'done',
-    title: '🚀 You\'re Ready',
+    title: "🚀 You're Ready",
     body: 'Explore all 11 modules — from FMEA risk scoring to SPC charts and AI-powered triage. Your data is saved locally and never leaves your device.',
     position: 'center',
     action: 'Get Started',
@@ -99,12 +72,19 @@ function Spotlight({ selector }: { selector?: string }) {
   const [rect, setRect] = useState<DOMRect | null>(null)
 
   useEffect(() => {
-    if (!selector) { setRect(null); return }
-    const el = document.querySelector(selector)
-    if (el) {
-      setRect(el.getBoundingClientRect())
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    if (!selector) {
+      setRect(null)
+      return
     }
+    // Timeout untuk memberi waktu DOM render jika selector ada di komponen yang lazy load
+    const timer = setTimeout(() => {
+      const el = document.querySelector(selector)
+      if (el) {
+        setRect(el.getBoundingClientRect())
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+    }, 100)
+    return () => clearTimeout(timer)
   }, [selector])
 
   if (!rect) return null
@@ -126,18 +106,31 @@ function Spotlight({ selector }: { selector?: string }) {
 
 // ─── Main onboarding overlay ──────────────────────────────────────────────────
 export function OnboardingOverlay() {
-  const { completed, currentStep, setStep, complete, skip } = useOnboarding()
+  // 🔥 Panggil sistem onboarding inti
+  const { firstTime, isLoading, markAsSeen } = useOnboarding()
+  const [currentStep, setCurrentStep] = useState(0)
+
+  // Jika sedang loading pengecekan storage, atau user sudah pernah melihatnya, hilangkan komponen
+  if (isLoading || !firstTime) return null
+
   const step = STEPS[currentStep]
+  if (!step) return null
 
-  if (completed || !step) return null
-
-  const isLast    = currentStep === STEPS.length - 1
-  const isCenter  = !step.targetSelector || step.position === 'center'
+  const isLast = currentStep === STEPS.length - 1
+  const isCenter = !step.targetSelector || step.position === 'center'
 
   const next = () => {
     haptic.light()
-    if (isLast) complete()
-    else setStep(currentStep + 1)
+    if (isLast) {
+      markAsSeen() // Simpan status 'selesai' ke Storage utama
+    } else {
+      setCurrentStep(currentStep + 1)
+    }
+  }
+
+  const skip = () => {
+    haptic.light()
+    markAsSeen() // Skip = dianggap selesai melihat
   }
 
   return createPortal(
@@ -147,7 +140,7 @@ export function OnboardingOverlay() {
       {/* Backdrop (click to skip) */}
       <div
         style={{ position: 'fixed', inset: 0, zIndex: 99991 }}
-        onClick={() => { haptic.light(); skip() }}
+        onClick={skip}
         aria-hidden="true"
       />
 
@@ -193,7 +186,7 @@ export function OnboardingOverlay() {
               ))}
             </div>
             <button
-              onClick={() => { haptic.light(); skip() }}
+              onClick={skip}
               style={{
                 background: 'transparent', border: 'none', color: '#4A6785',
                 fontFamily: 'Space Mono, monospace', fontSize: '0.58rem',
