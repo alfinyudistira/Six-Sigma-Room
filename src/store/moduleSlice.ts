@@ -1,167 +1,178 @@
 // src/store/moduleSlice.ts
-// ─── Redux Toolkit — Module Data Slices ──────────────────────────────────────
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
+/**
+ * ============================================================================
+ * MODULE SLICE — NORMALIZED STATE MANAGEMENT (REDUX TOOLKIT)
+ * ============================================================================
+ */
+
+import {
+  createSlice,
+  createAsyncThunk,
+  createEntityAdapter,
+  PayloadAction,
+} from '@reduxjs/toolkit'
+// Pastikan file ini ada!
 import { persist, retrieve } from '@/lib/storage'
 
-// ─── FMEA ────────────────────────────────────────────────────────────────────
+/* --------------------------------------------------------------------------
+   DOMAIN TYPES
+   -------------------------------------------------------------------------- */
 export interface FMEARow {
-  id: string
-  process: string
-  failureMode: string
-  effect: string
-  cause: string
-  severity: number
-  occurrence: number
-  detection: number
-  rpn: number
-  action: string
-  owner: string
-  dueDate: string
-  status: 'open' | 'in-progress' | 'closed'
+  id: string; process: string; failureMode: string; effect: string;
+  cause: string; severity: number; occurrence: number; detection: number;
+  rpn: number; action: string; owner: string; dueDate: string;
+  status: 'open' | 'in-progress' | 'closed';
 }
 
-// ─── DMAIC Phase ─────────────────────────────────────────────────────────────
 export type DMAICPhase = 'define' | 'measure' | 'analyze' | 'improve' | 'control'
 
 export interface DMAICTask {
-  id: string
-  phase: DMAICPhase
-  task: string
-  owner: string
-  dueDate: string
-  status: 'not-started' | 'in-progress' | 'complete' | 'blocked'
-  notes: string
+  id: string; phase: DMAICPhase; task: string; owner: string;
+  dueDate: string; status: 'not-started' | 'in-progress' | 'complete' | 'blocked';
+  notes: string;
 }
 
-// ─── SPC Data Point ───────────────────────────────────────────────────────────
 export interface SPCPoint {
-  id: string
-  label: string
-  value: number
-  timestamp: string
-  note?: string
+  id: string; label: string; value: number; timestamp: string; note?: string;
 }
 
-// ─── Pareto Item ─────────────────────────────────────────────────────────────
 export interface ParetoItem {
-  id: string
-  category: string
-  count: number
-  cost?: number
-  color?: string
+  id: string; category: string; count: number; cost?: number; color?: string;
 }
 
-// ─── Root Cause ───────────────────────────────────────────────────────────────
 export interface RootCauseNode {
-  id: string
-  text: string
-  parentId: string | null
-  category?: string
-  verified: boolean
+  id: string; text: string; parentId: string | null; category?: string; verified: boolean;
 }
 
-// ─── Module State ─────────────────────────────────────────────────────────────
-interface ModuleState {
-  fmea: FMEARow[]
-  dmaic: DMAICTask[]
-  spc: SPCPoint[]
-  pareto: ParetoItem[]
-  rootCause: RootCauseNode[]
+/* --------------------------------------------------------------------------
+   NORMALIZED STATE (Entity Adapters)
+   -------------------------------------------------------------------------- */
+const fmeaAdapter = createEntityAdapter<FMEARow>({ selectId: (item) => item.id })
+const dmaicAdapter = createEntityAdapter<DMAICTask>({ selectId: (item) => item.id })
+const spcAdapter = createEntityAdapter<SPCPoint>({ selectId: (item) => item.id })
+const paretoAdapter = createEntityAdapter<ParetoItem>({ selectId: (item) => item.id })
+const rootCauseAdapter = createEntityAdapter<RootCauseNode>({ selectId: (item) => item.id })
+
+export interface ModuleState {
+  fmea: ReturnType<typeof fmeaAdapter.getInitialState>
+  dmaic: ReturnType<typeof dmaicAdapter.getInitialState>
+  spc: ReturnType<typeof spcAdapter.getInitialState>
+  pareto: ReturnType<typeof paretoAdapter.getInitialState>
+  rootCause: ReturnType<typeof rootCauseAdapter.getInitialState>
   hydrated: boolean
 }
 
 const initialState: ModuleState = {
-  fmea: [],
-  dmaic: [],
-  spc: [],
-  pareto: [],
-  rootCause: [],
+  fmea: fmeaAdapter.getInitialState(),
+  dmaic: dmaicAdapter.getInitialState(),
+  spc: spcAdapter.getInitialState(),
+  pareto: paretoAdapter.getInitialState(),
+  rootCause: rootCauseAdapter.getInitialState(),
   hydrated: false,
 }
 
-// ─── Async thunks ─────────────────────────────────────────────────────────────
-export const loadModuleData = createAsyncThunk('modules/load', async () => {
-  const [fmea, dmaic, spc, pareto, rootCause] = await Promise.all([
-    retrieve<FMEARow[]>('fmea_rows'),
-    retrieve<DMAICTask[]>('dmaic_tasks'),
-    retrieve<SPCPoint[]>('spc_points'),
-    retrieve<ParetoItem[]>('pareto_items'),
-    retrieve<RootCauseNode[]>('rootcause_nodes'),
-  ])
-  return { fmea, dmaic, spc, pareto, rootCause }
-})
+/* --------------------------------------------------------------------------
+   STORAGE KEYS
+   -------------------------------------------------------------------------- */
+const STORAGE_KEYS = {
+  fmea: 'fmea_rows',
+  dmaic: 'dmaic_tasks',
+  spc: 'spc_points',
+  pareto: 'pareto_items',
+  rootCause: 'rootcause_nodes',
+} as const
 
-export const saveModuleData = createAsyncThunk(
-  'modules/save',
-  async (key: keyof Omit<ModuleState, 'hydrated'>, { getState }) => {
-    const state = (getState() as { modules: ModuleState }).modules
-    await persist(`${key}_${key === 'fmea' ? 'rows' : key === 'dmaic' ? 'tasks' : key === 'spc' ? 'points' : key === 'pareto' ? 'items' : 'nodes'}`, state[key])
-    return key
+type ModuleKey = keyof typeof STORAGE_KEYS
+
+/* --------------------------------------------------------------------------
+   ASYNC THUNKS
+   -------------------------------------------------------------------------- */
+export const loadModuleData = createAsyncThunk(
+  'modules/load',
+  async (_, { rejectWithValue }) => {
+    try {
+      const entries = await Promise.all(
+        Object.entries(STORAGE_KEYS).map(async ([key, storageKey]) => {
+          try {
+            const data = await retrieve(storageKey)
+            return [key, data]
+          } catch (err) {
+            console.warn(`[moduleSlice] Failed to load ${key}`, err)
+            return [key, null]
+          }
+        }),
+      )
+      return Object.fromEntries(entries) as Partial<Record<ModuleKey, unknown>>
+    } catch (err) {
+      return rejectWithValue((err as Error).message)
+    }
   },
 )
 
-// ─── Slice ────────────────────────────────────────────────────────────────────
+export const saveModuleData = createAsyncThunk(
+  'modules/save',
+  async (key: ModuleKey, { getState, rejectWithValue }) => {
+    try {
+      const state = (getState() as { modules: ModuleState }).modules
+      const slice = state[key]
+      const items = slice.ids.map((id) => slice.entities[id])
+      await persist(STORAGE_KEYS[key], items)
+      return key
+    } catch (err) {
+      return rejectWithValue((err as Error).message)
+    }
+  },
+)
+
+/* --------------------------------------------------------------------------
+   SLICE
+   -------------------------------------------------------------------------- */
 const moduleSlice = createSlice({
   name: 'modules',
   initialState,
   reducers: {
-    // FMEA
-    addFMEARow: (s, a: PayloadAction<FMEARow>) => { s.fmea.push(a.payload) },
-    updateFMEARow: (s, a: PayloadAction<FMEARow>) => {
-      const i = s.fmea.findIndex(r => r.id === a.payload.id)
-      if (i !== -1) s.fmea[i] = a.payload
-    },
-    deleteFMEARow: (s, a: PayloadAction<string>) => {
-      s.fmea = s.fmea.filter(r => r.id !== a.payload)
-    },
-    setFMEA: (s, a: PayloadAction<FMEARow[]>) => { s.fmea = a.payload },
+    addFMEARow: (state, action: PayloadAction<FMEARow>) => { fmeaAdapter.addOne(state.fmea, action.payload) },
+    updateFMEARow: (state, action: PayloadAction<FMEARow>) => { fmeaAdapter.upsertOne(state.fmea, action.payload) },
+    deleteFMEARow: (state, action: PayloadAction<string>) => { fmeaAdapter.removeOne(state.fmea, action.payload) },
+    setFMEA: (state, action: PayloadAction<FMEARow[]>) => { fmeaAdapter.setAll(state.fmea, action.payload) },
 
-    // DMAIC
-    addDMAICTask: (s, a: PayloadAction<DMAICTask>) => { s.dmaic.push(a.payload) },
-    updateDMAICTask: (s, a: PayloadAction<DMAICTask>) => {
-      const i = s.dmaic.findIndex(t => t.id === a.payload.id)
-      if (i !== -1) s.dmaic[i] = a.payload
-    },
-    deleteDMAICTask: (s, a: PayloadAction<string>) => {
-      s.dmaic = s.dmaic.filter(t => t.id !== a.payload)
-    },
+    addDMAICTask: (state, action: PayloadAction<DMAICTask>) => { dmaicAdapter.addOne(state.dmaic, action.payload) },
+    updateDMAICTask: (state, action: PayloadAction<DMAICTask>) => { dmaicAdapter.upsertOne(state.dmaic, action.payload) },
+    deleteDMAICTask: (state, action: PayloadAction<string>) => { dmaicAdapter.removeOne(state.dmaic, action.payload) },
 
-    // SPC
-    addSPCPoint: (s, a: PayloadAction<SPCPoint>) => { s.spc.push(a.payload) },
-    deleteSPCPoint: (s, a: PayloadAction<string>) => {
-      s.spc = s.spc.filter(p => p.id !== a.payload)
-    },
-    setSPC: (s, a: PayloadAction<SPCPoint[]>) => { s.spc = a.payload },
+    addSPCPoint: (state, action: PayloadAction<SPCPoint>) => { spcAdapter.addOne(state.spc, action.payload) },
+    updateSPCPoint: (state, action: PayloadAction<SPCPoint>) => { spcAdapter.upsertOne(state.spc, action.payload) },
+    deleteSPCPoint: (state, action: PayloadAction<string>) => { spcAdapter.removeOne(state.spc, action.payload) },
+    setSPC: (state, action: PayloadAction<SPCPoint[]>) => { spcAdapter.setAll(state.spc, action.payload) },
 
-    // Pareto
-    addParetoItem: (s, a: PayloadAction<ParetoItem>) => { s.pareto.push(a.payload) },
-    updateParetoItem: (s, a: PayloadAction<ParetoItem>) => {
-      const i = s.pareto.findIndex(p => p.id === a.payload.id)
-      if (i !== -1) s.pareto[i] = a.payload
-    },
-    deleteParetoItem: (s, a: PayloadAction<string>) => {
-      s.pareto = s.pareto.filter(p => p.id !== a.payload)
-    },
-    setPareto: (s, a: PayloadAction<ParetoItem[]>) => { s.pareto = a.payload },
+    addParetoItem: (state, action: PayloadAction<ParetoItem>) => { paretoAdapter.addOne(state.pareto, action.payload) },
+    updateParetoItem: (state, action: PayloadAction<ParetoItem>) => { paretoAdapter.upsertOne(state.pareto, action.payload) },
+    deleteParetoItem: (state, action: PayloadAction<string>) => { paretoAdapter.removeOne(state.pareto, action.payload) },
+    setPareto: (state, action: PayloadAction<ParetoItem[]>) => { paretoAdapter.setAll(state.pareto, action.payload) },
 
-    // Root Cause
-    addRootCauseNode: (s, a: PayloadAction<RootCauseNode>) => { s.rootCause.push(a.payload) },
-    deleteRootCauseNode: (s, a: PayloadAction<string>) => {
-      s.rootCause = s.rootCause.filter(n => n.id !== a.payload)
-    },
-    toggleNodeVerified: (s, a: PayloadAction<string>) => {
-      const node = s.rootCause.find(n => n.id === a.payload)
+    addRootCauseNode: (state, action: PayloadAction<RootCauseNode>) => { rootCauseAdapter.addOne(state.rootCause, action.payload) },
+    updateRootCauseNode: (state, action: PayloadAction<RootCauseNode>) => { rootCauseAdapter.upsertOne(state.rootCause, action.payload) },
+    deleteRootCauseNode: (state, action: PayloadAction<string>) => { rootCauseAdapter.removeOne(state.rootCause, action.payload) },
+    toggleNodeVerified: (state, action: PayloadAction<string>) => {
+      const node = state.rootCause.entities[action.payload]
       if (node) node.verified = !node.verified
     },
+
+    markHydrated: (state) => { state.hydrated = true },
+    clearAllModules: () => initialState,
   },
   extraReducers: (builder) => {
-    builder.addCase(loadModuleData.fulfilled, (s, a) => {
-      if (a.payload.fmea)      s.fmea      = a.payload.fmea
-      if (a.payload.dmaic)     s.dmaic     = a.payload.dmaic
-      if (a.payload.spc)       s.spc       = a.payload.spc
-      if (a.payload.pareto)    s.pareto    = a.payload.pareto
-      if (a.payload.rootCause) s.rootCause = a.payload.rootCause
-      s.hydrated = true
+    // 🔥 Tangkap action 'app/reset' dari store utama
+    builder.addCase('app/reset', () => initialState)
+    
+    builder.addCase(loadModuleData.fulfilled, (state, action) => {
+      const p = action.payload
+      if (p.fmea) fmeaAdapter.setAll(state.fmea, p.fmea as FMEARow[])
+      if (p.dmaic) dmaicAdapter.setAll(state.dmaic, p.dmaic as DMAICTask[])
+      if (p.spc) spcAdapter.setAll(state.spc, p.spc as SPCPoint[])
+      if (p.pareto) paretoAdapter.setAll(state.pareto, p.pareto as ParetoItem[])
+      if (p.rootCause) rootCauseAdapter.setAll(state.rootCause, p.rootCause as RootCauseNode[])
+      state.hydrated = true
     })
   },
 })
@@ -169,9 +180,21 @@ const moduleSlice = createSlice({
 export const {
   addFMEARow, updateFMEARow, deleteFMEARow, setFMEA,
   addDMAICTask, updateDMAICTask, deleteDMAICTask,
-  addSPCPoint, deleteSPCPoint, setSPC,
+  addSPCPoint, updateSPCPoint, deleteSPCPoint, setSPC,
   addParetoItem, updateParetoItem, deleteParetoItem, setPareto,
-  addRootCauseNode, deleteRootCauseNode, toggleNodeVerified,
+  addRootCauseNode, updateRootCauseNode, deleteRootCauseNode, toggleNodeVerified,
+  markHydrated, clearAllModules,
 } = moduleSlice.actions
 
 export default moduleSlice.reducer
+
+/* --------------------------------------------------------------------------
+   SELECTORS (Diperbaiki agar Type-Safe dan Tidak Crash)
+   -------------------------------------------------------------------------- */
+export const selectModulesState = (state: { modules: ModuleState }) => state.modules
+
+export const fmeaSelectors = fmeaAdapter.getSelectors((state: { modules: ModuleState }) => state.modules.fmea)
+export const dmaicSelectors = dmaicAdapter.getSelectors((state: { modules: ModuleState }) => state.modules.dmaic)
+export const spcSelectors = spcAdapter.getSelectors((state: { modules: ModuleState }) => state.modules.spc)
+export const paretoSelectors = paretoAdapter.getSelectors((state: { modules: ModuleState }) => state.modules.pareto)
+export const rootCauseSelectors = rootCauseAdapter.getSelectors((state: { modules: ModuleState }) => state.modules.rootCause)
