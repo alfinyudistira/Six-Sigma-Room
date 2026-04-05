@@ -35,7 +35,6 @@ import { downloadCSV, copyToClipboard, cn } from '@/lib/utils'
 /* --------------------------------------------------------------------------
    CONSTANTS & FORMATTERS
    -------------------------------------------------------------------------- */
-// 🔥 PERBAIKAN: Ganti 'yield' jadi 'yieldPct' untuk menghindari Reserved Keyword bentrok di JSX
 const SIGMA_REF = [
   { level: 1, dpmo: 691462, yieldPct: 30.85 },
   { level: 2, dpmo: 308538, yieldPct: 69.15 },
@@ -46,6 +45,13 @@ const SIGMA_REF = [
 ] as const
 
 type CalcMode = 'from-company' | 'manual-dpmo' | 'from-defects'
+
+// 🔥 PERBAIKAN: Pisahkan array ke konstanta agar JSX Parser tidak kebingungan
+const MODE_OPTIONS: { id: CalcMode; label: string }[] = [
+  { id: 'from-company', label: '◈ From Company Profile' },
+  { id: 'manual-dpmo', label: 'σ Enter DPMO Directly' },
+  { id: 'from-defects', label: '⊘ From Defect Count' },
+]
 
 const numFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
 
@@ -180,27 +186,23 @@ export default function SigmaCalc() {
 
       <Panel>
         <div className="mb-6 flex flex-wrap gap-2 rounded-lg bg-surface/50 p-1.5 border border-border">
-          {[
-            ['from-company', '◈ From Company Profile'],
-            ['manual-dpmo', 'σ Enter DPMO Directly'],
-            ['from-defects', '⊘ From Defect Count'],
-          ] as [CalcMode, string][].map(([m, label]) => (
+          {MODE_OPTIONS.map((m) => (
             <button
-              key={m}
+              key={m.id}
               onClick={() => {
                 light()
-                setMode(m)
+                setMode(m.id)
               }}
-              aria-pressed={mode === m}
+              aria-pressed={mode === m.id}
               className={cn(
                 'flex-1 rounded-md px-3 py-2 font-mono text-xs font-bold uppercase tracking-wide transition-all',
-                mode === m
+                mode === m.id
                   ? 'bg-cyan text-bg shadow-lg shadow-cyan/20'
                   : 'text-ink-dim hover:bg-white/5 hover:text-ink'
               )}
-              style={mode === m ? { backgroundColor: T.cyan, color: T.bg } : {}}
+              style={mode === m.id ? { backgroundColor: T.cyan, color: T.bg } : {}}
             >
-              {label}
+              {m.label}
             </button>
           ))}
         </div>
