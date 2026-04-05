@@ -149,10 +149,10 @@ export const NavBar = memo(function NavBar({ onItemHover }: NavBarProps) {
       <div className="block shrink-0 border-b border-border bg-panel md:hidden" style={{ borderColor: tokens.border, backgroundColor: (tokens as any).panel }}>
         <div className="flex items-center justify-between px-4 py-2">
           <div className="flex items-center gap-3">
-            <span className="text-xl" style={{ color: tokens.cyan }}>{currentTab.icon}</span>
+            <span className="text-xl" style={{ color: tokens.cyan }}>{currentTab?.icon}</span>
             <div>
               <div className="font-mono text-[0.5rem] uppercase opacity-50" style={{ color: tokens.textDim }}>Module</div>
-              <div className="text-sm font-bold leading-none" style={{ color: tokens.text }}>{currentTab.label}</div>
+              <div className="text-sm font-bold leading-none" style={{ color: tokens.text }}>{currentTab?.label}</div>
             </div>
           </div>
 
