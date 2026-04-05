@@ -1,104 +1,229 @@
 // src/pages/FMEAScorer.tsx
+/**
+ * ============================================================================
+ * FMEA SCORER — FAILURE MODE & EFFECTS ANALYSIS
+ * ============================================================================
+ */
+
 import { useState, useMemo, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
-  useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
-  flexRender, type ColumnDef, type SortingState,
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  getFilteredRowModel,
+  flexRender,
+  type ColumnDef,
+  type SortingState,
 } from '@tanstack/react-table'
+
 import { useAppDispatch, useAppSelector } from '@/store/store'
-import { addFMEARow, updateFMEARow, deleteFMEARow, type FMEARow } from '@/store/moduleSlice'
+import {
+  addFMEARow,
+  updateFMEARow,
+  deleteFMEARow,
+  fmeaSelectors, // 🔥 PERBAIKAN 1: Import selector untuk EntityState
+  type FMEARow,
+} from '@/store/moduleSlice'
+
 import { useConfigStore, getRpnSeverity } from '@/lib/config'
 import { calcRPN } from '@/lib/sigma'
-import { useFeedback } from '@/services/feedback'
-import { useModulePersist } from '@/hooks/hooks'
+import { feedback } from '@/lib/feedback' // 🔥 PERBAIKAN 2: Gunakan singleton feedback
+import { useModulePersist, useHaptic } from '@/hooks'
+
 import { Section, Panel, SimpleBarChart, KPICard } from '@/components/charts'
 import { Button } from '@/components/ui/Button'
 import { ConfirmButton } from '@/components/ui/Confirm'
 import { Modal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
-import { HelpTooltip } from '@/components/ui/Tooltip'
+import { Input, Select, Slider, Textarea } from '@/components/ui/Input'
 import { tokens as T } from '@/lib/tokens'
 import { downloadCSV } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
-const BLANK_ROW: Omit<FMEARow, 'id'> = {
-  process: '', failureMode: '', effect: '', cause: '',
-  severity: 5, occurrence: 5, detection: 5, rpn: 125,
-  action: '', owner: '', dueDate: '', status: 'open',
+/* --------------------------------------------------------------------------
+   ENGINE LOGIC
+   -------------------------------------------------------------------------- */
+function computeFMEAStats(rows: FMEARow[], config: any) {
+  if (!rows.length) return { critical: 0, high: 0, avg: 0, max: 0, closed: 0 }
+
+  const total = rows.length
+  const critical = rows.filter((r) => r.rpn >= config.fmea.criticalRpn).length
+  const high = rows.filter((r) => r.rpn >= config.fmea.highRpn && r.rpn < config.fmea.criticalRpn).length
+
+  const avg = rows.reduce((a, r) => a + r.rpn, 0) / total
+  const max = Math.max(...rows.map((r) => r.rpn))
+  const closed = rows.filter((r) => r.status === 'closed').length
+
+  return { critical, high, avg, max, closed }
 }
 
-const STATUS_COLOR: Record<FMEARow['status'], string> = {
-  'open': T.red, 'in-progress': T.yellow, 'closed': T.green,
-}
-
+/* --------------------------------------------------------------------------
+   MAIN COMPONENT
+   -------------------------------------------------------------------------- */
 export default function FMEAScorer() {
-  const dispatch   = useAppDispatch()
-  const rows       = useAppSelector(s => s.modules.fmea)
-  const { config } = useConfigStore()
-  const toast      = useFeedback()
+  const dispatch = useAppDispatch()
+  
+  // 🔥 PERBAIKAN 3: Gunakan selector agar mendapatkan array FMEARow[] (bukan EntityState object)
+  const rows = useAppSelector(fmeaSelectors.selectAll)
+  
+  const rawState = useAppSelector((s) => s.modules.fmea)
+  useModulePersist('fmea_rows', rawState)
 
-  const [sorting, setSorting]     = useState<SortingState>([{ id: 'rpn', desc: true }])
+  const config = useConfigStore((s) => s.config)
+  const { light, medium, success } = useHaptic()
+
+  // ─── STATE ─────────────────────────────────────────────────────────────
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'rpn', desc: true }])
   const [globalFilter, setGlobalFilter] = useState('')
-  const [editRow, setEditRow]     = useState<FMEARow | null>(null)
-  const [isNew, setIsNew]         = useState(false)
-  const [showForm, setShowForm]   = useState(false)
-  const [draft, setDraft]         = useState<Omit<FMEARow, 'id'>>(BLANK_ROW)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
 
-  // Auto-persist to IndexedDB
-  useModulePersist('fmea_rows', rows)
+  const [draft, setDraft] = useState<Omit<FMEARow, 'id'>>({
+    process: '',
+    failureMode: '',
+    effect: '',
+    cause: '',
+    severity: 5,
+    occurrence: 5,
+    detection: 5,
+    rpn: 125,
+    action: '',
+    owner: '',
+    dueDate: '',
+    status: 'open',
+  })
 
-  // ── Derived stats ──────────────────────────────────────────────────────────
-  const stats = useMemo(() => {
-    if (!rows.length) return { critical: 0, high: 0, avgRpn: 0, maxRpn: 0, closed: 0 }
-    const critical = rows.filter(r => r.rpn >= config.rpn.critical).length
-    const high     = rows.filter(r => r.rpn >= config.rpn.high && r.rpn < config.rpn.critical).length
-    const avgRpn   = rows.reduce((a, r) => a + r.rpn, 0) / rows.length
-    const maxRpn   = Math.max(...rows.map(r => r.rpn))
-    const closed   = rows.filter(r => r.status === 'closed').length
-    return { critical, high, avgRpn, maxRpn, closed }
-  }, [rows, config.rpn])
+  // ─── DERIVED ───────────────────────────────────────────────────────────
+  const stats = useMemo(() => computeFMEAStats(rows, config), [rows, config])
 
-  const chartData = useMemo(() =>
-    rows.slice(0, 10)
+  const chartData = useMemo(() => {
+    return [...rows]
       .sort((a, b) => b.rpn - a.rpn)
-      .map(r => ({ name: r.failureMode.slice(0, 16) || 'Unnamed', rpn: r.rpn })),
-  [rows])
+      .slice(0, 10)
+      .map((r) => ({
+        name: r.failureMode || 'Unknown',
+        rpn: r.rpn,
+      }))
+  }, [rows])
 
-  // ── Table columns ──────────────────────────────────────────────────────────
-  const columns = useMemo<ColumnDef<FMEARow>[]>(() => [
-    { accessorKey: 'process',     header: 'Process',      size: 110 },
-    { accessorKey: 'failureMode', header: 'Failure Mode', size: 130 },
-    { accessorKey: 'effect',      header: 'Effect',       size: 120 },
-    { accessorKey: 'severity',    header: 'S',            size: 50,
-      cell: i => <span style={{ color: i.getValue<number>() >= 8 ? T.red : T.text }}>{i.getValue<number>()}</span> },
-    { accessorKey: 'occurrence',  header: 'O',            size: 50,
-      cell: i => <span style={{ color: i.getValue<number>() >= 8 ? T.red : T.text }}>{i.getValue<number>()}</span> },
-    { accessorKey: 'detection',   header: 'D',            size: 50,
-      cell: i => <span style={{ color: i.getValue<number>() >= 8 ? T.red : T.text }}>{i.getValue<number>()}</span> },
-    { accessorKey: 'rpn',         header: 'RPN',          size: 70,
-      cell: i => {
-        const v = i.getValue<number>()
-        const s = getRpnSeverity(v, config)
-        return <span style={{ color: s.color, fontWeight: 700 }}>{v}</span>
-      } },
-    { accessorKey: 'status',      header: 'Status',       size: 90,
-      cell: i => {
-        const v = i.getValue<FMEARow['status']>()
-        return <Badge label={v} color={v === 'closed' ? 'green' : v === 'in-progress' ? 'yellow' : 'red'} />
-      } },
-    { accessorKey: 'owner',       header: 'Owner',        size: 90 },
-    { id: 'actions', header: '', size: 80,
-      cell: i => (
-        <div style={{ display: 'flex', gap: '0.3rem' }}>
-          <button onClick={() => openEdit(i.row.original)}
-            style={{ background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 4, color: T.cyan, padding: '0.2rem 0.4rem', cursor: 'pointer', fontFamily: T.mono, fontSize: '0.55rem' }}>
-            Edit
-          </button>
-          <ConfirmButton variant="danger" label="Del" confirmLabel="Yes"
-            message="Delete this row?"
-            onConfirm={() => { dispatch(deleteFMEARow(i.row.original.id)); toast.success('Row deleted') }} />
-        </div>
-      ) },
-  ], [config, dispatch, toast])
+  // ─── ACTIONS ───────────────────────────────────────────────────────────
+  const openNew = useCallback(() => {
+    light()
+    setDraft({
+      process: '', failureMode: '', effect: '', cause: '',
+      severity: 5, occurrence: 5, detection: 5, rpn: 125,
+      action: '', owner: '', dueDate: '', status: 'open',
+    })
+    setEditId(null)
+    setModalOpen(true)
+  }, [light])
+
+  const openEdit = useCallback((r: FMEARow) => {
+    light()
+    const { id, ...rest } = r
+    setDraft(rest)
+    setEditId(id)
+    setModalOpen(true)
+  }, [light])
+
+  const handleFieldChange = useCallback((k: keyof typeof draft, v: any) => {
+    setDraft((prev) => {
+      const next = { ...prev, [k]: v }
+      if (['severity', 'occurrence', 'detection'].includes(k)) {
+        next.rpn = calcRPN(next.severity, next.occurrence, next.detection)
+      }
+      return next
+    })
+  }, [])
+
+  const handleSave = useCallback(() => {
+    if (!draft.failureMode.trim()) {
+      feedback.notifyError('Failure Mode is required')
+      return
+    }
+
+    medium()
+    if (editId) {
+      dispatch(updateFMEARow({ ...draft, id: editId }))
+      feedback.notifySuccess('FMEA row updated')
+    } else {
+      dispatch(addFMEARow({ ...draft, id: crypto.randomUUID() }))
+      feedback.notifySuccess('FMEA row added')
+    }
+
+    success()
+    setModalOpen(false)
+    setEditId(null)
+  }, [draft, editId, dispatch, medium, success])
+
+  const handleDelete = useCallback((id: string) => {
+    medium()
+    dispatch(deleteFMEARow(id))
+    feedback.notifySuccess('Row deleted')
+  }, [dispatch, medium])
+
+  const handleExport = useCallback(() => {
+    light()
+    const success = downloadCSV(rows, 'fmea-export.csv')
+    if (success) feedback.notifySuccess('Exported to CSV')
+  }, [rows, light])
+
+  // ─── COLUMNS ───────────────────────────────────────────────────────────
+  const columns = useMemo<ColumnDef<FMEARow>[]>(
+    () => [
+      { accessorKey: 'process', header: 'Process', cell: (i) => i.getValue() || '-' },
+      {
+        accessorKey: 'failureMode',
+        header: 'Failure Mode',
+        cell: (info) => (
+          <div className="font-bold text-ink max-w-[200px] truncate" title={info.getValue<string>()}>
+            {info.getValue<string>()}
+          </div>
+        ),
+      },
+      {
+        accessorKey: 'rpn',
+        header: 'RPN',
+        cell: (info) => {
+          const val = info.getValue<number>()
+          const sev = getRpnSeverity(val, config)
+          return (
+            <div className="font-mono text-sm font-bold" style={{ color: sev.color }}>
+              {val}
+            </div>
+          )
+        },
+      },
+      {
+        accessorKey: 'status',
+        header: 'Status',
+        cell: (info) => {
+          const val = info.getValue<FMEARow['status']>()
+          return <Badge label={val} color={val === 'closed' ? 'green' : val === 'in-progress' ? 'cyan' : 'yellow'} />
+        },
+      },
+      {
+        id: 'actions',
+        header: '',
+        cell: (info) => (
+          <div className="flex items-center justify-end gap-2">
+            <Button size="xs" variant="ghost" onClick={() => openEdit(info.row.original)}>
+              Edit
+            </Button>
+            <ConfirmButton
+              label="✕"
+              variant="danger"
+              size="xs"
+              message="Delete row?"
+              onConfirm={() => handleDelete(info.row.original.id)}
+            />
+          </div>
+        ),
+      },
+    ],
+    [config, openEdit, handleDelete]
+  )
 
   const table = useReactTable({
     data: rows,
@@ -111,224 +236,174 @@ export default function FMEAScorer() {
     getFilteredRowModel: getFilteredRowModel(),
   })
 
-  // ── Form handlers ──────────────────────────────────────────────────────────
-  const openNew = () => {
-    setDraft(BLANK_ROW); setIsNew(true); setEditRow(null); setShowForm(true)
-  }
-  const openEdit = (row: FMEARow) => {
-    const { id, ...rest } = row; setDraft(rest); setEditRow(row); setIsNew(false); setShowForm(true)
-  }
-
-  const setField = useCallback(<K extends keyof typeof BLANK_ROW>(k: K, v: typeof BLANK_ROW[K]) => {
-    setDraft(d => {
-      const next = { ...d, [k]: v }
-      if (['severity','occurrence','detection'].includes(k as string)) {
-        next.rpn = calcRPN(
-          k === 'severity'   ? v as number : next.severity,
-          k === 'occurrence' ? v as number : next.occurrence,
-          k === 'detection'  ? v as number : next.detection,
-        )
-      }
-      return next
-    })
-  }, [])
-
-  const save = () => {
-    if (!draft.process || !draft.failureMode) { toast.error('Required', 'Process and Failure Mode are required'); return }
-    if (isNew) {
-      dispatch(addFMEARow({ ...draft, id: `fmea_${Date.now()}` }))
-      toast.success('Row added', `RPN: ${draft.rpn}`)
-    } else if (editRow) {
-      dispatch(updateFMEARow({ ...draft, id: editRow.id }))
-      toast.success('Row updated')
-    }
-    setShowForm(false)
-  }
-
-  const exportCSV = () => { downloadCSV(rows, 'fmea-export.csv'); toast.success('Exported') }
-
-  const ratingInput = (field: 'severity' | 'occurrence' | 'detection', label: string) => (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
-        <label style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.55rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</label>
-        <span style={{ color: draft[field] >= 8 ? T.red : draft[field] >= 5 ? T.yellow : T.green, fontFamily: T.mono, fontSize: '0.72rem', fontWeight: 700 }}>{draft[field]}/10</span>
-      </div>
-      <input type="range" min={1} max={10} value={draft[field]}
-        onChange={e => setField(field, +e.target.value)}
-        style={{ width: '100%', accentColor: draft[field] >= 8 ? T.red : draft[field] >= 5 ? T.yellow : T.green }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', color: T.textDim, fontFamily: T.mono, fontSize: '0.5rem' }}>
-        <span>1 Low</span><span>10 High</span>
-      </div>
-    </div>
-  )
-
+  // ─── RENDER ────────────────────────────────────────────────────────────
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-      style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-
+    <motion.div
+      initial={config.ui.animationsEnabled ? { opacity: 0, y: 10 } : undefined}
+      animate={config.ui.animationsEnabled ? { opacity: 1, y: 0 } : undefined}
+      className="flex flex-col gap-6 p-4 md:p-6 lg:p-8"
+    >
       <Section
-        subtitle="Module 4 — Risk Management"
-        title="Failure Mode & Effects Analysis"
+        subtitle="Module 4 — Risk Analysis"
+        title="FMEA Scorer"
         action={
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <Button size="xs" variant="ghost" onClick={exportCSV}>↓ CSV</Button>
-            <Button size="sm" variant="primary" onClick={openNew} hapticStyle="medium">+ Add Row</Button>
+          <div className="flex gap-2">
+            <Button variant="outline" icon="↓" onClick={handleExport}>
+              Export
+            </Button>
+            <Button variant="primary" icon="+" onClick={openNew}>
+              Add Row
+            </Button>
           </div>
         }
       />
 
-      {/* ── KPI strip ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
-        <KPICard label="Total Failure Modes" value={rows.length} color={T.cyan} icon="≡" />
-        <KPICard label="Critical RPN ≥200" value={stats.critical} color={T.red} icon="⚠" />
-        <KPICard label="High RPN ≥100" value={stats.high} color={T.yellow} icon="!" />
-        <KPICard label="Avg RPN" value={stats.avgRpn.toFixed(0)} color={T.orange} icon="σ" />
-        <KPICard label="Max RPN" value={stats.maxRpn} color={stats.maxRpn >= config.rpn.critical ? T.red : T.yellow} icon="▲" />
-        <KPICard label="Closed Actions" value={`${stats.closed}/${rows.length}`} color={T.green} icon="✓" />
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+        <KPICard label="Total Risks" value={rows.length} color={T.cyan} />
+        <KPICard label="Critical" value={stats.critical} color={T.red} />
+        <KPICard label="High" value={stats.high} color={T.orange} />
+        <KPICard label="Avg RPN" value={stats.avg.toFixed(1)} color={T.yellow} />
+        <KPICard label="Closed" value={stats.closed} color={T.green} />
       </div>
 
-      {/* ── Chart ── */}
-      {rows.length > 0 && (
-        <Panel>
-          <Section subtitle="Top Risk" title="RPN by Failure Mode" />
-          <SimpleBarChart data={chartData} xKey="name"
-            bars={[{ key: 'rpn', color: T.red, label: 'RPN' }]}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* TOP RISKS CHART */}
+        <Panel className="lg:col-span-4">
+          <Section subtitle="Top 10" title="Highest RPN" color={T.red} />
+          <SimpleBarChart
+            data={chartData}
+            xKey="name"
+            bars={[{ key: 'rpn', color: T.red, label: 'RPN Score' }]}
+            height={280}
             referenceLines={[
-              { value: config.rpn.critical, color: T.red,    label: 'Critical' },
-              { value: config.rpn.high,     color: T.yellow, label: 'High' },
+              { value: config.fmea.criticalRpn, color: T.red, label: 'Critical' },
+              { value: config.fmea.highRpn, color: T.orange, label: 'High' }
             ]}
           />
         </Panel>
-      )}
 
-      {/* ── Filter bar ── */}
-      <Panel style={{ padding: '0.75rem 1rem' }}>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <input
-            value={globalFilter} onChange={e => setGlobalFilter(e.target.value)}
-            placeholder="🔍 Filter failure modes, owners, processes…"
-            aria-label="Filter FMEA table"
-            style={{ flex: 1, minWidth: 200, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: T.mono, fontSize: '0.7rem', padding: '0.4rem 0.7rem' }}
-          />
-          <HelpTooltip title="FMEA — Failure Mode & Effects Analysis" description="RPN = Severity × Occurrence × Detection. RPN ≥ 200 = Critical, must act immediately. Sort any column by clicking the header." />
-        </div>
-      </Panel>
-
-      {/* ── Table ── */}
-      <Panel style={{ padding: 0, overflow: 'hidden' }}>
-        {rows.length === 0 ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: T.textDim, fontFamily: T.mono, fontSize: '0.7rem' }}>
-            <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>⚠</div>
-            No failure modes yet. Click <strong style={{ color: T.cyan }}>+ Add Row</strong> to start your FMEA.
+        {/* DATA TABLE */}
+        <Panel className="lg:col-span-8 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-display text-lg font-bold">FMEA Register</h3>
+            <Input
+              placeholder="Search..."
+              value={globalFilter}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+              className="w-48"
+            />
           </div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: T.mono, fontSize: '0.62rem' }}
-              role="grid" aria-label="FMEA table">
-              <thead>
-                {table.getHeaderGroups().map(hg => (
+
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-left font-mono text-xs">
+              <thead className="bg-surface text-ink-dim border-b border-border">
+                {table.getHeaderGroups().map((hg) => (
                   <tr key={hg.id}>
-                    {hg.headers.map(h => (
-                      <th key={h.id}
-                        onClick={h.column.getToggleSortingHandler()}
-                        style={{
-                          padding: '0.6rem 0.75rem', textAlign: 'left',
-                          color: T.textDim, fontSize: '0.52rem', letterSpacing: '0.1em', textTransform: 'uppercase',
-                          borderBottom: `1px solid ${T.border}`, cursor: h.column.getCanSort() ? 'pointer' : 'default',
-                          background: T.bg, userSelect: 'none', whiteSpace: 'nowrap',
-                        }}
-                        aria-sort={h.column.getIsSorted() === 'asc' ? 'ascending' : h.column.getIsSorted() === 'desc' ? 'descending' : 'none'}
+                    {hg.headers.map((col) => (
+                      <th
+                        key={col.id}
+                        onClick={col.column.getToggleSortingHandler()}
+                        className={cn('p-3 font-semibold uppercase tracking-wider', col.column.getCanSort() && 'cursor-pointer hover:text-cyan')}
                       >
-                        {flexRender(h.column.columnDef.header, h.getContext())}
-                        {h.column.getIsSorted() === 'asc' ? ' ▲' : h.column.getIsSorted() === 'desc' ? ' ▼' : ''}
+                        {flexRender(col.column.columnDef.header, col.getContext())}
+                        {{ asc: ' ▲', desc: ' ▼' }[col.column.getIsSorted() as string] ?? ''}
                       </th>
                     ))}
                   </tr>
                 ))}
               </thead>
-              <tbody>
-                {table.getRowModel().rows.map((row, i) => (
-                  <tr key={row.id}
-                    style={{ background: i % 2 === 0 ? 'transparent' : `${T.surface}50`, transition: 'background 0.1s' }}
-                    onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = `${T.cyan}06`}
-                    onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = i % 2 === 0 ? 'transparent' : `${T.surface}50`}
-                  >
-                    {row.getVisibleCells().map(cell => (
-                      <td key={cell.id} style={{ padding: '0.5rem 0.75rem', color: T.textMid, borderBottom: `1px solid ${T.border}44`, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              <tbody className="divide-y divide-border/50">
+                <AnimatePresence>
+                  {table.getRowModel().rows.map((row) => (
+                    <motion.tr
+                      key={row.id}
+                      layout
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="hover:bg-white/5 transition-colors"
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <td key={cell.id} className="p-3">
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </td>
+                      ))}
+                    </motion.tr>
+                  ))}
+                  {rows.length === 0 && (
+                    <tr>
+                      <td colSpan={columns.length} className="p-8 text-center text-ink-dim">
+                        No FMEA data found.
                       </td>
-                    ))}
-                  </tr>
-                ))}
+                    </tr>
+                  )}
+                </AnimatePresence>
               </tbody>
             </table>
           </div>
-        )}
-      </Panel>
+        </Panel>
+      </div>
 
-      {/* ── Add/Edit Modal ── */}
-      <Modal isOpen={showForm} onClose={() => setShowForm(false)}
-        title={isNew ? 'Add Failure Mode' : 'Edit Failure Mode'}
-        subtitle="⚠ FMEA ENTRY" maxWidth={600}>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {/* Text fields */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-            {([
-              ['process', 'Process / Function'],
-              ['failureMode', 'Failure Mode'],
-              ['effect', 'Effect of Failure'],
-              ['cause', 'Root Cause'],
-              ['action', 'Recommended Action'],
-              ['owner', 'Action Owner'],
-            ] as [keyof typeof BLANK_ROW, string][]).map(([key, label]) => (
-              <div key={key} style={key === 'action' || key === 'cause' ? { gridColumn: '1 / -1' } : {}}>
-                <label style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.55rem', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: '0.3rem' }}>{label}</label>
-                <input value={draft[key] as string} onChange={e => setField(key, e.target.value)}
-                  style={{ width: '100%', background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: T.mono, fontSize: '0.72rem', padding: '0.4rem 0.65rem' }} />
-              </div>
-            ))}
+      {/* FORM MODAL */}
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editId ? 'Edit FMEA' : 'New FMEA'} subtitle="RISK REGISTER" maxWidth={720}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <Input label="Process Step" value={draft.process} onChange={(e) => handleFieldChange('process', e.target.value)} />
+            <Input label="Failure Mode" value={draft.failureMode} onChange={(e) => handleFieldChange('failureMode', e.target.value)} required />
+            <Textarea label="Effect" value={draft.effect} onChange={(e) => handleFieldChange('effect', e.target.value)} rows={2} />
+            <Textarea label="Cause" value={draft.cause} onChange={(e) => handleFieldChange('cause', e.target.value)} rows={2} />
           </div>
 
-          {/* Rating sliders */}
-          <div style={{ background: T.surface, borderRadius: 8, padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {ratingInput('severity',   'Severity (S)')}
-            {ratingInput('occurrence', 'Occurrence (O)')}
-            {ratingInput('detection',  'Detection Difficulty (D)')}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.5rem', borderTop: `1px solid ${T.border}` }}>
-              <span style={{ color: T.textMid, fontFamily: T.mono, fontSize: '0.6rem' }}>RPN = S × O × D</span>
-              <span style={{ color: getRpnSeverity(draft.rpn, config).color, fontFamily: T.mono, fontSize: '1.2rem', fontWeight: 700 }}>
+          <div className="space-y-5 rounded-xl border border-border bg-surface p-5">
+            <div className="flex items-end justify-between border-b border-border pb-4">
+              <span className="font-mono text-sm font-bold uppercase text-ink-dim">Risk Priority Number</span>
+              <span className="font-mono text-3xl font-black" style={{ color: getRpnSeverity(draft.rpn, config).color }}>
                 {draft.rpn}
               </span>
-              <Badge label={getRpnSeverity(draft.rpn, config).label}
-                color={draft.rpn >= config.rpn.critical ? 'red' : draft.rpn >= config.rpn.high ? 'yellow' : draft.rpn >= config.rpn.medium ? 'orange' : 'green'} />
             </div>
-          </div>
 
-          {/* Status & date */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-            <div>
-              <label style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.55rem', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: '0.3rem' }}>Status</label>
-              <select value={draft.status} onChange={e => setField('status', e.target.value as FMEARow['status'])}
-                style={{ width: '100%', background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: T.mono, fontSize: '0.72rem', padding: '0.4rem 0.65rem' }}>
-                <option value="open">Open</option>
-                <option value="in-progress">In Progress</option>
-                <option value="closed">Closed</option>
-              </select>
-            </div>
-            <div>
-              <label style={{ color: T.textDim, fontFamily: T.mono, fontSize: '0.55rem', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: '0.3rem' }}>Due Date</label>
-              <input type="date" value={draft.dueDate} onChange={e => setField('dueDate', e.target.value)}
-                style={{ width: '100%', background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: T.mono, fontSize: '0.72rem', padding: '0.4rem 0.65rem' }} />
-            </div>
+            <Slider
+              label="Severity (1-10)"
+              value={draft.severity}
+              onChange={(e) => handleFieldChange('severity', Number(e.target.value))}
+              min={1} max={10}
+              valueLabel={draft.severity}
+              accentColor={tokens.red}
+            />
+            <Slider
+              label="Occurrence (1-10)"
+              value={draft.occurrence}
+              onChange={(e) => handleFieldChange('occurrence', Number(e.target.value))}
+              min={1} max={10}
+              valueLabel={draft.occurrence}
+              accentColor={tokens.orange}
+            />
+            <Slider
+              label="Detection (1-10)"
+              value={draft.detection}
+              onChange={(e) => handleFieldChange('detection', Number(e.target.value))}
+              min={1} max={10}
+              valueLabel={draft.detection}
+              accentColor={tokens.yellow}
+            />
+            
+            <Select
+              label="Status"
+              value={draft.status}
+              onChange={(e) => handleFieldChange('status', e.target.value as FMEARow['status'])}
+              options={[
+                { value: 'open', label: 'Open' },
+                { value: 'in-progress', label: 'In Progress' },
+                { value: 'closed', label: 'Closed' },
+              ]}
+            />
           </div>
+        </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', borderTop: `1px solid ${T.border}`, paddingTop: '0.75rem' }}>
-            <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" onClick={save} hapticStyle="success">
-              {isNew ? '+ Add' : '✓ Save'}
-            </Button>
-          </div>
+        <div className="mt-6 flex justify-end gap-3 border-t border-border pt-4">
+          <Button variant="ghost" onClick={() => setModalOpen(false)}>Cancel</Button>
+          <Button variant="primary" onClick={handleSave}>{editId ? 'Save Changes' : 'Add to Register'}</Button>
         </div>
       </Modal>
     </motion.div>
