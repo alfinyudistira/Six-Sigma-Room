@@ -5,7 +5,7 @@
  * ============================================================================
  */
 
-import { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   useReactTable,
@@ -22,13 +22,13 @@ import {
   addFMEARow,
   updateFMEARow,
   deleteFMEARow,
-  fmeaSelectors, // 🔥 PERBAIKAN 1: Import selector untuk EntityState
+  fmeaSelectors,
   type FMEARow,
 } from '@/store/moduleSlice'
 
 import { useConfigStore, getRpnSeverity } from '@/lib/config'
 import { calcRPN } from '@/lib/sigma'
-import { feedback } from '@/lib/feedback' // 🔥 PERBAIKAN 2: Gunakan singleton feedback
+import { feedback } from '@/lib/feedback'
 import { useModulePersist, useHaptic } from '@/hooks'
 
 import { Section, Panel, SimpleBarChart, KPICard } from '@/components/charts'
@@ -38,18 +38,20 @@ import { Modal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { Input, Select, Slider, Textarea } from '@/components/ui/Input'
 import { tokens as T } from '@/lib/tokens'
-import { downloadCSV } from '@/lib/utils'
-import { cn } from '@/lib/utils'
+import { downloadCSV, cn } from '@/lib/utils'
 
 /* --------------------------------------------------------------------------
    ENGINE LOGIC
    -------------------------------------------------------------------------- */
 function computeFMEAStats(rows: FMEARow[], config: any) {
+  // Perbaikan: Safety check untuk objek config.fmea
+  const fmeaCfg = config?.fmea || { criticalRpn: 200, highRpn: 100 }
+  
   if (!rows.length) return { critical: 0, high: 0, avg: 0, max: 0, closed: 0 }
 
   const total = rows.length
-  const critical = rows.filter((r) => r.rpn >= config.fmea.criticalRpn).length
-  const high = rows.filter((r) => r.rpn >= config.fmea.highRpn && r.rpn < config.fmea.criticalRpn).length
+  const critical = rows.filter((r) => r.rpn >= fmeaCfg.criticalRpn).length
+  const high = rows.filter((r) => r.rpn >= fmeaCfg.highRpn && r.rpn < fmeaCfg.criticalRpn).length
 
   const avg = rows.reduce((a, r) => a + r.rpn, 0) / total
   const max = Math.max(...rows.map((r) => r.rpn))
@@ -63,10 +65,7 @@ function computeFMEAStats(rows: FMEARow[], config: any) {
    -------------------------------------------------------------------------- */
 export default function FMEAScorer() {
   const dispatch = useAppDispatch()
-  
-  // 🔥 PERBAIKAN 3: Gunakan selector agar mendapatkan array FMEARow[] (bukan EntityState object)
   const rows = useAppSelector(fmeaSelectors.selectAll)
-  
   const rawState = useAppSelector((s) => s.modules.fmea)
   useModulePersist('fmea_rows', rawState)
 
@@ -165,8 +164,10 @@ export default function FMEAScorer() {
 
   const handleExport = useCallback(() => {
     light()
-    const success = downloadCSV(rows, 'fmea-export.csv')
-    if (success) feedback.notifySuccess('Exported to CSV')
+    // Perbaikan: Casting rows ke any[] agar diterima oleh downloadCSV
+    const exportData = rows as any[]
+    const ok = downloadCSV(exportData, 'fmea-export.csv')
+    if (ok) feedback.notifySuccess('Exported to CSV')
   }, [rows, light])
 
   // ─── COLUMNS ───────────────────────────────────────────────────────────
@@ -237,10 +238,14 @@ export default function FMEAScorer() {
   })
 
   // ─── RENDER ────────────────────────────────────────────────────────────
+  // Perbaikan: Gunakan boolean false untuk animasi jika disabled (menghindari undefined)
+  const animProps = config.ui.animationsEnabled 
+    ? { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 } }
+    : { initial: false, animate: false }
+
   return (
     <motion.div
-      initial={config.ui.animationsEnabled ? { opacity: 0, y: 10 } : undefined}
-      animate={config.ui.animationsEnabled ? { opacity: 1, y: 0 } : undefined}
+      {...animProps}
       className="flex flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
       <Section
@@ -258,7 +263,6 @@ export default function FMEAScorer() {
         }
       />
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <KPICard label="Total Risks" value={rows.length} color={T.cyan} />
         <KPICard label="Critical" value={stats.critical} color={T.red} />
@@ -268,7 +272,6 @@ export default function FMEAScorer() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* TOP RISKS CHART */}
         <Panel className="lg:col-span-4">
           <Section subtitle="Top 10" title="Highest RPN" color={T.red} />
           <SimpleBarChart
@@ -277,20 +280,19 @@ export default function FMEAScorer() {
             bars={[{ key: 'rpn', color: T.red, label: 'RPN Score' }]}
             height={280}
             referenceLines={[
-              { value: config.fmea.criticalRpn, color: T.red, label: 'Critical' },
-              { value: config.fmea.highRpn, color: T.orange, label: 'High' }
+              { value: (config as any).fmea?.criticalRpn || 200, color: T.red, label: 'Critical' },
+              { value: (config as any).fmea?.highRpn || 100, color: T.orange, label: 'High' }
             ]}
           />
         </Panel>
 
-        {/* DATA TABLE */}
         <Panel className="lg:col-span-8 flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <h3 className="font-display text-lg font-bold">FMEA Register</h3>
             <Input
               placeholder="Search..."
               value={globalFilter}
-              onChange={(e) => setGlobalFilter(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGlobalFilter(e.target.value)}
               className="w-48"
             />
           </div>
@@ -345,14 +347,13 @@ export default function FMEAScorer() {
         </Panel>
       </div>
 
-      {/* FORM MODAL */}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editId ? 'Edit FMEA' : 'New FMEA'} subtitle="RISK REGISTER" maxWidth={720}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-4">
-            <Input label="Process Step" value={draft.process} onChange={(e) => handleFieldChange('process', e.target.value)} />
-            <Input label="Failure Mode" value={draft.failureMode} onChange={(e) => handleFieldChange('failureMode', e.target.value)} required />
-            <Textarea label="Effect" value={draft.effect} onChange={(e) => handleFieldChange('effect', e.target.value)} rows={2} />
-            <Textarea label="Cause" value={draft.cause} onChange={(e) => handleFieldChange('cause', e.target.value)} rows={2} />
+            <Input label="Process Step" value={draft.process} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('process', e.target.value)} />
+            <Input label="Failure Mode" value={draft.failureMode} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('failureMode', e.target.value)} required />
+            <Textarea label="Effect" value={draft.effect} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleFieldChange('effect', e.target.value)} rows={2} />
+            <Textarea label="Cause" value={draft.cause} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleFieldChange('cause', e.target.value)} rows={2} />
           </div>
 
           <div className="space-y-5 rounded-xl border border-border bg-surface p-5">
@@ -366,32 +367,29 @@ export default function FMEAScorer() {
             <Slider
               label="Severity (1-10)"
               value={draft.severity}
-              onChange={(e) => handleFieldChange('severity', Number(e.target.value))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('severity', Number(e.target.value))}
               min={1} max={10}
-              valueLabel={draft.severity}
-              accentColor={tokens.red}
+              valueLabel={draft.severity.toString()}
             />
             <Slider
               label="Occurrence (1-10)"
               value={draft.occurrence}
-              onChange={(e) => handleFieldChange('occurrence', Number(e.target.value))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('occurrence', Number(e.target.value))}
               min={1} max={10}
-              valueLabel={draft.occurrence}
-              accentColor={tokens.orange}
+              valueLabel={draft.occurrence.toString()}
             />
             <Slider
               label="Detection (1-10)"
               value={draft.detection}
-              onChange={(e) => handleFieldChange('detection', Number(e.target.value))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('detection', Number(e.target.value))}
               min={1} max={10}
-              valueLabel={draft.detection}
-              accentColor={tokens.yellow}
+              valueLabel={draft.detection.toString()}
             />
             
             <Select
               label="Status"
               value={draft.status}
-              onChange={(e) => handleFieldChange('status', e.target.value as FMEARow['status'])}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFieldChange('status', e.target.value as FMEARow['status'])}
               options={[
                 { value: 'open', label: 'Open' },
                 { value: 'in-progress', label: 'In Progress' },
