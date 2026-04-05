@@ -1,9 +1,4 @@
 // src/pages/DMAICTracker.tsx
-/**
- * ============================================================================
- * DMAIC TRACKER — TASK MANAGEMENT FOR DMAIC PHASES
- * ============================================================================
- */
 
 import React, { useState, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -28,9 +23,7 @@ import { Input, Textarea, Select } from '@/components/ui/Input'
 import { tokens } from '@/lib/tokens'
 import { cn } from '@/lib/utils'
 
-/* --------------------------------------------------------------------------
-   CONSTANTS
-   -------------------------------------------------------------------------- */
+
 const PHASES: readonly DMAICPhase[] = ['define', 'measure', 'analyze', 'improve', 'control']
 const STATUS_OPTIONS: DMAICTask['status'][] = ['not-started', 'in-progress', 'complete', 'blocked']
 
@@ -49,9 +42,6 @@ const STATUS_LABELS: Record<DMAICTask['status'], string> = {
   blocked: 'Blocked',
 }
 
-/* --------------------------------------------------------------------------
-   STATS COMPUTATION
-   -------------------------------------------------------------------------- */
 function computeStats(tasks: DMAICTask[]) {
   const total = tasks.length
   const complete = tasks.filter((t) => t.status === 'complete').length
@@ -73,9 +63,6 @@ function computeStats(tasks: DMAICTask[]) {
   }
 }
 
-/* --------------------------------------------------------------------------
-   TASK CARD COMPONENT
-   -------------------------------------------------------------------------- */
 function TaskCard({
   task,
   onEdit,
@@ -316,9 +303,9 @@ export default function DMAICTracker() {
             <motion.div
               key={task.id}
               layout
-              initial={animated ? { opacity: 0, scale: 0.98 } : false}
+             initial={animated ? { opacity: 0, scale: 0.98 } : undefined}
               animate={{ opacity: 1, scale: 1 }}
-              exit={animated ? { opacity: 0, scale: 0.98 } : false}
+              exit={animated ? { opacity: 0, scale: 0.98 } : undefined}
               transition={{ duration: 0.2 }}
             >
               <TaskCard
