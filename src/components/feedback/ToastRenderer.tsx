@@ -1,82 +1,125 @@
 // src/components/feedback/ToastRenderer.tsx
-import { createPortal } from 'react-dom'
-import { AnimatePresence, motion } from 'framer-motion'
-import { useFeedback, type Toast } from '@/services/feedback'
 
-const TYPE_CONFIG = {
-  success: { icon: '✓', color: '#00FF9C', bg: 'rgba(0,255,156,0.08)', border: 'rgba(0,255,156,0.25)' },
-  error:   { icon: '✕', color: '#FF3B5C', bg: 'rgba(255,59,92,0.08)', border: 'rgba(255,59,92,0.25)' },
-  warning: { icon: '⚠', color: '#FFD60A', bg: 'rgba(255,214,10,0.08)', border: 'rgba(255,214,10,0.25)' },
-  info:    { icon: 'ℹ', color: '#00D4FF', bg: 'rgba(0,212,255,0.08)', border: 'rgba(0,212,255,0.25)' },
-  loading: { icon: '⟳', color: '#00D4FF', bg: 'rgba(0,212,255,0.06)', border: 'rgba(0,212,255,0.2)' },
+import React, { createPortal } from 'react-dom'
+import { AnimatePresence, motion, PanInfo } from 'framer-motion'
+import { useEffect, useState, useCallback, useRef } from 'react'
+
+import { feedback, type Notification, type NotificationType } from '@/lib/feedback'
+import { tokens } from '@/lib/tokens'
+
+const TYPE_CONFIG: Record<NotificationType, { icon: string; color: string; glow: string }> = {
+  success: { icon: '✓', color: tokens.green, glow: '0 0 12px rgba(0, 255, 156, 0.4)' },
+  error: { icon: '✕', color: tokens.red, glow: '0 0 12px rgba(255, 59, 92, 0.4)' },
+  warning: { icon: '⚠', color: tokens.yellow, glow: '0 0 12px rgba(255, 214, 10, 0.4)' },
+  info: { icon: 'ℹ', color: tokens.cyan, glow: '0 0 12px rgba(0, 212, 255, 0.4)' },
+  loading: { icon: '⟳', color: tokens.cyan, glow: '0 0 12px rgba(0, 212, 255, 0.4)' },
+} as const
+
+/* --------------------------------------------------------------------------
+   TOAST ITEM (memoized)
+   -------------------------------------------------------------------------- */
+interface ToastItemProps {
+  toast: Notification
+  onDismiss: (id: string) => void
 }
 
-function ToastItem({ toast }: { toast: Toast }) {
-  const { dismiss } = useFeedback()
+// 🔥 PERBAIKAN: Gunakan React.memo, bukan dibungkus dengan motion()
+const ToastItem = React.memo(function ToastItem({ toast, onDismiss }: ToastItemProps) {
   const cfg = TYPE_CONFIG[toast.type]
+  const [dragX, setDragX] = useState(0)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Auto‑dismiss timer
+  useEffect(() => {
+    if (toast.duration && toast.duration > 0 && toast.type !== 'loading') {
+      timerRef.current = setTimeout(() => {
+        onDismiss(toast.id)
+      }, toast.duration)
+      return () => {
+        if (timerRef.current) clearTimeout(timerRef.current)
+      }
+    }
+  }, [toast.id, toast.duration, toast.type, onDismiss])
+
+  const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    const swipeX = info.offset.x
+    if (Math.abs(swipeX) > 100) {
+      onDismiss(toast.id)
+    } else {
+      setDragX(0)
+    }
+  }
 
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, x: 60, scale: 0.95 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={{ opacity: 0, x: 60, scale: 0.95 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      initial={{ opacity: 0, x: 80, scale: 0.95 }}
+      animate={{ opacity: 1, x: dragX, scale: 1 }}
+      exit={{ opacity: 0, x: 80, scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+      drag="x"
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.7}
+      onDrag={(_e, info) => setDragX(info.offset.x)}
+      onDragEnd={handleDragEnd}
       role="alert"
       aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
       aria-atomic="true"
+      className="w-full max-w-[360px] pointer-events-auto relative overflow-hidden"
       style={{
-        background: cfg.bg,
-        border: `1px solid ${cfg.border}`,
-        borderLeft: `3px solid ${cfg.color}`,
-        borderRadius: 8,
-        padding: '0.75rem 1rem',
-        maxWidth: 340,
-        width: '100%',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-        position: 'relative',
-        overflow: 'hidden',
+        background: 'rgba(8, 14, 20, 0.9)',
+        backdropFilter: 'blur(12px)',
+        borderLeft: `4px solid ${cfg.color}`,
+        borderRadius: tokens.borderRadius.md,
+        boxShadow: `0 10px 30px -6px rgba(0,0,0,0.5), ${cfg.glow}`,
+        cursor: 'grab',
+        transition: 'box-shadow 0.2s',
       }}
+      whileHover={{ boxShadow: `0 10px 30px -6px rgba(0,0,0,0.7), ${cfg.glow}` }}
     >
-      {/* Progress bar (auto-dismiss) */}
-      {toast.duration && toast.duration > 0 && (
+      {/* Progress bar */}
+      {toast.duration && toast.duration > 0 && toast.type !== 'loading' && (
         <motion.div
           initial={{ scaleX: 1 }}
           animate={{ scaleX: 0 }}
           transition={{ duration: toast.duration / 1000, ease: 'linear' }}
-          style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0, height: 2,
-            background: cfg.color, transformOrigin: 'left',
-          }}
+          className="absolute bottom-0 left-0 right-0 h-0.5 origin-left"
+          style={{ backgroundColor: cfg.color }}
         />
       )}
 
-      {/* Content */}
-      <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
-        <span
-          style={{ color: cfg.color, fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', flexShrink: 0 }}
+      <div className="flex gap-3 p-4">
+        {/* Icon */}
+        <div
+          className="flex-shrink-0 text-xl font-mono leading-none mt-px"
+          style={{ color: cfg.color }}
           aria-hidden="true"
-          className={toast.type === 'loading' ? 'toast-spin' : ''}
         >
-          {cfg.icon}
-        </span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ color: '#E2EEF9', fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.03em' }}>
-            {toast.title}
+          {toast.type === 'loading' ? (
+            <div className="animate-spin inline-block">{cfg.icon}</div>
+          ) : (
+            cfg.icon
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="text-ink font-mono text-xs tracking-[0.5px] uppercase font-semibold">
+            {toast.message}
           </div>
-          {toast.message && (
-            <div style={{ color: '#7A99B8', fontFamily: 'DM Sans, sans-serif', fontSize: '0.7rem', marginTop: '0.2rem', lineHeight: 1.5 }}>
-              {toast.message}
+          {toast.description && (
+            <div className="text-ink-dim text-[13px] leading-tight mt-1">
+              {toast.description}
             </div>
           )}
           {toast.action && (
             <button
-              onClick={toast.action.onClick}
-              style={{
-                marginTop: '0.5rem', background: 'transparent', border: `1px solid ${cfg.border}`,
-                color: cfg.color, padding: '0.2rem 0.6rem', borderRadius: 4, cursor: 'pointer',
-                fontFamily: 'Space Mono, monospace', fontSize: '0.6rem',
+              onClick={() => {
+                toast.action?.onClick()
+                onDismiss(toast.id)
               }}
+              className="mt-3 text-xs font-mono tracking-wider px-3 py-1 rounded border border-border hover:border-ink hover:text-cyan transition-colors"
+              style={{ borderColor: cfg.color, color: cfg.color }}
             >
               {toast.action.label}
             </button>
@@ -85,47 +128,60 @@ function ToastItem({ toast }: { toast: Toast }) {
 
         {/* Dismiss button */}
         <button
-          onClick={() => dismiss(toast.id)}
+          onClick={() => onDismiss(toast.id)}
           aria-label="Dismiss notification"
-          style={{
-            background: 'transparent', border: 'none', color: '#4A6785',
-            cursor: 'pointer', fontSize: '0.75rem', padding: '0.1rem', flexShrink: 0,
-            lineHeight: 1,
-          }}
+          className="text-ink-dim hover:text-ink text-xl leading-none mt-px transition-colors"
+          style={{ color: cfg.color }}
         >
           ✕
         </button>
       </div>
-
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .toast-spin { display: inline-block; animation: spin 1s linear infinite; }
-      `}</style>
     </motion.div>
   )
-}
+}, (prev, next) => prev.toast.id === next.toast.id && prev.toast.duration === next.toast.duration)
 
+/* --------------------------------------------------------------------------
+   TOAST RENDERER (PORTAL)
+   -------------------------------------------------------------------------- */
 export function ToastRenderer() {
-  const { toasts } = useFeedback()
+  const [toasts, setToasts] = useState<Notification[]>([])
+
+  const dismiss = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }, [])
+
+  useEffect(() => {
+    const unsubscribe = feedback.subscribeToNotifications((notification) => {
+      setToasts((prev) => [...prev, notification])
+    })
+
+    return () => {
+      unsubscribe()
+      setToasts([])
+    }
+  }, [])
+
+  // Global escape key handler
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && toasts.length > 0) {
+        const newest = toasts[toasts.length - 1]
+        dismiss(newest.id)
+      }
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [toasts, dismiss])
 
   return createPortal(
     <div
-      aria-label="Notifications"
-      style={{
-        position: 'fixed',
-        bottom: '1.5rem',
-        right: '1.5rem',
-        zIndex: 99999,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.5rem',
-        pointerEvents: 'none',
-      }}
+      aria-label="Global notifications"
+      className="fixed bottom-6 right-6 z-[99999] flex flex-col gap-3 pointer-events-none"
     >
       <AnimatePresence mode="popLayout">
-        {toasts.map(toast => (
-          <div key={toast.id} style={{ pointerEvents: 'auto' }}>
-            <ToastItem toast={toast} />
+        {toasts.map((toast) => (
+          <div key={toast.id} className="pointer-events-auto">
+            <ToastItem toast={toast} onDismiss={dismiss} />
           </div>
         ))}
       </AnimatePresence>
