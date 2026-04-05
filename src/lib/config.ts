@@ -4,9 +4,6 @@ import { create } from 'zustand'
 import { persist, createJSONStorage, devtools } from 'zustand/middleware'
 import { shallow } from 'zustand/shallow'
 
-/* --------------------------------------------------------------------------
-   COLOR PALETTE
-   -------------------------------------------------------------------------- */
 export const CONFIG_COLORS = {
   worldClass: '#00FF9C', 
   excellent: '#00D4FF',  
@@ -21,9 +18,6 @@ export const CONFIG_COLORS = {
   ok: '#00FF9C',
 } as const
 
-/* --------------------------------------------------------------------------
-   TYPES & UTILITIES
-   -------------------------------------------------------------------------- */
 export type DeepReadonly<T> = {
   readonly [K in keyof T]: T[K] extends object ? DeepReadonly<T[K]> : T[K]
 }
@@ -37,9 +31,6 @@ export type Status<T extends string> = {
   color: string
 }
 
-/* --------------------------------------------------------------------------
-   APP CONFIG SHAPE
-   -------------------------------------------------------------------------- */
 export interface AppConfig {
   sigma: { worldClass: number; excellent: number; acceptable: number; poor: number }
   ppk: { worldClass: number; capable: number; marginal: number }
@@ -64,6 +55,7 @@ export interface AppConfig {
     exportPDF: boolean
     advancedAnalytics: boolean 
     mobileOptimized: boolean 
+     mockRealtime: boolean;
   }
   metadata: { 
     version: number
@@ -71,9 +63,6 @@ export interface AppConfig {
   }
 }
 
-/* --------------------------------------------------------------------------
-   DEFAULT CONFIG
-   -------------------------------------------------------------------------- */
 export const DEFAULT_CONFIG: AppConfig = {
   sigma: { worldClass: 5.0, excellent: 4.0, acceptable: 3.0, poor: 2.0 },
   ppk: { worldClass: 1.67, capable: 1.33, marginal: 1.0 },
@@ -98,6 +87,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     exportPDF: false,
     advancedAnalytics: false,
     mobileOptimized: true,
+     mockRealtime: false,
   },
   metadata: {
     version: 3,
@@ -105,9 +95,6 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
 }
 
-/* --------------------------------------------------------------------------
-   DEEP MERGE (Perbaikan TS2352 & TS2536)
-   -------------------------------------------------------------------------- */
 function deepMerge<T extends object>(base: T, override: DeepPartial<T>): T {
   const result = { ...base } as any
 
