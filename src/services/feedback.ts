@@ -10,7 +10,6 @@ export interface ToastAction {
   onClick: () => void
 }
 
-// 🔥 PERBAIKAN 1: Tambahkan '| undefined' eksplisit agar Strict Mode puas
 export interface Toast {
   id: string
   type: ToastType
@@ -23,7 +22,6 @@ export interface Toast {
   replaced?: boolean | undefined
 }
 
-// 🔥 PERBAIKAN 2: Buat payload khusus untuk fungsi 'add' agar Omit & Partial tidak bertabrakan
 export interface ToastPayload {
   id?: string | undefined
   type: ToastType
@@ -34,21 +32,15 @@ export interface ToastPayload {
   progress?: number | undefined
 }
 
-/* --------------------------------------------------------------------------
-   CONFIGURATION
-   -------------------------------------------------------------------------- */
 const DEFAULT_MAX_TOASTS = 5
 const DEFAULT_DURATIONS: Record<ToastType, number> = {
   success: 4000,
   info: 3500,
   warning: 4500,
   error: 6000,
-  loading: 0, // 0 = persistent (tidak hilang sampai di-update)
+  loading: 0,
 }
 
-/* --------------------------------------------------------------------------
-   INTERNAL HELPERS
-   -------------------------------------------------------------------------- */
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
 
 function generateId(): string {
@@ -81,20 +73,14 @@ function clearTimer(id: string): void {
   }
 }
 
-/* --------------------------------------------------------------------------
-   STORE INTERFACE
-   -------------------------------------------------------------------------- */
 interface FeedbackState {
   toasts: Toast[]
-
-  // 🔥 PERBAIKAN 3: Gunakan tipe ToastPayload yang sudah kita buat
   add: (toast: ToastPayload, options?: { replace?: boolean | undefined }) => string
   update: (id: string, patch: Partial<Toast>) => void
   dismiss: (id: string) => void
   dismissAll: () => void
   getById: (id: string) => Toast | undefined
 
-  // Convenience helpers
   success: (title: string, message?: string | undefined) => string
   error: (title: string, message?: string | undefined) => string
   warning: (title: string, message?: string | undefined) => string
@@ -107,9 +93,7 @@ interface FeedbackState {
   ) => Promise<T>
 }
 
-/* --------------------------------------------------------------------------
-   STORE IMPLEMENTATION
-   -------------------------------------------------------------------------- */
+
 export const useFeedback = create<FeedbackState>((set, get) => ({
   toasts: [],
 
@@ -138,10 +122,10 @@ export const useFeedback = create<FeedbackState>((set, get) => ({
         )
         if (index !== -1) {
           const replaced = [...state.toasts]
-          const oldId = replaced[index].id
-          replaced[index] = { ...replaced[index], ...baseToast, replaced: true }
+          const oldId = replaced[index]!.id
+          replaced[index] = { ...replaced[index]!, ...baseToast, replaced: true }
           clearTimer(oldId)
-          scheduleAutoDismiss(replaced[index].id, replaced[index].duration, get().dismiss)
+          scheduleAutoDismiss(replaced[index]!.id, replaced[index]!.duration, get().dismiss)
           return { toasts: replaced }
         }
       }
@@ -162,7 +146,7 @@ export const useFeedback = create<FeedbackState>((set, get) => ({
       const index = state.toasts.findIndex((t) => t.id === id)
       if (index === -1) return state
       const updated = [...state.toasts]
-      updated[index] = { ...updated[index], ...patch }
+      updated[index] = { ...updated[index]!, ...patch }
 
       if (patch.duration !== undefined) {
         clearTimer(id)
