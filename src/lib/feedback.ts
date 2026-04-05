@@ -7,7 +7,7 @@ export interface Notification {
   type: NotificationType
   message: string
   description?: string
-  duration?: number // ms, default 4000
+  duration?: number
   timestamp: number
   action?: {
     label: string
@@ -146,25 +146,16 @@ function emit<K extends EventKey>(event: K, payload: EventMap[K]): void {
   })
 }
 
-/**
- * Subscribe ke event tertentu.
- * @param event Nama event
- * @param fn Callback yang akan dipanggil saat event terjadi
- * @returns Fungsi unsubscribe
- */
 function subscribe<K extends EventKey>(event: K, fn: EventListener<K>): () => void {
-  if (!eventListeners[event]) {
-    eventListeners[event] = new Set()
-  }
+if (!eventListeners[event]) {
+  eventListeners[event] = new Set() as any
+}
   eventListeners[event]!.add(fn)
   return () => {
     eventListeners[event]?.delete(fn)
   }
 }
 
-/**
- * Hapus semua listener untuk event tertentu (berguna untuk testing / reset).
- */
 function unsubscribeAllEvents(event?: EventKey): void {
   if (event) {
     eventListeners[event]?.clear()
@@ -175,12 +166,7 @@ function unsubscribeAllEvents(event?: EventKey): void {
   }
 }
 
-/* --------------------------------------------------------------------------
-   PART 3: UNIFIED FEEDBACK API (Gabungan)
-   -------------------------------------------------------------------------- */
-
 export const feedback = Object.freeze({
-  // Notification methods
   notify,
   notifySuccess,
   notifyError,
@@ -189,19 +175,16 @@ export const feedback = Object.freeze({
   subscribeToNotifications,
   unsubscribeAllNotifications,
 
-  // Event bus methods
   emit,
   subscribe,
   unsubscribeAllEvents,
 
-  // Helper untuk notifikasi + emit sekaligus (convenience)
   notifyAndEmit: (
     message: string,
     type: NotificationType = 'info',
     event?: EventKey,
     eventPayload?: EventMap[EventKey],
   ) => {
-    // Kirim notifikasi
     switch (type) {
       case 'success':
         notifySuccess(message)
@@ -215,13 +198,11 @@ export const feedback = Object.freeze({
       default:
         notifyInfo(message)
     }
-    // Emit event jika diberikan
     if (event && eventPayload !== undefined) {
       emit(event, eventPayload as any)
     }
   },
 
-  // Untuk debugging (jumlah listener)
   getNotificationListenerCount: () => notificationListeners.size,
   getEventListenerCount: (event?: EventKey) => {
     if (event) return eventListeners[event]?.size ?? 0
@@ -231,7 +212,4 @@ export const feedback = Object.freeze({
   },
 })
 
-/* --------------------------------------------------------------------------
-   EXPORT TYPE UNTUK KONSUMSI DI LUAR
-   -------------------------------------------------------------------------- */
 export type { EventKey, EventListener, NotificationListener }
