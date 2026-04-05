@@ -1,9 +1,3 @@
-/**
- * ============================================================================
- * LIVE OPS CENTER — REAL‑TIME PERFORMANCE DASHBOARD (ENTERPRISE EDITION)
- * ============================================================================
- */
-
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -19,9 +13,6 @@ import { Badge } from '@/components/ui/Badge'
 import { tokens } from '@/lib/tokens'
 import { cn } from '@/lib/utils'
 
-/* --------------------------------------------------------------------------
-   TYPES & INTERFACES (STRICT MODE SAFE & SCALABLE)
-   -------------------------------------------------------------------------- */
 interface Snapshot {
   timestamp: number
   sigma: number
@@ -51,13 +42,9 @@ interface RealtimeAlertEvent {
   }
 }
 
-/* --------------------------------------------------------------------------
-   HELPERS & FORMATTERS (NATIVE & FAST)
-   -------------------------------------------------------------------------- */
 const numFormatter = new Intl.NumberFormat('en-US')
 const pctFormatter = new Intl.NumberFormat('en-US', { style: 'percent', minimumFractionDigits: 1 })
 
-// 🚀 PERBAIKAN 1: Pengecekan Array Super Aman
 function getTrend(snapshots: Snapshot[], key: keyof Snapshot): 'up' | 'down' | 'stable' {
   if (snapshots.length < 2) return 'stable'
   
@@ -77,9 +64,6 @@ function generateAlertId(): string {
   return `alert_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
 }
 
-/* --------------------------------------------------------------------------
-   ANIMATION VARIANTS (UI/UX MASTERPIECE)
-   -------------------------------------------------------------------------- */
 const containerVariants = {
   hidden: { opacity: 0 },
   show: {
@@ -98,9 +82,6 @@ const itemVariants = {
   }
 }
 
-/* --------------------------------------------------------------------------
-   MAIN COMPONENT
-   -------------------------------------------------------------------------- */
 export default function LiveOps() {
   const company = useAppStore((s) => s.company)
   const config = useConfigStore((s) => s.config)
@@ -114,7 +95,6 @@ export default function LiveOps() {
   const [alerts, setAlerts] = useState<AlertEvent[]>([])
   const [current, setCurrent] = useState<Snapshot | null>(null)
 
-  // 🚀 TAMBAHAN: Kalkulasi Delta Throughput untuk Analisis Industri
   const throughputDelta = useMemo(() => {
     if (snapshots.length < 2) return 0
     const prev = snapshots[snapshots.length - 2]?.throughput || 0
@@ -122,7 +102,6 @@ export default function LiveOps() {
     return curr - prev
   }, [snapshots])
 
-  // ─── REALTIME EVENT HANDLERS (OPTIMIZED) ──────────────────────────────
   const handleSnapshot = useCallback((rawEvent: unknown) => {
     const event = rawEvent as RealtimeSnapshotEvent
     const snap: Snapshot = {
@@ -132,7 +111,7 @@ export default function LiveOps() {
     setCurrent(snap)
     setSnapshots((prev) => {
       const next = [...prev, snap]
-      return next.length > 50 ? next.slice(-50) : next // Buffer dinaikkan ke 50 untuk trend lebih akurat
+      return next.length > 50 ? next.slice(-50) : next
     })
   }, [])
 
@@ -144,7 +123,6 @@ export default function LiveOps() {
       rule: event.payload.rule,
       message: event.payload.message,
     }
-    // Batasi maksimum 15 alert di memory agar tidak bocor
     setAlerts((prev) => [alertEvent, ...prev].slice(0, 15))
     
     feedback.notifyWarning(`SPC Rule ${alertEvent.rule} Violation`, {
