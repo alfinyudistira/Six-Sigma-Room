@@ -1,23 +1,9 @@
 // src/components/ui/Badge.tsx
-/**
- * ============================================================================
- * BADGE & STATUS COMPONENTS — REUSABLE, ACCESSIBLE, TAILWIND + TOKENS
- * ============================================================================
- */
 
 import { cn } from '@/lib/utils'
 import { tokens } from '@/lib/tokens'
-
-/* --------------------------------------------------------------------------
-   TYPES
-   -------------------------------------------------------------------------- */
 export type BadgeColor = 'cyan' | 'green' | 'red' | 'yellow' | 'orange' | 'dim'
 export type BadgeSize = 'sm' | 'md'
-
-/* --------------------------------------------------------------------------
-   STYLING CONFIGURATION
-   -------------------------------------------------------------------------- */
-// 🔥 PERBAIKAN 1: Sinkronisasi warna dengan tokens.ts (green, red, yellow)
 const badgeColorStyles: Record<BadgeColor, { bg: string; border: string; text: string; glow: string }> = {
   cyan: {
     bg: 'bg-cyan/10',
@@ -67,12 +53,13 @@ const badgeSizeStyles: Record<BadgeSize, string> = {
    -------------------------------------------------------------------------- */
 export interface BadgeProps {
   label: string
-  color?: BadgeColor
-  size?: BadgeSize
-  glow?: boolean
-  outline?: boolean
-  className?: string
-  'aria-label'?: string
+  // Perbaikan: Menambahkan '| undefined' untuk mendukung strict property types
+  color?: BadgeColor | undefined
+  size?: BadgeSize | undefined
+  glow?: boolean | undefined
+  outline?: boolean | undefined
+  className?: string | undefined
+  'aria-label'?: string | undefined
 }
 
 export function Badge({
@@ -100,7 +87,7 @@ export function Badge({
         glow && styles.glow,
         className
       )}
-      style={outline ? { color: tokens[color === 'dim' ? 'textDim' : color] } : undefined}
+      style={outline ? { color: (tokens as any)[color === 'dim' ? 'textDim' : color] } : undefined}
       aria-label={ariaLabel ?? label}
     >
       {label}
@@ -112,12 +99,12 @@ export function Badge({
    STATUS DOT
    -------------------------------------------------------------------------- */
 export interface StatusDotProps {
-  active?: boolean
-  color?: string
-  pulse?: boolean
-  size?: 'sm' | 'md'
-  className?: string
-  'aria-label'?: string
+  active?: boolean | undefined
+  color?: string | undefined
+  pulse?: boolean | undefined
+  size?: 'sm' | 'md' | undefined
+  className?: string | undefined
+  'aria-label'?: string | undefined
 }
 
 export function StatusDot({
@@ -154,9 +141,9 @@ export function StatusDot({
 export interface KPIChipProps {
   label: string
   value: string | number
-  color?: BadgeColor
-  unit?: string
-  className?: string
+  color?: BadgeColor | undefined
+  unit?: string | undefined
+  className?: string | undefined
 }
 
 export function KPIChip({ label, value, color = 'cyan', unit, className }: KPIChipProps) {
@@ -185,6 +172,6 @@ export function KPIChip({ label, value, color = 'cyan', unit, className }: KPICh
 /* --------------------------------------------------------------------------
    DEMO TAG
    -------------------------------------------------------------------------- */
-export function DemoTag({ className }: { className?: string }) {
-  return <Badge label="DEMO" color="yellow" size="sm" glow className={className} />
+export function DemoTag({ className }: { className?: string | undefined }) {
+  return <Badge label="DEMO" color="yellow" size="sm" glow={true} className={className} />
 }
