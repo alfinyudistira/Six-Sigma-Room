@@ -3,11 +3,16 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, PanInfo } from 'framer-motion'
-import { feedback, type Notification, type NotificationType } from '@/lib/feedback'
+import { feedback, type Notification } from '@/lib/feedback'
 import { tokens } from '@/lib/tokens'
 
-// Perbaikan: Gunakan casting 'as any' sementara untuk 'loading' jika interface lib belum mendukung
-const TYPE_CONFIG: Record<string, { icon: string; color: string; glow: string }> = {
+/* --------------------------------------------------------------------------
+   TYPES & CONFIG
+   -------------------------------------------------------------------------- */
+type ConfigItem = { icon: string; color: string; glow: string }
+
+// Perbaikan: Hapus Record<string, ...> agar TS bisa infer kunci pastinya
+const TYPE_CONFIG = {
   success: { icon: '✓', color: tokens.green, glow: '0 0 12px rgba(0, 255, 156, 0.4)' },
   error: { icon: '✕', color: tokens.red, glow: '0 0 12px rgba(255, 59, 92, 0.4)' },
   warning: { icon: '⚠', color: tokens.yellow, glow: '0 0 12px rgba(255, 214, 10, 0.4)' },
@@ -24,15 +29,16 @@ interface ToastItemProps {
 }
 
 const ToastItem = React.memo(function ToastItem({ toast, onDismiss }: ToastItemProps) {
-  // Perbaikan: Safety check untuk config
-  const cfg = TYPE_CONFIG[toast.type as string] || TYPE_CONFIG.info
+  // Perbaikan 1: Gunakan bracket notation ['info'] dan casting agar 'cfg' tidak undefined
+  const cfg = (TYPE_CONFIG[toast.type as keyof typeof TYPE_CONFIG] || TYPE_CONFIG['info']) as ConfigItem
+  
   const [dragX, setDragX] = useState(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Auto‑dismiss timer
   useEffect(() => {
-    // Perbaikan: Pastikan tidak memproses timer untuk tipe loading
-    if (toast.duration && toast.duration > 0 && (toast.type as string) !== 'loading') {
+    const isLoader = (toast.type as string) === 'loading'
+    if (toast.duration && toast.duration > 0 && !isLoader) {
       timerRef.current = setTimeout(() => {
         onDismiss(toast.id)
       }, toast.duration)
@@ -72,7 +78,7 @@ const ToastItem = React.memo(function ToastItem({ toast, onDismiss }: ToastItemP
         background: 'rgba(8, 14, 20, 0.9)',
         backdropFilter: 'blur(12px)',
         borderLeft: `4px solid ${cfg.color}`,
-        borderRadius: tokens.borderRadius.md,
+        borderRadius: (tokens as any).borderRadius?.md ?? '8px',
         boxShadow: `0 10px 30px -6px rgba(0,0,0,0.5), ${cfg.glow}`,
         cursor: 'grab',
         transition: 'box-shadow 0.2s',
@@ -91,7 +97,6 @@ const ToastItem = React.memo(function ToastItem({ toast, onDismiss }: ToastItemP
       )}
 
       <div className="flex gap-3 p-4">
-        {/* Icon */}
         <div
           className="flex-shrink-0 text-xl font-mono leading-none mt-px"
           style={{ color: cfg.color }}
@@ -104,7 +109,6 @@ const ToastItem = React.memo(function ToastItem({ toast, onDismiss }: ToastItemP
           )}
         </div>
 
-        {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="text-ink font-mono text-xs tracking-[0.5px] uppercase font-semibold">
             {toast.message}
@@ -128,7 +132,6 @@ const ToastItem = React.memo(function ToastItem({ toast, onDismiss }: ToastItemP
           )}
         </div>
 
-        {/* Dismiss button */}
         <button
           onClick={() => onDismiss(toast.id)}
           aria-label="Dismiss notification"
@@ -165,15 +168,11 @@ export function ToastRenderer() {
     }
   }, [])
 
-  // Global escape key handler
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && toasts.length > 0) {
         const newest = toasts[toasts.length - 1]
-        // Perbaikan: Safety check untuk 'newest' agar tidak undefined
-        if (newest) {
-          dismiss(newest.id)
-        }
+        if (newest) dismiss(newest.id)
       }
     }
     window.addEventListener('keydown', handleEscape)
