@@ -109,7 +109,7 @@ export const dataEngine = Object.freeze({
   },
 
   resetAll: (): void => {
-    store.dispatch({ type: 'RESET_ALL' }) // handle di root reducer kamu
+    store.dispatch({ type: 'RESET_ALL' })
     const zustandState = useAppStore.getState()
     if (typeof zustandState.reset === 'function') {
       zustandState.reset()
@@ -131,4 +131,4 @@ export const selectRedux = <T>(selector: (state: ReduxState) => T): T =>
 export const selectZustand = <T>(selector: (state: ZustandState) => T): T =>
   dataEngine.select((s) => selector(s.zustand))
 
-export type { ReduxState, ZustandState, GlobalState }
+export type { ReduxState, ZustandState }
