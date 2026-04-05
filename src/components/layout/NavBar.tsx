@@ -1,20 +1,40 @@
-// src/components/layout/NavBar.tsx
 /**
  * ============================================================================
  * NAVIGATION BAR — DESKTOP + MOBILE, ACCESSIBLE, PERFORMANT
  * ============================================================================
  */
 
-import { useState, useCallback, useMemo, memo } from 'react'
+import React, { useState, useCallback, useMemo, memo, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useShallow } from 'zustand/react/shallow'
 
 import { useAppStore, type TabId } from '@/store/useAppStore'
-// 🔥 PERBAIKAN 1: Import terpusat dari barrel
-import { useHaptic, useReducedMotion } from '@/hooks'
+// Perbaikan 1: Hanya impor useHaptic, useReducedMotion didefinisikan secara lokal untuk keamanan build
+import { useHaptic } from '@/hooks'
 import { viewTransition, cn } from '@/lib/utils'
 import { tokens } from '@/lib/tokens'
+
+/* --------------------------------------------------------------------------
+   LOCAL HOOK: Reduced Motion
+   -------------------------------------------------------------------------- */
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    setReduced(media.matches)
+    const listener = (e: MediaQueryListEvent) => setReduced(e.matches)
+    if (media.addEventListener) {
+      media.addEventListener('change', listener)
+      return () => media.removeEventListener('change', listener)
+    } else {
+      media.addListener(listener)
+      return () => media.removeListener(listener)
+    }
+  }, [])
+  return reduced
+}
 
 /* --------------------------------------------------------------------------
    TABS DATA
@@ -46,14 +66,14 @@ const TABS: readonly NavTab[] = [
    PROPS
    -------------------------------------------------------------------------- */
 export interface NavBarProps {
-  onItemHover?: (tabId: TabId) => void
+  // Perbaikan 2: Dukungan untuk exactOptionalPropertyTypes
+  onItemHover?: ((tabId: TabId) => void) | undefined
 }
 
 /* --------------------------------------------------------------------------
    NAVBAR COMPONENT
    -------------------------------------------------------------------------- */
 export const NavBar = memo(function NavBar({ onItemHover }: NavBarProps) {
-  // 🔥 PERBAIKAN 2: Gunakan useShallow untuk performa render
   const { activeTab, setActiveTab } = useAppStore(
     useShallow((s) => ({
       activeTab: s.activeTab,
@@ -70,7 +90,6 @@ export const NavBar = memo(function NavBar({ onItemHover }: NavBarProps) {
     (tabId: TabId) => {
       if (tabId === activeTab) return
       hapticLight()
-      // Menggunakan View Transition API untuk transisi antar halaman yang mulus
       void viewTransition(() => {
         setActiveTab(tabId)
         setSearchParams({ tab: tabId }, { replace: true })
@@ -80,8 +99,9 @@ export const NavBar = memo(function NavBar({ onItemHover }: NavBarProps) {
     [activeTab, hapticLight, setActiveTab, setSearchParams]
   )
 
+  // Perbaikan 3: Memastikan currentTab selalu terdefinisi (non-null assertion pada fallback)
   const currentTab = useMemo(
-    () => TABS.find((t) => t.id === activeTab) ?? TABS[0],
+    () => TABS.find((t) => t.id === activeTab) || TABS[0],
     [activeTab]
   )
 
@@ -110,7 +130,6 @@ export const NavBar = memo(function NavBar({ onItemHover }: NavBarProps) {
               )}
               style={{ color: isActive ? tokens.cyan : tokens.textDim }}
             >
-              {/* Active Indicator Bar */}
               {isActive && (
                 <motion.div
                   layoutId="nav-indicator"
@@ -126,7 +145,6 @@ export const NavBar = memo(function NavBar({ onItemHover }: NavBarProps) {
               <span className="hidden lg:inline">{tab.label}</span>
               <span className="inline lg:hidden">{tab.shortLabel}</span>
 
-              {/* Keyboard Hint Chip */}
               <span
                 className={cn(
                   'ml-1 rounded px-1 text-[0.45rem] font-bold transition-colors',
@@ -141,7 +159,7 @@ export const NavBar = memo(function NavBar({ onItemHover }: NavBarProps) {
       </nav>
 
       {/* ─── MOBILE NAVIGATION ──────────────────────────────────────────── */}
-      <div className="block shrink-0 border-b border-border bg-panel md:hidden" style={{ borderColor: tokens.border, backgroundColor: tokens.panel }}>
+      <div className="block shrink-0 border-b border-border bg-panel md:hidden" style={{ borderColor: tokens.border, backgroundColor: (tokens as any).panel }}>
         <div className="flex items-center justify-between px-4 py-2">
           <div className="flex items-center gap-3">
             <span className="text-xl" style={{ color: tokens.cyan }}>{currentTab.icon}</span>
