@@ -70,16 +70,7 @@ export const dataEngine = Object.freeze({
         useAppStore.getState().setCompany(data)
       },
       reset: () => {
-        useAppStore.getState().setCompany({})
-      },
-    },
-    user: {
-      setLocale: (locale: string) => {
-        const state = useAppStore.getState()
-        state.setLocale?.(locale)
-      },
-      setPreferences: (prefs: Partial<ZustandState['preferences']>) => {
-        dataEngine.updateZustand('setPreferences', prefs)
+        useAppStore.getState().resetCompany()
       },
     },
   },
