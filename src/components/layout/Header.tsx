@@ -1,131 +1,181 @@
 // src/components/layout/Header.tsx
-import { useCallback } from 'react'
+/**
+ * ============================================================================
+ * HEADER — GLOBAL APPLICATION HEADER WITH KPIs AND COMPANY BADGE
+ * ============================================================================
+ */
+
+import { useCallback, useMemo, memo } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { motion, AnimatePresence } from 'framer-motion'
+
 import { useAppStore } from '@/store/useAppStore'
 import { StatusDot, DemoTag, KPIChip } from '@/components/ui/Badge'
-import { useCurrency } from '@/hooks/useCurrency'
+// 🔥 PERBAIKAN 1: Gunakan barrel import untuk hooks
+import { useCurrency, useHaptic } from '@/hooks'
 import { calcPpk, dpmoToSigma } from '@/lib/sigma'
-import { haptic } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { tokens } from '@/lib/tokens'
 
-export function Header() {
-  const { company, showApp, showCompanySetup, savedFlash, setShowApp, setShowCompanySetup } =
-    useAppStore()
-  const { fmt } = useCurrency()
+/* --------------------------------------------------------------------------
+   HEADER COMPONENT
+   -------------------------------------------------------------------------- */
+export const Header = memo(function Header() {
+  const {
+    company,
+    showApp,
+    savedFlash,
+    setShowApp,
+    setShowCompanySetup,
+  } = useAppStore(
+    useShallow((state) => ({
+      company: state.company,
+      showApp: state.showApp,
+      savedFlash: state.savedFlash,
+      setShowApp: state.setShowApp,
+      setShowCompanySetup: state.setShowCompanySetup,
+    }))
+  )
 
-  // Derived KPIs from company profile - no hardcoding
-  const ppk     = calcPpk(company.baselineMean, company.baselineStdDev, company.usl, company.lsl)
-  const dpmo    = company.baselineMean && company.baselineStdDev
-    ? Math.round((1 - 0.9973) * 1_000_000) // approx from ±3σ within spec
-    : 0
-  const sigma   = dpmoToSigma(dpmo)
-  const monthlyCopq = company.laborRate * company.monthlyVolume * 0.08
+  // 🔥 PERBAIKAN 2: Sesuaikan dengan hook useCurrency (biasanya mengembalikan 'format')
+  const { format } = useCurrency()
+  const { light: hapticLight } = useHaptic()
 
+  // ─── DERIVED KPIs (memoized) ─────────────────────────────────────────
+  const stats = useMemo(() => {
+    const ppkVal = calcPpk(
+      company.baselineMean,
+      company.baselineStdDev,
+      company.usl,
+      company.lsl
+    )
+
+    // Estimasi Sigma sederhana berdasarkan Ppk (Ppk * 3)
+    const sigmaEst = Math.max(0, ppkVal * 3)
+    // Konversi balik ke DPMO untuk fungsi dpmoToSigma
+    const dpmo = Math.round((1 - 0.9973) * 1_000_000 * (sigmaEst / 3))
+    const sigmaVal = dpmoToSigma(dpmo)
+
+    // Estimasi COPQ bulanan
+    const copq = company.laborRate * company.monthlyVolume * 0.15 // Misal 15% wastage
+
+    return {
+      ppk: ppkVal,
+      sigma: sigmaVal,
+      monthlyCopq: copq,
+    }
+  }, [
+    company.baselineMean,
+    company.baselineStdDev,
+    company.usl,
+    company.lsl,
+    company.laborRate,
+    company.monthlyVolume,
+  ])
+
+  // ─── HANDLERS ─────────────────────────────────────────────────────────
   const handleCompanyClick = useCallback(() => {
-    haptic.light()
+    hapticLight()
     setShowCompanySetup(true)
-  }, [setShowCompanySetup])
+  }, [hapticLight, setShowCompanySetup])
+
+  const handleExit = useCallback(() => {
+    hapticLight()
+    setShowApp(false)
+  }, [hapticLight, setShowApp])
 
   if (!showApp) return null
 
   return (
     <header
       role="banner"
-      style={{
-        background: '#080E14',
-        borderBottom: '1px solid #112233',
-        padding: '0.6rem 1rem',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexShrink: 0,
-        gap: '0.75rem',
-        flexWrap: 'wrap',
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
-        backdropFilter: 'blur(8px)',
-      }}
+      className={cn(
+        'sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 px-6 py-2.5',
+        'border-b border-border bg-panel/80 backdrop-blur-md'
+      )}
+      style={{ borderColor: tokens.border, backgroundColor: `${tokens.panel}CC` }}
     >
-      {/* Brand */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <StatusDot active={true} color="#00FF9C" pulse />
+      {/* ─── BRAND / LOGO ─────────────────────────────────────────────── */}
+      <div className="flex items-center gap-4">
+        <StatusDot active color={tokens.green} pulse />
         <div>
-          <div style={{ color: '#00D4FF', fontFamily: 'Space Mono, monospace', fontSize: '0.5rem', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
-            Six Sigma Black Belt ·
+          <div className="font-mono text-[0.55rem] font-bold uppercase tracking-[0.25em] text-cyan" style={{ color: tokens.cyan }}>
+            Six Sigma War Room
           </div>
-          <div style={{ color: '#E2EEF9', fontFamily: 'Syne, sans-serif', fontSize: '0.95rem', fontWeight: 800, lineHeight: 1, letterSpacing: '-0.01em' }}>
-            DMAIC WAR ROOM
+          <div className="font-display text-[1.1rem] font-black leading-none tracking-tighter text-ink" style={{ color: tokens.text }}>
+            PULSE <span className="text-cyan" style={{ color: tokens.cyan }}>DIGITAL</span>
           </div>
         </div>
       </div>
 
-      {/* Right cluster */}
-      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        {/* Company badge — clickable */}
+      {/* ─── RIGHT SECTION ────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Save feedback animation */}
+        <AnimatePresence>
+          {savedFlash && (
+            <motion.div
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0 }}
+              className="flex items-center gap-2 rounded-full bg-green/10 px-2 py-1 font-mono text-[0.5rem] font-bold text-green"
+              style={{ backgroundColor: `${tokens.green}20`, color: tokens.green }}
+            >
+              <StatusDot color={tokens.green} active={false} pulse={false} size="sm" />
+              SYNCED
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Company profile badge */}
         <button
           onClick={handleCompanyClick}
-          data-onboarding="company-badge"
-          aria-label={`Company profile: ${company.name}. Click to edit.`}
-          style={{
-            background: 'rgba(0,212,255,0.06)', border: '1px solid rgba(0,212,255,0.2)',
-            borderRadius: 6, padding: '0.25rem 0.6rem', cursor: 'pointer',
-            display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-            transition: 'all 0.15s',
-          }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(0,212,255,0.4)' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(0,212,255,0.2)' }}
+          className={cn(
+            'flex flex-col items-start rounded-lg border px-3 py-1 transition-all active:scale-95',
+            'border-cyan/20 bg-cyan/5 hover:border-cyan/40 hover:bg-cyan/10'
+          )}
+          style={{ borderColor: `${tokens.cyan}33` }}
         >
-          <span style={{ color: '#4A6785', fontFamily: 'Space Mono, monospace', fontSize: '0.48rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-            {company.dept}
+          <span className="font-mono text-[0.45rem] font-bold uppercase tracking-widest opacity-50" style={{ color: tokens.textDim }}>
+            {company.dept || 'Department'}
           </span>
-          <span style={{ color: '#E2EEF9', fontFamily: 'Syne, sans-serif', fontSize: '0.75rem', fontWeight: 700, lineHeight: 1.2 }}>
+          <span className="font-display text-[0.8rem] font-bold" style={{ color: tokens.text }}>
             {company.name}
           </span>
         </button>
 
-        {/* KPI chips — derived from company data */}
-        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-          <KPIChip label="Ppk" value={ppk.toFixed(2)} color={ppk >= 1.33 ? 'green' : ppk >= 1.0 ? 'yellow' : 'red'} />
-          <KPIChip label="Sigma" value={sigma.toFixed(1)} color={sigma >= 4 ? 'green' : sigma >= 3 ? 'cyan' : 'yellow'} />
-          <KPIChip label="COPQ/mo" value={fmt(monthlyCopq)} color="red" />
+        {/* KPI chips group */}
+        <div className="flex items-center gap-1.5">
+          <KPIChip
+            label="Ppk"
+            value={stats.ppk.toFixed(2)}
+            color={stats.ppk >= 1.33 ? 'green' : stats.ppk >= 1.0 ? 'yellow' : 'red'}
+          />
+          <KPIChip
+            label="Sigma"
+            value={stats.sigma.toFixed(1)}
+            color={stats.sigma >= 4 ? 'green' : stats.sigma >= 3 ? 'cyan' : 'yellow'}
+          />
+          <KPIChip
+            label="COPQ"
+            value={format(stats.monthlyCopq)}
+            color="red"
+          />
         </div>
 
-        {/* Demo tag */}
         {company.isPulseDigital && <DemoTag />}
 
-        {/* Auto-save flash */}
-        <AnimatePresence>
-          {savedFlash && (
-            <motion.span
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              style={{ color: '#00FF9C', fontFamily: 'Space Mono, monospace', fontSize: '0.5rem', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-              aria-live="polite"
-              aria-label="Progress saved"
-            >
-              <StatusDot color="#00FF9C" pulse={false} />
-              SAVED
-            </motion.span>
-          )}
-        </AnimatePresence>
-
-        {/* Exit */}
+        {/* Exit to Landing */}
         <button
-          onClick={() => { haptic.light(); setShowApp(false) }}
-          aria-label="Exit to home screen"
-          style={{
-            background: 'transparent', border: '1px solid #112233', borderRadius: 4,
-            color: '#4A6785', padding: '0.3rem 0.65rem',
-            fontFamily: 'Space Mono, monospace', fontSize: '0.6rem', cursor: 'pointer',
-            transition: 'all 0.15s',
-          }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#FF3B5C'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,59,92,0.3)' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#4A6785'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#112233' }}
+          onClick={handleExit}
+          className={cn(
+            'ml-2 rounded-lg border border-border px-3 py-1.5 font-mono text-[0.6rem] font-bold uppercase tracking-tighter',
+            'text-ink-dim transition-all hover:border-red/50 hover:text-red active:bg-red/5'
+          )}
+          style={{ borderColor: tokens.border }}
         >
-          ← EXIT
+          ✕ Exit
         </button>
       </div>
     </header>
   )
-}
+})
