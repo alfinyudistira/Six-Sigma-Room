@@ -2,8 +2,7 @@
 
 import React, { createPortal } from 'react-dom'
 import { AnimatePresence, motion, PanInfo } from 'framer-motion'
-import { useEffect, useState, useCallback, useRef } from 'react'
-
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { feedback, type Notification, type NotificationType } from '@/lib/feedback'
 import { tokens } from '@/lib/tokens'
 
