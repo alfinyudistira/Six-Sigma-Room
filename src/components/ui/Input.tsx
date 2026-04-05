@@ -1,173 +1,261 @@
 // src/components/ui/Input.tsx
-import { forwardRef, InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
+
+import {
+  forwardRef,
+  InputHTMLAttributes,
+  SelectHTMLAttributes,
+  TextareaHTMLAttributes,
+  ReactNode,
+} from 'react'
 import { cn } from '@/lib/utils'
+import { tokens } from '@/lib/tokens'
 
-const baseInputStyle: React.CSSProperties = {
-  background: '#050A0F',
-  border: '1px solid #112233',
-  borderRadius: 6,
-  color: '#E2EEF9',
-  fontFamily: 'Space Mono, monospace',
-  fontSize: '0.75rem',
-  padding: '0.45rem 0.65rem',
-  width: '100%',
-  transition: 'border-color 0.15s, box-shadow 0.15s',
-  outline: 'none',
-}
-
-const focusStyle: React.CSSProperties = {
-  borderColor: 'rgba(0,212,255,0.4)',
-  boxShadow: '0 0 0 2px rgba(0,212,255,0.08)',
-}
-
-// ─── Text Input ───────────────────────────────────────────────────────────────
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+interface BaseFieldProps {
   label?: string
   error?: string
   hint?: string
+  required?: boolean
 }
 
+const getFieldId = (id?: string, label?: string) => 
+  id ?? (label ? label.toLowerCase().replace(/\s+/g, '-') : `field-${Math.random().toString(36).slice(2, 7)}`)
+
+export interface InputProps
+  extends InputHTMLAttributes<HTMLInputElement>,
+    BaseFieldProps {}
+
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, hint, className, style, id, ...props }, ref) => {
-    const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-')
+  ({ label, error, hint, required, className, id, type = 'text', ...props }, ref) => {
+    const fieldId = getFieldId(id, label)
+    const describedBy = error ? `${fieldId}-error` : hint ? `${fieldId}-hint` : undefined
+
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+      <div className="flex flex-col gap-1.5">
         {label && (
           <label
-            htmlFor={inputId}
-            style={{ color: '#7A99B8', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}
+            htmlFor={fieldId}
+            className="font-mono text-[0.6rem] font-bold uppercase tracking-wider text-ink-dim"
+            style={{ color: tokens.textDim }}
           >
             {label}
+            {required && <span className="ml-1 text-red" style={{ color: tokens.red }}>*</span>}
           </label>
         )}
         <input
           ref={ref}
-          id={inputId}
-          className={cn(className)}
-          style={{ ...baseInputStyle, ...(error ? { borderColor: 'rgba(255,59,92,0.5)' } : {}), ...style }}
-          onFocus={e => Object.assign(e.target.style, focusStyle)}
-          onBlur={e => {
-            e.target.style.borderColor = error ? 'rgba(255,59,92,0.5)' : '#112233'
-            e.target.style.boxShadow = ''
+          id={fieldId}
+          type={type}
+          aria-describedby={describedBy}
+          aria-invalid={!!error}
+          required={required}
+          className={cn(
+            'w-full rounded-lg border bg-bg px-3 py-2.5 font-mono text-xs text-ink transition-all',
+            'focus:border-cyan/40 focus:outline-none focus:ring-2 focus:ring-cyan/10',
+            error ? 'border-red/50 focus:border-red focus:ring-red/10' : 'border-border',
+            props.disabled && 'cursor-not-allowed opacity-50',
+            className
+          )}
+          style={{ 
+            backgroundColor: tokens.bg,
+            color: tokens.text,
+            borderColor: error ? tokens.red : tokens.border 
           }}
-          aria-describedby={error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined}
-          aria-invalid={error ? 'true' : undefined}
           {...props}
         />
         {error && (
-          <span id={`${inputId}-error`} role="alert" style={{ color: '#FF3B5C', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem' }}>
+          <span id={`${fieldId}-error`} role="alert" className="font-mono text-[0.6rem] font-bold text-red" style={{ color: tokens.red }}>
             {error}
           </span>
         )}
         {hint && !error && (
-          <span id={`${inputId}-hint`} style={{ color: '#4A6785', fontFamily: 'DM Sans, sans-serif', fontSize: '0.65rem' }}>
+          <span id={`${fieldId}-hint`} className="font-mono text-[0.6rem] opacity-60" style={{ color: tokens.textDim }}>
             {hint}
           </span>
         )}
       </div>
     )
-  },
+  }
 )
 Input.displayName = 'Input'
 
-// ─── Number Input ─────────────────────────────────────────────────────────────
-export const NumberInput = forwardRef<HTMLInputElement, InputProps>(
-  (props, ref) => <Input ref={ref} type="number" {...props} />,
-)
-NumberInput.displayName = 'NumberInput'
-
-// ─── Select ───────────────────────────────────────────────────────────────────
-interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
-  label?: string
-  error?: string
+/* --------------------------------------------------------------------------
+   SELECT
+   -------------------------------------------------------------------------- */
+export interface SelectProps
+  extends SelectHTMLAttributes<HTMLSelectElement>,
+    BaseFieldProps {
   options: Array<{ value: string; label: string } | string>
+  placeholder?: string
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ label, error, options, style, id, ...props }, ref) => {
-    const selectId = id ?? label?.toLowerCase().replace(/\s+/g, '-')
+  ({ label, error, hint, required, options, placeholder, className, id, ...props }, ref) => {
+    const fieldId = getFieldId(id, label)
+    const describedBy = error ? `${fieldId}-error` : hint ? `${fieldId}-hint` : undefined
+
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+      <div className="flex flex-col gap-1.5">
         {label && (
-          <label htmlFor={selectId} style={{ color: '#7A99B8', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+          <label
+            htmlFor={fieldId}
+            className="font-mono text-[0.6rem] font-bold uppercase tracking-wider text-ink-dim"
+            style={{ color: tokens.textDim }}
+          >
             {label}
+            {required && <span className="ml-1 text-red" style={{ color: tokens.red }}>*</span>}
           </label>
         )}
         <select
           ref={ref}
-          id={selectId}
-          style={{ ...baseInputStyle, cursor: 'pointer', ...style }}
-          onFocus={e => Object.assign(e.target.style, focusStyle)}
-          onBlur={e => { e.target.style.borderColor = '#112233'; e.target.style.boxShadow = '' }}
-          aria-invalid={error ? 'true' : undefined}
+          id={fieldId}
+          aria-describedby={describedBy}
+          aria-invalid={!!error}
+          required={required}
+          className={cn(
+            'w-full rounded-lg border bg-bg px-3 py-2.5 font-mono text-xs text-ink transition-all appearance-none',
+            'focus:border-cyan/40 focus:outline-none focus:ring-2 focus:ring-cyan/10',
+            error ? 'border-red/50 focus:border-red' : 'border-border',
+            props.disabled && 'cursor-not-allowed opacity-50',
+            className
+          )}
+          style={{ 
+            backgroundColor: tokens.bg,
+            color: tokens.text,
+            borderColor: error ? tokens.red : tokens.border 
+          }}
           {...props}
         >
-          {options.map(opt => {
-            const v = typeof opt === 'string' ? opt : opt.value
-            const l = typeof opt === 'string' ? opt : opt.label
-            return <option key={v} value={v}>{l}</option>
+          {placeholder && (
+            <option value="" disabled>
+              {placeholder}
+            </option>
+          )}
+          {options.map((opt) => {
+            const value = typeof opt === 'string' ? opt : opt.value
+            const label = typeof opt === 'string' ? opt : opt.label
+            return (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            )
           })}
         </select>
-        {error && <span role="alert" style={{ color: '#FF3B5C', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem' }}>{error}</span>}
+        {error && (
+          <span id={`${fieldId}-error`} role="alert" className="font-mono text-[0.6rem] font-bold text-red" style={{ color: tokens.red }}>
+            {error}
+          </span>
+        )}
       </div>
     )
-  },
+  }
 )
 Select.displayName = 'Select'
 
-// ─── Textarea ─────────────────────────────────────────────────────────────────
-interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
-  label?: string
-  error?: string
+/* --------------------------------------------------------------------------
+   SLIDER
+   -------------------------------------------------------------------------- */
+export interface SliderProps
+  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>,
+    BaseFieldProps {
+  valueLabel?: string | ReactNode
 }
 
-export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ label, error, style, id, ...props }, ref) => {
-    const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-')
+export const Slider = forwardRef<HTMLInputElement, SliderProps>(
+  ({ label, valueLabel, error, hint, required, className, ...props }, ref) => {
+    const fieldId = getFieldId(props.id, label)
+
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-        {label && (
-          <label htmlFor={inputId} style={{ color: '#7A99B8', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-            {label}
-          </label>
-        )}
-        <textarea
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          {label && (
+            <label htmlFor={fieldId} className="font-mono text-[0.6rem] font-bold uppercase tracking-wider text-ink-dim" style={{ color: tokens.textDim }}>
+              {label}
+              {required && <span className="ml-1 text-red" style={{ color: tokens.red }}>*</span>}
+            </label>
+          )}
+          {valueLabel && (
+            <span className="font-mono text-xs font-bold text-cyan" style={{ color: tokens.cyan }}>
+              {valueLabel}
+            </span>
+          )}
+        </div>
+        <input
           ref={ref}
-          id={inputId}
-          style={{ ...baseInputStyle, resize: 'vertical', minHeight: 80, ...style }}
-          onFocus={e => Object.assign(e.target.style, focusStyle)}
-          onBlur={e => { e.target.style.borderColor = '#112233'; e.target.style.boxShadow = '' }}
-          aria-invalid={error ? 'true' : undefined}
+          id={fieldId}
+          type="range"
+          className={cn(
+            'h-1.5 w-full cursor-pointer appearance-none rounded-full bg-border accent-cyan',
+            className
+          )}
+          style={{ accentColor: tokens.cyan }}
           {...props}
         />
-        {error && <span role="alert" style={{ color: '#FF3B5C', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem' }}>{error}</span>}
       </div>
     )
-  },
+  }
+)
+Slider.displayName = 'Slider'
+
+/* --------------------------------------------------------------------------
+   CHECKBOX
+   -------------------------------------------------------------------------- */
+export interface CheckboxProps
+  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>,
+    BaseFieldProps {
+  description?: string
+}
+
+export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
+  ({ label, description, error, required, className, id, ...props }, ref) => {
+    const fieldId = getFieldId(id, label)
+
+    return (
+      <div className="flex items-start gap-3 p-1">
+        <div className="flex h-5 items-center">
+          <input
+            ref={ref}
+            id={fieldId}
+            type="checkbox"
+            className={cn(
+              'h-4 w-4 rounded border-border bg-bg text-cyan focus:ring-1 focus:ring-cyan',
+              'disabled:cursor-not-allowed disabled:opacity-50',
+              className
+            )}
+            aria-invalid={!!error}
+            required={required}
+            {...props}
+          />
+        </div>
+        <div className="flex flex-col gap-0.5">
+          {label && (
+            <label htmlFor={fieldId} className="font-display text-sm font-bold text-ink" style={{ color: tokens.text }}>
+              {label}
+              {required && <span className="ml-1 text-red" style={{ color: tokens.red }}>*</span>}
+            </label>
+          )}
+          {description && <p className="text-[11px] text-ink-dim opacity-70" style={{ color: tokens.textDim }}>{description}</p>}
+          {error && <p className="text-[10px] font-bold text-red" style={{ color: tokens.red }}>{error}</p>}
+        </div>
+      </div>
+    )
+  }
+)
+Checkbox.displayName = 'Checkbox'
+
+// Exporting NumberInput & Textarea (Same logic pattern)
+export const NumberInput = forwardRef<HTMLInputElement, InputProps>((props, ref) => <Input ref={ref} type="number" {...props} />)
+NumberInput.displayName = 'NumberInput'
+
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
+  ({ label, error, hint, required, className, id, rows = 3, ...props }, ref) => {
+    const fieldId = getFieldId(id, label)
+    return (
+      <div className="flex flex-col gap-1.5">
+        {label && <label htmlFor={fieldId} className="font-mono text-[0.6rem] font-bold uppercase tracking-wider" style={{ color: tokens.textDim }}>{label}</label>}
+        <textarea ref={ref} id={fieldId} rows={rows} className={cn('w-full rounded-lg border bg-bg px-3 py-2.5 font-mono text-xs text-ink transition-all resize-none', 'focus:border-cyan/40 focus:outline-none focus:ring-2 focus:ring-cyan/10', error ? 'border-red/50' : 'border-border', className)} style={{ backgroundColor: tokens.bg, color: tokens.text, borderColor: error ? tokens.red : tokens.border }} {...props} />
+        {error && <span className="font-mono text-[0.6rem] text-red" style={{ color: tokens.red }}>{error}</span>}
+      </div>
+    )
+  }
 )
 Textarea.displayName = 'Textarea'
-
-// ─── Slider ───────────────────────────────────────────────────────────────────
-interface SliderProps extends InputHTMLAttributes<HTMLInputElement> {
-  label?: string
-  valueLabel?: string
-  accentColor?: string
-}
-
-export function Slider({ label, valueLabel, accentColor = '#00D4FF', ...props }: SliderProps) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-      {(label || valueLabel) && (
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          {label && <span style={{ color: '#7A99B8', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>}
-          {valueLabel && <span style={{ color: accentColor, fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', fontWeight: 700 }}>{valueLabel}</span>}
-        </div>
-      )}
-      <input
-        type="range"
-        style={{ width: '100%', accentColor, cursor: 'pointer' }}
-        {...props}
-      />
-    </div>
-  )
-}
