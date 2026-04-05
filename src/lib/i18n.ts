@@ -38,7 +38,7 @@ export function detectLocale(): SupportedLocale {
   const browser = (typeof navigator !== 'undefined' && (navigator.language || navigator.languages?.[0])) || DEFAULT_LOCALE
   if (browser && browser in LOCALE_META) return browser as SupportedLocale
 
-  const prefix = browser.split('-')[0]??
+  const prefix = browser.split('-')[0] ?? ''
   const match = Object.keys(LOCALE_META).find((l) => l.startsWith(prefix)) as SupportedLocale | undefined
   return match ?? DEFAULT_LOCALE
 }
