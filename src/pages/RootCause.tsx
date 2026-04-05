@@ -1,10 +1,4 @@
 // src/pages/RootCause.tsx
-/**
- * ============================================================================
- * ROOT CAUSE ANALYZER — FISHBONE (ISHIKAWA) & 5-WHY
- * ============================================================================
- */
-
 import { useState, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 
@@ -13,21 +7,18 @@ import {
   addRootCauseNode,
   deleteRootCauseNode,
   toggleNodeVerified,
-  rootCauseSelectors, // 🔥 PERBAIKAN 1: Import selector untuk EntityState
+  rootCauseSelectors,
   type RootCauseNode,
 } from '@/store/moduleSlice'
 
 import { useModulePersist, useHaptic } from '@/hooks'
-import { feedback } from '@/lib/feedback' // 🔥 PERBAIKAN 2: Gunakan singleton feedback
+import { feedback } from '@/lib/feedback'
 import { Section, Panel, KPICard } from '@/components/charts'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { tokens as T } from '@/lib/tokens'
 import { cn } from '@/lib/utils'
 
-/* --------------------------------------------------------------------------
-   CONSTANTS & CONFIG
-   -------------------------------------------------------------------------- */
 const ISHIKAWA_CATEGORIES = ['Man', 'Machine', 'Method', 'Material', 'Measurement', 'Environment'] as const
 
 const CAT_COLORS: Record<string, string> = {
@@ -35,13 +26,10 @@ const CAT_COLORS: Record<string, string> = {
   Machine: T.yellow,
   Method: T.green,
   Material: T.orange,
-  Measurement: '#9B8EC4', // Custom color for distinct visualization
+  Measurement: '#9B8EC4',
   Environment: T.red,
 }
 
-/* --------------------------------------------------------------------------
-   NODE ITEM COMPONENT (Di-ekstrak ke luar agar tidak re-render terus)
-   -------------------------------------------------------------------------- */
 interface NodeItemProps {
   node: RootCauseNode
   allNodes: RootCauseNode[]
@@ -121,18 +109,13 @@ function NodeItem({ node, allNodes, depth = 0, onVerify, onAddWhy, onDelete }: N
   )
 }
 
-/* --------------------------------------------------------------------------
-   MAIN COMPONENT
-   -------------------------------------------------------------------------- */
 export default function RootCause() {
   const dispatch = useAppDispatch()
   const { light, medium } = useHaptic()
   
-  // 🔥 PERBAIKAN 3: Gunakan selector '.selectAll'
   const nodes = useAppSelector(rootCauseSelectors.selectAll)
   const rawState = useAppSelector(s => s.modules.rootCause)
-  
-  // Auto-save ke IndexedDB
+
   useModulePersist('rootcause_nodes', rawState)
 
   // ─── STATE ──────────────────────────────────────────────────────────────
@@ -155,12 +138,12 @@ export default function RootCause() {
     }
     
     medium()
-    dispatch(
+        dispatch(
       addRootCauseNode({
         id: `rc_${Date.now()}`,
         text: newText.trim(),
         parentId: parent,
-        category: parent ? undefined : newCat, // Sub-cause (5-why) tidak punya kategori utama
+        ...(!parent ? { category: newCat } : {}), // <--- INI SOLUSI ELEGANNYA
         verified: false,
       })
     )
