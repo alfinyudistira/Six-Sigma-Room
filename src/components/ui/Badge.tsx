@@ -1,102 +1,190 @@
 // src/components/ui/Badge.tsx
+/**
+ * ============================================================================
+ * BADGE & STATUS COMPONENTS — REUSABLE, ACCESSIBLE, TAILWIND + TOKENS
+ * ============================================================================
+ */
+
 import { cn } from '@/lib/utils'
+import { tokens } from '@/lib/tokens'
 
-type Color = 'cyan' | 'green' | 'red' | 'yellow' | 'orange' | 'dim'
+/* --------------------------------------------------------------------------
+   TYPES
+   -------------------------------------------------------------------------- */
+export type BadgeColor = 'cyan' | 'green' | 'red' | 'yellow' | 'orange' | 'dim'
+export type BadgeSize = 'sm' | 'md'
 
-const colorMap: Record<Color, { bg: string; border: string; text: string; glow?: string }> = {
-  cyan:   { bg: 'rgba(0,212,255,0.1)',   border: 'rgba(0,212,255,0.3)',   text: '#00D4FF', glow: 'rgba(0,212,255,0.2)' },
-  green:  { bg: 'rgba(0,255,156,0.1)',   border: 'rgba(0,255,156,0.3)',   text: '#00FF9C', glow: 'rgba(0,255,156,0.2)' },
-  red:    { bg: 'rgba(255,59,92,0.1)',   border: 'rgba(255,59,92,0.3)',   text: '#FF3B5C', glow: 'rgba(255,59,92,0.2)' },
-  yellow: { bg: 'rgba(255,214,10,0.1)',  border: 'rgba(255,214,10,0.3)',  text: '#FFD60A' },
-  orange: { bg: 'rgba(255,140,0,0.1)',   border: 'rgba(255,140,0,0.3)',   text: '#FF8C00' },
-  dim:    { bg: 'rgba(13,21,32,0.8)',    border: '#112233',               text: '#4A6785' },
+/* --------------------------------------------------------------------------
+   STYLING CONFIGURATION
+   -------------------------------------------------------------------------- */
+// 🔥 PERBAIKAN 1: Sinkronisasi warna dengan tokens.ts (green, red, yellow)
+const badgeColorStyles: Record<BadgeColor, { bg: string; border: string; text: string; glow: string }> = {
+  cyan: {
+    bg: 'bg-cyan/10',
+    border: 'border-cyan/30',
+    text: 'text-cyan',
+    glow: 'shadow-[0_0_8px_rgba(0,212,255,0.3)]',
+  },
+  green: {
+    bg: 'bg-green/10',
+    border: 'border-green/30',
+    text: 'text-green',
+    glow: 'shadow-[0_0_8px_rgba(0,255,156,0.3)]',
+  },
+  red: {
+    bg: 'bg-red/10',
+    border: 'border-red/30',
+    text: 'text-red',
+    glow: 'shadow-[0_0_8px_rgba(255,59,92,0.3)]',
+  },
+  yellow: {
+    bg: 'bg-yellow/10',
+    border: 'border-yellow/30',
+    text: 'text-yellow',
+    glow: 'shadow-[0_0_8px_rgba(255,214,10,0.3)]',
+  },
+  orange: {
+    bg: 'bg-orange/10',
+    border: 'border-orange/30',
+    text: 'text-orange',
+    glow: 'shadow-[0_0_8px_rgba(255,140,0,0.3)]',
+  },
+  dim: {
+    bg: 'bg-surface/80',
+    border: 'border-border',
+    text: 'text-ink-dim',
+    glow: '',
+  },
 }
 
-interface BadgeProps {
+const badgeSizeStyles: Record<BadgeSize, string> = {
+  sm: 'px-1.5 py-0.5 text-[0.6rem]',
+  md: 'px-2 py-0.5 text-[0.65rem]',
+}
+
+/* --------------------------------------------------------------------------
+   BADGE COMPONENT
+   -------------------------------------------------------------------------- */
+export interface BadgeProps {
   label: string
-  color?: Color
-  className?: string
+  color?: BadgeColor
+  size?: BadgeSize
   glow?: boolean
+  outline?: boolean
+  className?: string
+  'aria-label'?: string
 }
 
-export function Badge({ label, color = 'cyan', glow = false, className }: BadgeProps) {
-  const c = colorMap[color]
+export function Badge({
+  label,
+  color = 'cyan',
+  size = 'sm',
+  glow = false,
+  outline = false,
+  className,
+  'aria-label': ariaLabel,
+}: BadgeProps) {
+  const styles = badgeColorStyles[color]
+  const sizeClass = badgeSizeStyles[size]
+
   return (
     <span
-      className={cn('inline-block px-2 py-0.5 rounded text-[10px] font-mono tracking-widest uppercase', className)}
-      style={{
-        background: c.bg,
-        border: `1px solid ${c.border}`,
-        color: c.text,
-        boxShadow: glow && c.glow ? `0 0 8px ${c.glow}` : undefined,
-      }}
+      className={cn(
+        'inline-flex items-center justify-center rounded font-mono font-bold uppercase tracking-wider border',
+        sizeClass,
+        outline
+          ? 'bg-transparent'
+          : `${styles.bg} ${styles.border} ${styles.text}`,
+        outline ? styles.border : '',
+        !outline && styles.text,
+        glow && styles.glow,
+        className
+      )}
+      style={outline ? { color: tokens[color === 'dim' ? 'textDim' : color] } : undefined}
+      aria-label={ariaLabel ?? label}
     >
       {label}
     </span>
   )
 }
 
-// ─── Status dot (live indicator) ──────────────────────────────────────────────
-interface StatusDotProps { active?: boolean; color?: string; pulse?: boolean }
+/* --------------------------------------------------------------------------
+   STATUS DOT
+   -------------------------------------------------------------------------- */
+export interface StatusDotProps {
+  active?: boolean
+  color?: string
+  pulse?: boolean
+  size?: 'sm' | 'md'
+  className?: string
+  'aria-label'?: string
+}
 
-export function StatusDot({ active = true, color = '#00FF9C', pulse = true }: StatusDotProps) {
+export function StatusDot({
+  active = true,
+  color = tokens.green,
+  pulse = true,
+  size = 'sm',
+  className,
+  'aria-label': ariaLabel,
+}: StatusDotProps) {
+  const sizeClass = size === 'sm' ? 'h-1.5 w-1.5' : 'h-2 w-2'
+
   return (
     <span
-      aria-hidden="true"
+      className={cn(
+        'inline-block rounded-full transition-all',
+        sizeClass,
+        active ? (pulse ? 'animate-pulse' : '') : 'bg-white/20',
+        className
+      )}
       style={{
-        display: 'inline-block',
-        width: 7, height: 7,
-        borderRadius: '50%',
-        background: active ? color : '#4A6785',
-        boxShadow: active ? `0 0 8px ${color}` : undefined,
-        animation: active && pulse ? 'pulse 2s infinite' : undefined,
-        flexShrink: 0,
+        backgroundColor: active ? color : undefined,
+        boxShadow: active && pulse ? `0 0 8px ${color}` : undefined,
       }}
+      aria-hidden={!ariaLabel}
+      aria-label={ariaLabel ?? (active ? 'Active' : 'Inactive')}
     />
   )
 }
 
-// ─── KPI chip for header bar ──────────────────────────────────────────────────
-interface KPIChipProps {
+/* --------------------------------------------------------------------------
+   KPI CHIP
+   -------------------------------------------------------------------------- */
+export interface KPIChipProps {
   label: string
   value: string | number
-  color?: Color
+  color?: BadgeColor
   unit?: string
+  className?: string
 }
 
-export function KPIChip({ label, value, color = 'cyan', unit }: KPIChipProps) {
-  const c = colorMap[color]
+export function KPIChip({ label, value, color = 'cyan', unit, className }: KPIChipProps) {
+  const styles = badgeColorStyles[color]
+
   return (
     <div
-      style={{
-        background: c.bg,
-        border: `1px solid ${c.border}`,
-        borderRadius: 6,
-        padding: '0.25rem 0.6rem',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-      }}
+      className={cn(
+        'flex flex-col items-center rounded-lg border px-3 py-1.5 text-center',
+        styles.bg,
+        styles.border,
+        className
+      )}
     >
-      <span style={{ color: '#4A6785', fontFamily: 'Space Mono, monospace', fontSize: '0.5rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+      <span className="font-mono text-[0.5rem] font-bold uppercase tracking-[0.1em] opacity-60" style={{ color: tokens.textDim }}>
         {label}
       </span>
-      <span style={{ color: c.text, fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', fontWeight: 700, lineHeight: 1.2 }}>
-        {value}{unit ? <span style={{ fontSize: '0.55rem', opacity: 0.7, marginLeft: 2 }}>{unit}</span> : null}
+      <span className={cn('font-mono text-sm font-bold leading-tight', styles.text)}>
+        {value}
+        {unit && <span className="ml-0.5 text-[0.6rem] font-normal opacity-50">{unit}</span>}
       </span>
     </div>
   )
 }
 
-// ─── Demo mode tag ────────────────────────────────────────────────────────────
-export function DemoTag() {
-  return (
-    <span style={{
-      background: 'rgba(255,214,10,0.1)', border: '1px solid rgba(255,214,10,0.3)',
-      borderRadius: 3, color: '#FFD60A', fontFamily: 'Space Mono, monospace',
-      fontSize: '0.48rem', padding: '0.15rem 0.4rem', letterSpacing: '0.12em',
-    }}>
-      DEMO
-    </span>
-  )
+/* --------------------------------------------------------------------------
+   DEMO TAG
+   -------------------------------------------------------------------------- */
+export function DemoTag({ className }: { className?: string }) {
+  return <Badge label="DEMO" color="yellow" size="sm" glow className={className} />
 }
