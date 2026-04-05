@@ -1,4 +1,3 @@
-
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -28,7 +27,8 @@ interface COPQLineItem {
 const CATEGORY_CONFIG: Record<COPQCategory, { label: string; color: string; type: 'CoPQ' | 'CoGQ' }> = {
   internal: { label: 'Internal Failure', color: T.orange, type: 'CoPQ' },
   external: { label: 'External Failure', color: T.red, type: 'CoPQ' },
-  appraisal: { label: 'Appraisal (Insp.)', color: T.blue, type: 'CoGQ' },
+  // PERBAIKAN 1: Ganti T.blue menjadi T.cyan
+  appraisal: { label: 'Appraisal (Insp.)', color: T.cyan, type: 'CoGQ' },
   prevention: { label: 'Prevention', color: T.cyan, type: 'CoGQ' },
 }
 
@@ -179,7 +179,6 @@ export default function UniversalCOPQ() {
   // ─── RENDER ─────────────────────────────────────────────────────────────
   return (
     <motion.div
-      // 🔥 FIX: Spread operator for exactOptionalPropertyTypes
       {...(animated ? { initial: { opacity: 0, y: 15 }, animate: { opacity: 1, y: 0 } } : {})}
       transition={{ duration: 0.4, ease: "easeOut" }}
       className="flex flex-col gap-6 p-4 md:p-6 lg:p-8 overflow-x-hidden"
@@ -272,8 +271,9 @@ export default function UniversalCOPQ() {
               <div className="w-[40px]"></div>
             </div>
 
+            {/* PERBAIKAN 2: Menggunakan spread operator untuk properti variants agar tidak bernilai undefined */}
             <motion.div 
-              variants={animated ? containerVariants : undefined} 
+              {...(animated ? { variants: containerVariants as any } : {})}
               initial="hidden" 
               animate="show"
             >
@@ -286,7 +286,7 @@ export default function UniversalCOPQ() {
                     <motion.div
                       key={item.id}
                       layout
-                      variants={itemVariants}
+                      {...(animated ? { variants: itemVariants as any } : {})}
                       exit={{ opacity: 0, x: 20, scale: 0.95 }}
                       className={cn(
                         "flex flex-col sm:flex-row items-start sm:items-center gap-3 rounded-lg border p-2.5 transition-all mb-2 group",
