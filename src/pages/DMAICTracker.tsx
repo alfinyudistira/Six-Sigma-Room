@@ -301,13 +301,13 @@ export default function DMAICTracker() {
         <AnimatePresence mode="popLayout">
           {filteredTasks.map((task) => (
             <motion.div
-              key={task.id}
-              layout
-             initial={animated ? { opacity: 0, scale: 0.98 } : undefined}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={animated ? { opacity: 0, scale: 0.98 } : undefined}
-              transition={{ duration: 0.2 }}
-            >
+  key={task.id}
+  layout
+  initial={animated ? { opacity: 0, scale: 0.98 } : false}
+  animate={{ opacity: 1, scale: 1 }}
+  exit={animated ? { opacity: 0, scale: 0.98 } : false}
+  transition={{ duration: 0.2 }}
+>
               <TaskCard
                 task={task}
                 onEdit={() => openEdit(task)}
