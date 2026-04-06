@@ -24,7 +24,7 @@ import App from './App'
 import './index.css'
 const IS_PROD = import.meta.env.PROD
 const IS_DEV = import.meta.env.DEV
-const BASENAME = import.meta.env.MODE === 'gh-pages' ? '/Six-Sigma-Room/' : '/';
+const BASENAME = (import.meta.env.MODE as string) === 'gh-pages' ? '/Six-Sigma-Room/' : '/';
 
 function initSecurity() {
   try {
