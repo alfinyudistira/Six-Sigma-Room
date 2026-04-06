@@ -1,16 +1,17 @@
 import { defineConfig, type PluginOption } from 'vite'
-import react from '@vitejs/plugin-react-swc'      // 🔥 SWC 20x lebih cepat dari Babel
+import react from '@vitejs/plugin-react-swc'     
 import { VitePWA } from 'vite-plugin-pwa'
-import tsconfigPaths from 'vite-tsconfig-paths'   // 🔥 path alias tanpa manual
-import { visualizer } from 'rollup-plugin-visualizer' // 🔥 analisis bundle
-import viteCompression from 'vite-plugin-compression' // 🔥 gzip/brotli
+import tsconfigPaths from 'vite-tsconfig-paths'  
+import { visualizer } from 'rollup-plugin-visualizer'
+import viteCompression from 'vite-plugin-compression' 
 import path from 'path'
 
 export default defineConfig(({ mode }) => ({
+ base: mode === 'gh-pages' ? '/Six-Sigma-Room/' : '/',
   plugins: [
-    react(), // SWC version
+    react(),
     
-    tsconfigPaths(), // otomatis baca paths dari tsconfig.json
+    tsconfigPaths(), 
     
     VitePWA({
       registerType: 'autoUpdate',
@@ -18,7 +19,7 @@ export default defineConfig(({ mode }) => ({
       includeAssets: ['favicon.svg', 'favicon.ico', 'apple-touch-icon.png'],
       manifest: {
         name: 'Six Sigma War Room',
-        short_name: 'σ War Room',        // dari B, lebih ikonik
+        short_name: 'σ War Room',  
         description: 'DMAIC Intelligence Platform — Six Sigma Black Belt Analytics',
         theme_color: '#050A0F',
         background_color: '#050A0F',
@@ -28,7 +29,7 @@ export default defineConfig(({ mode }) => ({
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
-        shortcuts: [  // dari A (B tidak punya)
+        shortcuts: [ 
           { name: 'DMAIC Tracker', url: '/app?tab=dmaic', icons: [{ src: 'pwa-192x192.png', sizes: '192x192' }] },
           { name: 'FMEA Scorer',   url: '/app?tab=fmea',  icons: [{ src: 'pwa-192x192.png', sizes: '192x192' }] },
           { name: 'SPC Charts',     url: '/app?tab=spc',   icons: [{ src: 'pwa-192x192.png', sizes: '192x192' }] },
@@ -36,7 +37,7 @@ export default defineConfig(({ mode }) => ({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        navigateFallback: 'index.html',        // 🔥 top tier: SPA routing offline
+        navigateFallback: 'index.html',      
         navigateFallbackDenylist: [/^\/api/, /^\/_/],
         runtimeCaching: [
           {
@@ -53,27 +54,24 @@ export default defineConfig(({ mode }) => ({
       },
     }),
     
-    // 🔥 Kompresi Gzip + Brotli (production only)
     mode === 'production' && viteCompression({ algorithm: 'gzip', ext: '.gz', threshold: 1024 }),
     mode === 'production' && viteCompression({ algorithm: 'brotliCompress', ext: '.br', threshold: 1024 }),
     
-    // 🔥 Bundle analyzer (gunakan perintah `npm run build -- --analyze`)
     process.env.ANALYZE === 'true' && visualizer({ open: true, filename: 'dist/stats.html', gzipSize: true, brotliSize: true }),
     
   ].filter(Boolean) as PluginOption[],
   
   resolve: {
-    alias: { '@': path.resolve(__dirname, './src') }, // fallback jika tsconfigPaths tidak jalan
+    alias: { '@': path.resolve(__dirname, './src') },
   },
   
   build: {
-    target: 'ES2022',           // dari A
-    sourcemap: mode === 'development' ? 'inline' : false, // lebih aman
-    chunkSizeWarningLimit: 1000, // 🔥 naikkan limit biar tidak false warning
+    target: 'ES2022',     
+    sourcemap: mode === 'development' ? 'inline' : false,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks: (id) => {
-          // 🔥 manualChunks lebih cerdas (fungsi, bukan objek statis)
           if (id.includes('node_modules')) {
             if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) 
               return 'react-vendor'
@@ -92,15 +90,12 @@ export default defineConfig(({ mode }) => ({
             return 'vendor'
           }
         },
-        // 🔥 hash yang stabil
         entryFileNames: 'assets/[name].[hash].js',
         chunkFileNames: 'assets/[name].[hash].js',
         assetFileNames: 'assets/[name].[hash].[ext]',
       },
     },
-    // 🔥 Tambahan: minify dengan terser (default esbuild cukup, tapi bisa custom)
     minify: 'esbuild',
-    // 🔥 Treeshaking lebih agresif
     treeshake: 'recommended',
   },
   
@@ -112,19 +107,18 @@ export default defineConfig(({ mode }) => ({
       'zustand', 'react-hook-form', 'zod', 'idb-keyval',
       'date-fns', 'clsx', 'tailwind-merge', 'axios', 'sonner',
     ],
-    exclude: [], // tidak ada yang perlu di-exclude
-    // 🔥 Force optimize ulang jika perlu
+    exclude: [],
     force: false,
   },
   
   server: {
     port: 3000,
-    strictPort: false, // jika 3000 dipakai, coba 3001
-    open: true,        // buka browser otomatis
+    strictPort: false,
+    open: true,     
     hmr: {
-      overlay: true,   // tampilkan error di layar
+      overlay: true, 
     },
-    // 🔥 Proxy API jika perlu (contoh)
+    // Proxy API jika perlu (contoh)
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
@@ -139,13 +133,11 @@ export default defineConfig(({ mode }) => ({
     strictPort: false,
     open: true,
   },
-  
-  // 🔥 Environment variables yang akan di-expose ke client
+
   define: {
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version),
   },
   
-  // 🔥 CSS optimasi
   css: {
     devSourcemap: mode === 'development',
     modules: {
