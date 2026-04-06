@@ -14,7 +14,9 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "coverage": "vitest run --coverage",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "deploy": "gh-pages -d dist",
+    "deploy:gh": "vite build --mode gh-pages && npm run deploy"
   },
   "dependencies": {
     "react": "^18.3.1",
