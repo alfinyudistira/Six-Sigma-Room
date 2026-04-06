@@ -24,6 +24,7 @@ import App from './App'
 import './index.css'
 const IS_PROD = import.meta.env.PROD
 const IS_DEV = import.meta.env.DEV
+const BASENAME = import.meta.env.MODE === 'gh-pages' ? '/Six-Sigma-Room/' : '/';
 
 function initSecurity() {
   try {
@@ -75,7 +76,7 @@ function AppRoot() {
     >
       <ReduxProvider store={store}>
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
+          <BrowserRouter basename={BASENAME}>
             <I18nProvider>
               <RealtimeProvider>
                 <Suspense fallback={<LoadingFallback />}>
