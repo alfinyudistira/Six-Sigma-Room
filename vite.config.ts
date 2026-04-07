@@ -87,7 +87,7 @@ export default defineConfig(({ mode }) => ({
               return 'utils'
             if (id.includes('axios')) return 'http'
             if (id.includes('sonner')) return 'toast'
-            return 'vendor'
+        
           }
         },
         entryFileNames: 'assets/[name].[hash].js',
